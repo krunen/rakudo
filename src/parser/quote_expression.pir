@@ -5,13 +5,42 @@
 
 .namespace ['Perl6';'Grammar']
 
+.sub '' :anon :load :init
+    .local pmc brackets
+    brackets = box unicode:"<>[](){}\xab\xbb\u0f3a\u0f3b\u0f3c\u0f3d\u169b\u169c\u2045\u2046\u207d\u207e\u208d\u208e\u2329\u232a\u2768\u2769\u276a\u276b\u276c\u276d\u276e\u276f\u2770\u2771\u2772\u2773\u2774\u2775\u27c5\u27c6\u27e6\u27e7\u27e8\u27e9\u27ea\u27eb\u2983\u2984\u2985\u2986\u2987\u2988\u2989\u298a\u298b\u298c\u298d\u298e\u298f\u2990\u2991\u2992\u2993\u2994\u2995\u2996\u2997\u2998\u29d8\u29d9\u29da\u29db\u29fc\u29fd\u3008\u3009\u300a\u300b\u300c\u300d\u300e\u300f\u3010\u3011\u3014\u3015\u3016\u3017\u3018\u3019\u301a\u301b\u301d\u301e\ufd3e\ufd3f\ufe17\ufe18\ufe35\ufe36\ufe37\ufe38\ufe39\ufe3a\ufe3b\ufe3c\ufe3d\ufe3e\ufe3f\ufe40\ufe41\ufe42\ufe43\ufe44\ufe47\ufe48\ufe59\ufe5a\ufe5b\ufe5c\ufe5d\ufe5e\uff08\uff09\uff3b\uff3d\uff5b\uff5d\uff5f\uff60\uff62\uff63"
+    set_global '$!brackets', brackets
+.end
+
+.sub 'opener' :method
+    .local string brackets
+    $P0 = get_global '$!brackets'
+    brackets = $P0
+
+    .local pmc mob
+    .local string target
+    .local int pos
+    (mob, pos, target) = self.'new'(self)
+    $S0 = substr target, pos, 1
+    $I0 = index brackets, $S0
+    if $I0 < 0 goto fail
+    $I0 = $I0 % 2
+    if $I0 goto fail
+    inc pos
+    mob.'to'(pos)
+  fail:
+    .return (mob)
+.end
+
 .sub 'peek_brackets' :method
     .param string target
     .param int pos
     .local string brackets, start, stop
-    brackets = unicode:"<>[](){}\xab\xbb\u0f3a\u0f3b\u0f3c\u0f3d\u169b\u169c\u2045\u2046\u207d\u207e\u208d\u208e\u2329\u232a\u2768\u2769\u276a\u276b\u276c\u276d\u276e\u276f\u2770\u2771\u2772\u2773\u2774\u2775\u27c5\u27c6\u27e6\u27e7\u27e8\u27e9\u27ea\u27eb\u2983\u2984\u2985\u2986\u2987\u2988\u2989\u298a\u298b\u298c\u298d\u298e\u298f\u2990\u2991\u2992\u2993\u2994\u2995\u2996\u2997\u2998\u29d8\u29d9\u29da\u29db\u29fc\u29fd\u3008\u3009\u300a\u300b\u300c\u300d\u300e\u300f\u3010\u3011\u3014\u3015\u3016\u3017\u3018\u3019\u301a\u301b\u301d\u301e\ufd3e\ufd3f\ufe17\ufe18\ufe35\ufe36\ufe37\ufe38\ufe39\ufe3a\ufe3b\ufe3c\ufe3d\ufe3e\ufe3f\ufe40\ufe41\ufe42\ufe43\ufe44\ufe47\ufe48\ufe59\ufe5a\ufe5b\ufe5c\ufe5d\ufe5e\uff08\uff09\uff3b\uff3d\uff5b\uff5d\uff5f\uff60\uff62\uff63"
+
+    $P0 = get_global '$!brackets'
+    brackets = $P0
 
     start = substr target, pos, 1
+    if start == ':' goto err_colon_delim
     stop = start
     $I0 = index brackets, start
     if $I0 < 0 goto end
@@ -34,6 +63,8 @@
     stop  = repeat stop, len
   end:
     .return (start, stop)
+  err_colon_delim:
+    self.'panic'("Colons cannot be used as delimiters in quoting constructs")
 .end
 
 
@@ -95,7 +126,7 @@
     lastpos -= stoplen
     options['stop'] = stop
 
-    .local pmc p6regex, quote_regex
+    .local pmc quote_regex
     $I0 = options['regex']
     if $I0 goto regex_start
     $I0 = options['PIR']
@@ -103,14 +134,20 @@
     goto word_start
 
   regex_start:
-    ##  handle :regex parsing
-    p6regex = get_root_global ['parrot';'PGE';'Perl6Regex'], 'regex'
-    mob.'to'(pos)
-    quote_regex = p6regex(mob, options :flat :named)
-    unless quote_regex goto fail
-    pos = quote_regex.'to'()
     .local string key
     key = 'quote_regex'
+    .local pmc regexparse
+    ##  handle :regex parsing
+    regexparse = get_root_global ['parrot';'PGE';'Perl6Regex'], 'regex'
+    $I0 = options['P5']
+    unless $I0 goto have_regexparse
+    regexparse = get_root_global ['parrot';'PGE';'P5Regex'], 'p5regex'
+    key = 'quote_p5regex'
+  have_regexparse:
+    mob.'to'(pos)
+    quote_regex = regexparse(mob, options :flat :named)
+    unless quote_regex goto fail
+    pos = quote_regex.'to'()
     mob[key] = quote_regex
     goto succeed
 
@@ -405,7 +442,7 @@
     $I0 = index "0abefnrtxco123456789", backchar
     if $I0 < 0 goto add_backchar
     if $I0 >= 11 goto fail_backchar_digit
-    if $I0 >= 8 goto scan_xdo
+    if $I0 >= 8 goto scan_xco
     litchar = substr "\0\a\b\e\f\n\r\t", $I0, 1
     if $I0 >= 1 goto add_litchar2
     ##  peek ahead for octal digits after \0
@@ -426,44 +463,18 @@
     inc pos
     goto scan_loop
 
-  scan_xdo:
-    ##  handle \x, \c, and \o escapes.  start by converting
-    ##  the backchar into 8, 10, or 16 (yes, it's a hack
-    ##  but it works).  Then loop through the characters
-    ##  that follow to compute the decimal value of codepoints,
-    ##  and add the codepoints to our literal.
-    .local int base, decnum, isbracketed
-    base = index '        o c     x', backchar
-    decnum = 0
-    pos += 2
-    $S0 = substr target, pos, 1
-    isbracketed = iseq $S0, '['
-    pos += isbracketed
-  scan_xdo_char_loop:
-    $S0 = substr target, pos, 1
-    $I0 = index '0123456789abcdef0123456789ABCDEF', $S0
-    if $I0 < 0 goto scan_xdo_char_end
-    $I0 %= 16
-    if $I0 >= base goto scan_xdo_char_end
-    decnum *= base
-    decnum += $I0
-    inc pos
-    goto scan_xdo_char_loop
-  scan_xdo_char_end:
-    $S1 = chr decnum
-    concat literal, $S1
-    unless isbracketed goto scan_xdo_end
-    if $S0 == ']' goto scan_xdo_end
-    if $S0 != ',' goto fail
-    inc pos
-    decnum = 0
-    goto scan_xdo_char_loop
-  scan_xdo_end:
-    pos += isbracketed
+  scan_xco:
+    ##  lean on PGE to handle \x, \c, and \o escapes.
+    $P0 = get_root_global['parrot';'PGE';'Perl6Regex'], 'p6escapes'
+    $P1 = $P0(mob, 'pos'=>pos)
+    unless $P1 goto fail
+    $S0 = $P1.'ast'()
+    literal .= $S0
+    pos = $P1.'to'()
     goto scan_loop
-
+    
   succeed:
-    mob.'result_object'(literal)
+    mob.'!make'(literal)
     mob.'to'(pos)
     .return (mob)
   fail_backchar_digit:

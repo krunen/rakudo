@@ -1,11 +1,38 @@
-New since 2009-02 release
+New in 2009-04 release
+* wrap and unwrap for subroutines
+* calling a method on a Whatever star generates a closure
+* .invert and .push on Hashes
+* enforce return types of subroutines (partial implementation)
+* parallel testing
+* Configure.pl now supports passing options to parrot's Configure
+* support for lexical subroutines and multis
+* implemented \c[character name] in double quoted strings and regexes
+* implemented Perl 5 regexes
+* rx/.../ regex quoting
+* moved many methods to the setting
+* exporting and importing by tags, support :DEFAULT export tag
+* implemented START 
+* implemented roots builtin
+* implemented .ast on Match objects
+* split() now supports limits in all cases
 
+New in 2009-03 release (#15, "Oslo")
++ implemented $*PROGRAM_NAME magical variable
++ outer lexicals are now visible in eval()
 + next, last etc. work in grep()
-+ added R metaoperator.
-+ add a initial draft of Match.perl 
++ added R metaoperator
++ add an initial draft of Match.perl 
 + refactor Grammar and Match class hierarchy
 + fix if/unless/while/until/for/... on line after close curlies
 + add Q quoting, including Q:PIR
++ added "state" variables
++ //= fixed to short-circuit, and added short-circuiting &&= and ||=
++ multi-subs now have the Multi type and have a .candidates method
++ multi-method dispatch now looks up the class hierarchy
++ various fixes to using roles as type constraints
++ support bare sigils in signatures
++ more methods and functions moved to (Perl 6) setting
++ many other bug fixes
 
 New in 2009-02 release (#14, "Vienna")
 + first release independent of Parrot releases

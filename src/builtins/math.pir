@@ -16,57 +16,13 @@ src/builtins/math.pir - Perl6 math functions
 ## .namespace [ 'Math::Basic' ]
 
 
-=item floor
-
- our Int multi Num::floor ( Num $x )
-
-Returns the highest integer not greater than $x.
-
-=cut
-
-.sub 'floor'
-    .param num n
-    .local int i
-    floor i, n
-    .return (i)
+.sub 'roots' :multi(_, 'Integer')
+    .param pmc x
+    .param int n
+    .local pmc result
+     result = x.'roots'(n)
+    .return (result)
 .end
-
-
-=item ceiling
-
- our Int multi Num::ceiling ( Num $x )
- &Num::ceil ::= &Num::ceiling;
-
-Returns the lowest integer not less than $x.
-
-=cut
-
-.sub 'ceiling'
-    .param num n
-    .local int i
-    ceil i, n
-    .return (i)
-.end
-
-
-=item round
-
- our Int multi Num::round ( Num $x )
- our Int multi Int ( Num $x )
-
-Returns the nearest integer to $x.  The algorithm is floor($x + 0.5).
-(Other rounding algorithms will be given extended names beginning with "round".)
-
-=cut
-
-.sub 'round'
-    .param num n
-    .local int i
-    n += 0.5
-    floor i, n
-    .return (i)
-.end
-
 
 =item sign
 
@@ -85,12 +41,20 @@ or more succinctly:
    $x <=> 0;
  }
 
+Returns the sign of $x, i.e +1 for positive numbers (including Inf), zero for zero and -1 for negative numbers (including -Inf).
+
 =cut
 
 .sub 'sign'
     .param pmc a
+    if a == 'Inf' goto unity
+    if a == 'NaN' goto not_a_number
     $I0 = cmp_num a, 0
     .return ($I0)
+  not_a_number:
+    .return (a)
+  unity:
+    .return (1)
 .end
 
 
@@ -114,6 +78,8 @@ constant I<e>.
 =item log10
 
  &log10 := &log.assuming:base(10);
+
+Returns the base 10 logarithm of $x.
 
 =cut
 

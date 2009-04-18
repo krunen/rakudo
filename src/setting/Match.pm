@@ -12,6 +12,8 @@ class Match is also {
                 take " # and for debugging purposes only\n";
             }
             take $sp;
+            take "ast  => {$.ast.perl},\n";
+            take $sp;
             take "text => {$.text.perl},\n";
             take $sp;
             take "from => $.from,\n";
@@ -32,7 +34,7 @@ class Match is also {
                 take $sp;
                 take "named => \{\n";
                 for %(self).kv -> $name, $match {
-                    take "$sp $name => ";
+                    take "$sp '$name' => ";
                     # XXX why is this a Str, not a Match?
                     if $match ~~ Match {
                         take $match!_perl($indent + 3);
@@ -45,6 +47,35 @@ class Match is also {
             }
             take ' ' x $indent;
             take ")";
+        }
+    }
+
+    multi method caps() {
+        my @caps = gather {
+            for @(self).pairs, %(self).pairs -> $p {
+                # in regexes like [(.) ...]+, the capture for (.) is 
+                # a List. flatten that.
+                if $p.value ~~ List {
+                    take ($p.key => $_.value) for @($p);
+                } else {
+                    take $p;
+                }
+            }
+        }
+        @caps.sort({ .value.from });
+    }
+
+    multi method chunks() {
+        my $prev = 0;
+        gather {
+            for @.caps {
+                if .value.from > $prev {
+                    take '~' => self.substr($prev, .value.from - $prev)
+                }
+                take $_;
+                $prev = .value.to;
+            }
+            take self.substr($prev) if $prev < self.chars;
         }
     }
 }

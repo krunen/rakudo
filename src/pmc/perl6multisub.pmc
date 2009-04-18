@@ -340,7 +340,9 @@ static candidate_info** sort_candidates(PARROT_INTERP, PMC *candidates, PMC **pr
             PMC * const multi_inv   = VTABLE_get_pmc_keyed_str(interp, param,
                     CONST_STRING(interp, "multi_invocant"));
             info->types[j] = type;
-            info->constraints[j] = constraints;
+            info->constraints[j] = PMC_IS_NULL(constraints) || VTABLE_isa(interp,
+                    constraints, CONST_STRING(interp, "Undef")) ?
+                    PMCNULL : constraints;
             if (!PMC_IS_NULL(multi_inv) && VTABLE_get_bool(interp, multi_inv))
                 info->num_types++;
         }
@@ -538,16 +540,26 @@ static PMC* do_dispatch(PARROT_INTERP, PMC *self, candidate_info **candidates, P
         cur_candidate++;
     }
 
-    /* If we're at a single candidate here, it's safe to cache for the future,
-     * since it's a purely structural type-based rather than value based
-     * dispatch. Note that we could also store the current candidate set and
-     * re-enter the dispatch algorithm below, making it cheaper to get to that
-     * point. */
-    if (possibles_count == 1 && cache)
-        Parrot_mmd_cache_store_by_values(interp, cache, "", args, possibles[0]->sub);
+    /* If we're at a single candidate here, and there are no constraints, it's
+     * safe to cache for the future, since it's a purely nominal type-based 
+     * rather than value based dispatch. Note that we could also store the current
+     * candidate set and re-enter the dispatch algorithm below, making it cheaper to
+     * get to this point. */
+    if (possibles_count == 1 && cache) {
+        INTVAL has_constraints = 0;
+        INTVAL i;
+        for (i = 0; i < possibles[0]->num_types; i++) {
+            if (!PMC_IS_NULL(possibles[0]->constraints[i])) {
+                has_constraints = 1;
+                break;
+            }
+        }
+        if (!has_constraints)
+            Parrot_mmd_cache_store_by_values(interp, cache, "", args, possibles[0]->sub);
+    }
 
-    /* If we have multiple candidates left, tie-break on any constraints. */
-    if (possibles_count > 1) {
+    /* If we have candidates from arity/nominal type, check out any constraints. */
+    if (possibles_count > 0) {
         candidate_info ** const matching        = mem_allocate_n_typed(possibles_count,
                                                     candidate_info *);
         candidate_info ** const constraint_free = mem_allocate_n_typed(possibles_count,
@@ -1116,6 +1128,36 @@ Makes a copy of this Perl6MultiSub PMC.
         SETATTR_Perl6MultiSub_candidates(interp, copy, unsorted);
         return copy;
     }
+
+/*
+
+=item METHOD void push(candidate)
+
+Adds a candidate.
+
+=cut
+
+*/
+    METHOD push(PMC *candidate) {
+        VTABLE_push_pmc(interp, SELF, candidate);
+        RETURN ()
+    }
+
+/*
+
+=item METHOD PMC * candidates()
+
+Gets a list of all candidates.
+
+=cut
+
+*/
+    METHOD PMC *candidates() {
+        PMC *candidates;
+        GETATTR_Perl6MultiSub_candidates(interp, SELF, candidates);
+        RETURN (PMC *candidates);
+    }
+
 }
 
 /*

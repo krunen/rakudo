@@ -114,7 +114,7 @@ the moment -- we'll do more complex handling a bit later.)
     continuation()
 .end
 
-=item next
+=item last
 
 =cut
 
@@ -126,6 +126,10 @@ the moment -- we'll do more complex handling a bit later.)
     throw e
 .end
 
+=item next
+
+=cut
+
 .sub 'next'
     .local pmc e
     e = new 'Exception'
@@ -133,6 +137,10 @@ the moment -- we'll do more complex handling a bit later.)
     e['type'] = .CONTROL_LOOP_NEXT
     throw e
 .end
+
+=item redo
+
+=cut
 
 .sub 'redo'
     .local pmc e
@@ -142,6 +150,10 @@ the moment -- we'll do more complex handling a bit later.)
     throw e
 .end
 
+=item continue
+
+=cut
+
 .sub 'continue'
     .local pmc e
     e = new 'Exception'
@@ -149,6 +161,10 @@ the moment -- we'll do more complex handling a bit later.)
     e['type'] = .CONTROL_CONTINUE
     throw e
 .end
+
+=item break
+
+=cut
 
 .sub 'break'
     .param pmc arg :optional
@@ -200,6 +216,8 @@ the moment -- we'll do more complex handling a bit later.)
   have_message:
     ex = new 'Exception'
     ex = message
+    ex['severity'] = .EXCEPT_FATAL
+    ex['type'] = .CONTROL_ERROR
     set_global '$!', ex
     throw ex
     .return ()
@@ -304,6 +322,32 @@ on error.
     'die'("Parameter type check failed on call to 'eval'.")
   type_ok:
 
+    # We want to make the lexicals known to the Perl 6 compiler. (One day
+    # PCT maybe will provide a way to tell any language about these.)
+    .local pmc blocks, block_info, interp, sub
+    interp = new 'ParrotInterpreter'
+    $P0 = get_hll_global ['PAST'], 'Block'
+    block_info = $P0.'new'()
+    sub = interp["sub"; 1]
+  lex_loop:
+    if null sub goto lex_loop_end
+    $P0 = sub.'get_lexinfo'()
+    if null $P0 goto symbols_loop_end
+    $P0 = inspect $P0, 'symbols'
+    $P0 = iter $P0
+  symbols_loop:
+    unless $P0 goto symbols_loop_end
+    $S0 = shift $P0
+    block_info.'symbol'($S0, 'scope'=>'lexical')
+    goto symbols_loop
+  symbols_loop_end:
+    sub = sub.'get_outer'()
+    goto lex_loop
+  lex_loop_end:
+    blocks = get_hll_global ['Perl6';'Grammar';'Actions'], '@?BLOCK'
+    block_info['eval'] = 1
+    blocks.'unshift'(block_info)
+
     .local pmc compiler, invokable
     .local pmc res, exception
     unless have_lang goto no_lang
@@ -324,6 +368,15 @@ on error.
   got_lang:
     invokable = compiler.'compile'(code)
 
+    # Clear lexical info we added.
+    blocks.'shift'()
+
+    # Set lexical scope.
+    $P0 = interp["sub"; 1]
+    $P1 = invokable[0]
+    $P1.'set_outer'($P0)
+
+    # Invoke.
     res = invokable()
     exception = new 'Failure'
     goto done
@@ -333,6 +386,7 @@ on error.
 
   done:
     pop_eh
+    
     # Propagate exception to caller
     $P0 = getinterp
     $P0 = $P0['lexpad';1]
@@ -354,7 +408,7 @@ on error.
 
     message = list.'join'('')
     if message > '' goto have_message
-    message = "Warning!  Something's wrong\n"
+    message = "Warning! Something's wrong.\n"
   have_message:
     ## count_eh is broken
     # $I0 = count_eh
@@ -365,8 +419,81 @@ on error.
     throw ex
     .return ()
   no_eh:
-    printerr message
+    .local pmc err
+    err = get_hll_global "$ERR"
+    err.'print'(message)
     .return ()
+.end
+
+
+=item callwith
+
+=cut
+
+.sub 'callwith'
+    .param pmc pos_args    :slurpy
+    .param pmc named_args  :slurpy :named
+
+    # Is our caller a wrapping? If so, call inner.
+    .local pmc caller, inner
+    $P0 = new 'ParrotInterpreter'
+    caller = $P0['sub'; 1]
+  search_loop:
+    inner = getprop '$!wrap_inner', caller
+    if null inner goto try_outer
+    .tailcall inner(pos_args :flat, named_args :flat :named)
+  try_outer:
+    $I0 = isa caller, 'Routine' # Should not search out of current routine.
+    if $I0 goto not_wrapped
+    caller = caller.'get_outer'()
+    if null caller goto not_wrapped
+    $P0 = getprop '$!real_self', caller
+    if null $P0 goto search_loop
+    caller = $P0
+    goto search_loop
+
+  not_wrapped:
+    'die'('Use of callwith in non-wrapped case not yet implemented.')
+.end
+
+
+=item callsame
+
+=cut
+
+.sub 'callsame'
+    # Is our caller a wrapping? If so, find what we need to call.
+    .local pmc caller, inner
+    $P0 = new 'ParrotInterpreter'
+    caller = $P0['sub'; 1]
+  search_loop:
+    inner = getprop '$!wrap_inner', caller
+    unless null inner goto found_inner
+  try_outer:
+    $I0 = isa caller, 'Routine' # Should not search out of current routine.
+    if $I0 goto not_wrapped
+    caller = caller.'get_outer'()
+    if null caller goto not_wrapped
+    $P0 = getprop '$!real_self', caller
+    if null $P0 goto search_loop
+    caller = $P0
+    goto search_loop
+
+  found_inner:
+    # Now we need to get the arguments passed.
+    # XXX TODO: not sure how to do this well just yet. For now, just die if there
+    # are args, but call things that don't get any.
+    .local pmc params
+    params = inner.'signature'()
+    params = params.'params'()
+    $I0 = params
+    if $I0 > 0 goto unimpl
+    .tailcall inner()
+  unimpl:
+    'die'("callsame passing on arguments not yet implemented")
+
+  not_wrapped:
+    'die'('Use of callsame in non-wrapped case not yet implemented.')
 .end
 
 

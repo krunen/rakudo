@@ -181,6 +181,13 @@ N: Jonathan Scott Duff
 U: duff
 E: duff@pobox.com
 
+N: Jonathan "Duke" Leto
+U: leto
+U: dukeleto
+E: jonathan@leto.net
+W: http://leto.net
+S: Portland, OR
+
 N: Jonathan Worthington
 U: jonathan
 E: jnthn@jnthn.net
@@ -221,6 +228,10 @@ S: South Lake Tahoe, CA, USA
 
 N: Mark Grimes
 E: mgrimes@cpan.org
+
+N: Martin Berends
+E: mberends@autoexec.demon.nl
+D: Rakudo patch(es)
 
 N: Matt Diephouse
 U: mdiep
@@ -282,6 +293,10 @@ N: Stephen Weeks
 U: tene
 D: Minor Rakudo patches
 E: tene@allalone.org
+
+N: Ujwal Reddy Malipeddi
+E: ujwalic@gmail.com
+D: Rakudo patch
 
 N: Vasily Chekalkin
 E: bacek@bacek.com

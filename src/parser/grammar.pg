@@ -94,7 +94,11 @@ token nofun { <!before '(' | '.(' | '\\' > }
 token unv {
     || \h+
     || ^^ <.pod_comment>
-    || '#' \N*
+    || ^^ '#' <?opener> <.panic: "Can't use embedded columns in column 1">
+    || '#' [
+           | <?opener> <quote_expression: >
+           | \N*
+           ]
 }
 
 ##  The <afterws> rule returns true if we're immediate after
@@ -262,6 +266,7 @@ rule statement_control {
     | <for_statement> {*}                        #= for_statement
     | <use_statement> {*}                        #= use_statement
     | <begin_statement> {*}                      #= begin_statement
+    | <start_statement> {*}                      #= start_statement
     | <end_statement> {*}                        #= end_statement
     | <catch_statement> {*}                      #= catch_statement
     | <control_statement> {*}                    #= control_statement
@@ -341,6 +346,12 @@ rule use_statement {
 
 rule begin_statement {
     $<sym>=[BEGIN]
+    <block>
+    {*}
+}
+
+rule start_statement {
+    $<sym>=[START]
     <block>
     {*}
 }
@@ -513,18 +524,28 @@ token param_var {
     {*}
 }
 
+token named_param {
+    ':'
+    [
+    | <name=identifier> '(' <.ws>
+        [ <param_var> <.ws> ]
+        [ ')' || <.panic: "Unable to parse named parameter; couldn't find right parenthesis"> ]
+    | <param_var>
+    ]
+    {*}
+}
+
 token parameter {
     <type_constraint>*
     [
     |   $<quant>=['*'] <param_var>
-    |   $<named>=[':'?]
-        <param_var>
-        $<quant>=[ <[ ? ! ]>? ]
+    |   <param_var> $<quant>=[ <[ ? ! ]>? ]
+    |   <named_param> $<quant>=[ <[ ? ! ]>? ]
     |   <?{{
             $I0 = match['type_constraint']
             $I0 = $I0 > 0
             .return ($I0)
-        }}> <?>
+        }}>
     ]
     <trait>*
     <post_constraint>*
@@ -541,7 +562,6 @@ rule default_value {
 
 token expect_term {
     | <noun> <post>* {*}                         #= noun
-    | '*' {*}                                    #= *
 }
 
 
@@ -621,6 +641,7 @@ token noun {
 token term {
     [
     | 'VAR(' <variable> ')' {*}                  #= VAR
+    | <term_START> {*}                           #= term_START
     | <name=named_0ary>
         [
         | <.unsp>? '.'? '(' <semilist> ')' {*}   #= func args
@@ -634,7 +655,13 @@ token term {
         ]
     | <sigil> \s <arglist> {*}                   #= sigil
     | '...' {*}                                  #= ...
+    | '*' {*}                                    #= *
     ]
+}
+
+
+rule term_START {
+    $<sym>=[START] <block> {*}
 }
 
 
@@ -708,6 +735,7 @@ rule scoped {
     | <declarator>
     | <routine_declarator>
     | <fulltypename>+ <multi_declarator>
+    | <multi_declarator>
     ] {*}
     || <.panic: "Malformed declaration"> # STD.pm: <.panic: "Malformed \"$+SCOPE\" declaration">
 }
@@ -826,7 +854,10 @@ token quote {
     | <.before '<' >   <quote_expression: :w :q>
     # | <.before '«' > <quote_expression: :ww :qq>  FIXME: unicode
     | <.before '/'>    <quote_expression: :regex>
-    | m   <.ws>        <quote_expression: :regex>
+    | [m|rx] <.ws> 
+        [ [':P5'|':Perl5'] <.ws> <quote_expression: :regex :P5>
+        |              <quote_expression: :regex>
+        ]
     | q [ <.ws> ':' ]?
         [ q <.ws>      <quote_expression: :qq>
         | w <.ws>      <quote_expression: :q :w>

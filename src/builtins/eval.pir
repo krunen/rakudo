@@ -64,6 +64,7 @@ itself can be found in src/builtins/control.pir.
     unless ismodule goto have_name
 
     ##  convert '::' to '/'
+    name = clone name
   slash_convert:
     $I0 = index name, '::'
     if $I0 < 0 goto have_name
@@ -119,8 +120,17 @@ itself can be found in src/builtins/control.pir.
     goto done
 
   eval_perl6:
+    .local pmc outer_ns_chain, outer_blocks
+    outer_ns_chain = get_hll_global ['Perl6';'Grammar';'Actions'], '@?NS'
+    outer_blocks = get_hll_global ['Perl6';'Grammar';'Actions'], '@?BLOCK'
+    $P0 = new 'List'
+    set_hll_global ['Perl6';'Grammar';'Actions'], '@?NS', $P0
+    $P0 = new 'List'
+    set_hll_global ['Perl6';'Grammar';'Actions'], '@?BLOCK', $P0
     inc_hash[name] = realfilename
     result = 'evalfile'(realfilename, 'lang'=>'Perl6')
+    set_hll_global ['Perl6';'Grammar';'Actions'], '@?NS', outer_ns_chain
+    set_hll_global ['Perl6';'Grammar';'Actions'], '@?BLOCK', outer_blocks
 
   done:
     .return (result)
@@ -132,7 +142,86 @@ itself can be found in src/builtins/control.pir.
     .param pmc args            :slurpy
     .param pmc options         :slurpy :named
 
-    $P0 = 'require'(module, 'module'=>1)
+    # Require module.
+    .local pmc retval
+    retval = 'require'(module, 'module'=>1)
+    unless null retval goto have_retval
+    retval = '!FAIL'()
+  have_retval:
+
+    # This is a first cut of import. It's essentially wrong, since it's meant
+    # by default to put stuff into the lexical pad rather than the namespace.
+    # However, it works as a first cut, and lexical stuff isn't quite there
+    # enough in Rakudo yet.
+
+    # See if we've had a namespace name passed in.
+    .local pmc import_ns
+    .local pmc compiler_obj
+    compiler_obj = compreg 'Perl6'
+    $P0 = options['import_to']
+    if null $P0 goto use_caller_ns
+    $S0 = $P0
+    if $S0 == "" goto use_hll_root_ns
+    $P1 = compiler_obj.'parse_name'($S0)
+    $S0 = pop $P1
+    import_ns = get_hll_global $P1, $S0
+    goto got_import_ns
+  use_hll_root_ns:
+    import_ns = get_hll_namespace
+    goto got_import_ns
+  use_caller_ns:
+    $P0 = new 'ParrotInterpreter'
+    $P0 = $P0['sub'; 1]
+    import_ns = $P0.'get_namespace'()
+  got_import_ns:
+
+    # Get list of symbols to import.
+    .local pmc tag_hash, tags
+    tag_hash = options['tags']
+    tags = new 'ResizableStringArray'
+    if null tag_hash goto default_tag
+    $P0 = iter tag_hash
+  th_it_loop:
+    unless $P0 goto have_tags
+    $S0 = shift $P0
+    push tags, $S0
+    goto th_it_loop
+  default_tag:
+    push tags, 'DEFAULT'
+  have_tags:
+
+    # Always need to import MANDATORY stuff.
+    push tags, 'MANDATORY'
+
+    # Look up symbols to import and import them by tag.
+    .local pmc export_ns, export_root_nsarray, tag_it
+    export_root_nsarray = compiler_obj.'parse_name'(module)
+    push export_root_nsarray, 'EXPORT'
+    tag_it = iter tags
+  tag_it_loop:
+
+    # Find symbols to be imported from this tag.
+    unless tag_it goto tag_it_loop_end
+    $S0 = shift tag_it
+    export_ns = get_hll_global export_root_nsarray, $S0
+    if null export_ns goto tag_it_loop
+    
+    # Iterate over them and import.
+    .local pmc it
+    it = iter export_ns
+  it_loop:
+    unless it goto it_loop_end
+    $S0 = shift it
+    $P0 = export_ns[$S0]
+    import_ns[$S0] = $P0
+    goto it_loop
+  it_loop_end:
+
+    goto tag_it_loop
+  tag_it_loop_end:
+
+  done_import:
+    .return (retval)
 .end
 
 

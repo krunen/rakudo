@@ -23,6 +23,7 @@ it understands how to properly merge C<MultiSub> PMCs.
     .param pmc from            :named('from')
     .param pmc to              :named('to') :optional
     .param int has_to          :opt_flag
+    .param int to_p6_multi     :named('to_p6_multi') :optional
 
     if has_to goto have_to
     to = get_hll_namespace
@@ -38,6 +39,11 @@ it understands how to properly merge C<MultiSub> PMCs.
     value = from[symbol]
     $I0 = isa value, 'MultiSub'
     unless $I0 goto store_value
+    if to_p6_multi != 1 goto no_convert
+    $P0 = value[0]
+    '!TOPERL6MULTISUB'($P0)
+    value = from[symbol]
+  no_convert:
     $P0 = to[symbol]
     if null $P0 goto store_value
     $I0 = isa $P0, 'MultiSub'
@@ -85,6 +91,37 @@ from C<Any>.
   any_method_1:
     $P0 = find_method anyobj, method
     .tailcall obj.$P0()
+.end
+
+
+=item !dispatch_method
+
+Does a method dispatch. If it's a foregin object, just calls it the Parrot
+way. Otherwise, it uses .^dispatch from the metaclass.
+
+=cut
+
+.sub '!dispatch_method'
+    .param pmc obj
+    .param string name
+    .param pmc pos_args  :slurpy
+    .param pmc name_args :slurpy :named
+
+    $I0 = can obj, 'HOW'
+    unless $I0 goto foreign
+    $P0 = obj.'HOW'()
+    .tailcall $P0.'dispatch'(obj, name, pos_args :flat, name_args :flat :named)
+
+  foreign:
+    obj = '!DEREF'(obj)
+    # We should be able to just .tailcall. Unfortuantely, Parrot's calling
+    # implementation is a steaming pile of crap and can't even manage to promsie
+    # to put something that does array into $P0 in the following line...which only
+    # exists because calls to METHODs in PMCs don't seem to work with tail calls.
+    ($P0 :slurpy, $P1 :slurpy :named) = obj.name(pos_args :flat, name_args :flat :named)
+    if null $P0 goto no_return
+    .return ($P0 :flat, $P1 :flat :named)
+  no_return:
 .end
 
 
@@ -302,6 +339,22 @@ first). So for now we just transform multis in user code like this.
 .end
 
 
+=item !clone_multi_for_lexical
+
+=cut
+
+.sub '!clone_multi_for_lexical'
+    .param pmc existing
+    if null existing goto fresh
+    unless existing goto fresh
+    $P0 = existing.'clone'()
+    .return ($P0)
+  fresh:
+    $P0 = new 'Perl6MultiSub'
+    .return ($P0)  
+.end
+
+
 =item !UNIT_START
 
 =cut
@@ -316,8 +369,10 @@ first). So for now we just transform multis in user code like this.
 
   start_main:
     ## We're running as main program
-    ## Remove program argument (0) and set up @ARGS global
+    ## Remove program argument (0) and put it in $*PROGRAM_NAME, then set up
+    ## @ARGS global.
     $P0 = shift args
+    set_hll_global '$PROGRAM_NAME', $P0
     args = args.'Array'()
     set_hll_global '@ARGS', args
     ## run unitmain
@@ -416,8 +471,9 @@ is composed (see C<!meta_compose> below).
     .param int also
 
     .local pmc nsarray
-    $P0 = compreg 'Perl6'
-    nsarray = $P0.'parse_name'(name)
+    $P0 = get_hll_global [ 'Perl6';'Compiler' ], 'parse_name'
+    $P1 = null
+    nsarray = $P0($P1, name)
 
     if type == 'package' goto package
     if type == 'module' goto package
@@ -818,14 +874,29 @@ in an ambiguous multiple dispatch.
     .param pmc block
     .param pmc arg
 
+    # Multis that are exported need to be whole-sale exported as multis.
+    .local pmc blockns
     .local string blockname
-    blockname = block
-    .local pmc blockns, exportns
     blockns = block.'get_namespace'()
+    blockname = block
+    $P0 = blockns[blockname]
+    $I0 = isa $P0, 'MultiSub'
+    unless $I0 goto multi_handled
+    block = $P0
+  multi_handled:
+
+    .local pmc exportns
     exportns = blockns.'make_namespace'('EXPORT')
-    if null arg goto arg_done
+    if null arg goto default_export
     .local pmc it
-    arg = arg.'list'()
+    arg = 'list'(arg)
+    $I0 = arg.'elems'()
+    if $I0 goto have_arg
+  default_export:
+    $P0 = get_hll_global 'Pair'
+    $P0 = $P0.'new'('key' => 'DEFAULT', 'value' => 1)
+    arg = 'list'($P0)
+  have_arg:
     it = iter arg
   arg_loop:
     unless it goto arg_done
@@ -840,6 +911,49 @@ in an ambiguous multiple dispatch.
   arg_done:
     ns = exportns.'make_namespace'('ALL')
     ns[blockname] = block
+.end
+
+=item !sub_trait_verb(sub, trait, arg?)
+
+=cut
+
+.sub '!sub_trait_verb'
+    .param pmc block
+    .param string trait
+    .param pmc arg             :optional
+    .param int has_arg         :opt_flag
+
+    if has_arg goto have_arg
+    null arg
+  have_arg:
+
+    $S0 = substr trait, 11
+    $S0 = concat '!sub_trait_verb_', $S0
+    $P0 = find_name $S0
+    if null $P0 goto done
+    $P0(block, arg)
+  done:
+.end
+
+
+=item !sub_trait_returns(trait, block, arg)
+
+Sets the returns trait, which sets the type that the block must return.
+The of trait is just an alias to this.
+
+=cut
+
+.sub '!sub_trait_verb_returns'
+    .param pmc block
+    .param pmc type
+    $P0 = get_hll_global 'Callable'
+    $P0 = $P0.'!select'(type)
+    'infix:does'(block, $P0)
+.end
+.sub '!sub_trait_verb_of'
+    .param pmc block
+    .param pmc arg
+    .tailcall '!sub_trait_verb_returns'(block, arg)
 .end
 
 
@@ -941,6 +1055,39 @@ Helper method to compose the attributes of a role into a class.
   props_iter_loop_end:
     goto fixup_iter_loop
   fixup_iter_loop_end:
+.end
+
+=item !create_parametric_role
+
+Helper method for creating parametric roles.
+
+=cut
+
+.sub '!create_parametric_role'
+    .param pmc mr
+    '!meta_compose'(mr)
+    .local pmc orig_role, meths, meth_iter
+    orig_role = getprop '$!orig_role', mr
+    meths = orig_role.'methods'()
+    meth_iter = iter meths
+  it_loop:
+    unless meth_iter goto it_loop_end
+    $S0 = shift meth_iter
+    $P0 = meths[$S0]
+    $P1 = clone $P0
+    $P2 = getprop '$!signature', $P0
+    setprop $P1, '$!signature', $P2
+    $I0 = isa $P0, 'Code'
+    unless $I0 goto ret_pir_skip_rs
+    $P2 = getattribute $P0, ['Sub'], 'proxy'
+    $P2 = getprop '$!real_self', $P2
+    $P3 = getattribute $P1, ['Sub'], 'proxy'
+    setprop $P3, '$!real_self', $P2
+  ret_pir_skip_rs:
+    mr.'add_method'($S0, $P1)
+    goto it_loop
+  it_loop_end:
+    .return (mr)
 .end
 
 
@@ -1113,6 +1260,53 @@ Reblesses a sub into a new type.
     $P0 = new_type.'new'()
     $P0 = typeof $P0
     rebless_subclass sub, $P0
+.end
+
+
+=item !state_var_init
+
+Loads any existing values of state variables for a block.
+
+=cut
+
+.sub '!state_var_init'
+    .local pmc lexpad, state_store, names_it
+    $P0 = new 'ParrotInterpreter'
+    lexpad = $P0['lexpad'; 1]
+    $P0 = $P0['sub'; 1]
+    state_store = getprop '$!state_store', $P0
+    unless null state_store goto have_state_store
+    state_store = new 'Hash'
+    setprop $P0, '$!state_store', state_store
+  have_state_store:
+
+    names_it = iter state_store
+  names_loop:
+    unless names_it goto names_loop_end
+    $S0 = shift names_it
+    $P0 = state_store[$S0]
+    lexpad[$S0] = $P0
+    goto names_loop
+  names_loop_end:
+.end
+
+
+=item !state_var_inited
+
+Takes the name of a state variable and returns true if it's been
+initialized already.
+
+=cut
+
+.sub '!state_var_inited'
+    .param string name
+    $P0 = new 'ParrotInterpreter'
+    $P0 = $P0['sub'; 1]
+    $P0 = getprop '$!state_store', $P0
+    $P0 = $P0[name]
+    $I0 = isnull $P0
+    $I0 = not $I0
+    .return ($I0)
 .end
 
 =back

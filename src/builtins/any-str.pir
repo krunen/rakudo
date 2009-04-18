@@ -23,7 +23,7 @@ the size of that file down and to emphasize their generic,
 .namespace []
 .sub 'onload' :anon :init :load
     $P0 = get_hll_namespace ['Any']
-    '!EXPORT'('capitalize,chomp,chars,:d,:e,:f,index,lc,rindex,ord,substr,trim,uc,unpack', 'from'=>$P0)
+    '!EXPORT'('chomp,chars,:d,:e,:f,index,rindex,substr', 'from'=>$P0)
 .end
 
 
@@ -32,48 +32,6 @@ the size of that file down and to emphasize their generic,
 =cut
 
 .namespace ['Any']
-
-=item capitalize
-
- our Str multi Str::capitalize ( Str $string )
-
-Has the effect of first doing an C<lc> on the entire string, then performing a
-C<s:g/(\w+)/{ucfirst $1}/> on it.
-
-=cut
-
-.sub 'capitalize' :method :multi(_)
-    .local string tmps
-    .local pmc retv
-    .local int len
-
-    retv = new 'Str'
-    tmps = self
-
-    len = length tmps
-    if len == 0 goto done
-
-    downcase tmps
-
-    .local int pos
-    .local string s1
-    pos = 0
-  next_word:
-    pos = find_cclass .CCLASS_LOWERCASE, tmps, pos, len
-    s1 = substr tmps, pos, 1
-    upcase s1
-    substr tmps, pos, 1, s1
-    len = length tmps
-    pos+=1
-    if pos == len goto done
-    pos = find_not_cclass .CCLASS_LOWERCASE, tmps, pos, len
-    if pos == len goto done
-    goto next_word
-
-  done:
-    retv = tmps
-    .return (retv)
-.end
 
 .sub 'chars' :method :multi(_)
     $S0 = self
@@ -108,39 +66,6 @@ C<s:g/(\w+)/{ucfirst $1}/> on it.
        retv = new 'Str'
        retv = tmps
        .return (retv)
-.end
-
-=item trim()
-
-Remove leading and trailing whitespace from a string.
-
-=cut
-
-.sub 'trim' :method :multi(_)
-    .local string s
-    .local int start, end, temp, len
-    .local int is_whitespace
-    s = self
-    start = 0
-    end = length s
-    if end == 0 goto donetrailing
-  trimleading:
-    is_whitespace = is_cclass .CCLASS_WHITESPACE, s, start
-    unless is_whitespace goto doneleading
-    inc start
-    goto trimleading
-  doneleading:
-    temp = end
-  trimtrailing:
-    dec temp
-    is_whitespace = is_cclass .CCLASS_WHITESPACE, s, temp
-    unless is_whitespace goto donetrailing
-    end = temp
-    goto trimtrailing
-  donetrailing:
-    len = end - start
-    s = substr s, start, len
-    .return(s)
 .end
 
 =item ':d'()
@@ -260,30 +185,6 @@ file.
     .return ($P0)
 .end
 
-
-=item lc
-
- our Str multi Str::lc ( Str $string )
-
-Returns the input string after converting each character to its lowercase
-form, if uppercase.
-
-=cut
-
-.sub 'lc' :method :multi(_)
-    .local string tmps
-    .local pmc retv
-
-    tmps = self
-    downcase tmps
-
-    retv = new 'Str'
-    retv = tmps
-
-    .return(retv)
-.end
-
-
 =item match()
 
 =cut
@@ -293,29 +194,6 @@ form, if uppercase.
     .local pmc match
     match = x.'!invoke'(self)
     .return(match)
-.end
-
-=item reverse
-
-=cut
-
-.namespace []
-.sub 'reverse' :multi()
-    .param pmc values          :slurpy
-    $I0 = elements values
-    unless $I0 == 1 goto reverse_list
-    $P0 = values[0]
-    .tailcall $P0.'reverse'()
-  reverse_list:
-    values.'!flatten'()
-    .tailcall values.'reverse'()
-.end
-
-.namespace ['Any']
-.sub 'reverse' :method
-    $P0 = self.'split'('')
-    $P0 = $P0.'reverse'()
-    .tailcall $P0.'join'('')
 .end
 
 =item rindex()
@@ -968,112 +846,6 @@ Partial implementation. The :g modifier on regexps doesn't work, for example.
 
   x_fail:
     die "Must pass a non-negative integer to :x()"
-.end
-
-
-=item ord()
-
-=cut
-
-.namespace ['Any']
-.sub 'ord' :method :multi(_)
-    $S0 = self
-    $I0 = ord $S0
-    .return ($I0)
-.end
-
-
-=item uc
-
- our Str multi Str::uc ( Str $string )
-
-Returns the input string after converting each character to its uppercase
-form, if lowercase. This is not a Unicode "titlecase" operation, but a
-full "uppercase".
-
-=cut
-
-.sub 'uc' :method :multi(_)
-    .local string tmps
-    .local pmc retv
-
-    tmps = self
-    upcase tmps
-
-    retv = new 'Str'
-    retv = tmps
-
-    .return(retv)
-.end
-
-=item unpack
-
- our List multi Str::unpack ( Str $template, Str $packval )
-
-Takes a string and expands it out into a list of values.
-
-=cut
-
-.namespace['Any']
-.sub 'unpack' :multi(_, _)
-    .param string template
-    .param string packval
-    .local pmc retv
-    .local int len
-
-    retv = new 'List'
-
-    len = length template
-    if len == 0 goto done
-
-    .local int pos
-    .local int packpos
-    pos = 0
-    packpos = 0
-
-  next_directive:
-    $S0 = substr template, pos, 1
-    if $S0 == 'A' goto ascii
-    if $S0 == 'x' goto skip
-    if $S0 == ' ' goto space
-    goto fail
-
-  ascii:
-    pos += 1
-    if pos == len goto fail
-    $S0 = substr template, pos, 1
-    $I0 = ord $S0
-    $I0 -= 48
-    $S1 = substr packval, packpos, $I0
-    retv.'push'($S1)
-    packpos += $I0
-    pos += 1
-    if pos == len goto done
-    goto next_directive
-
-  skip:
-    pos += 1
-    if pos == len goto fail
-    $S0 = substr template, pos, 1
-    $I0 = ord $S0
-    $I0 -= 48
-    $S1 = substr packval, packpos, $I0
-    packpos += $I0
-    pos += 1
-    if pos == len goto done
-    goto next_directive
-
-  space:
-    pos += 1
-    if pos == len goto done
-    goto next_directive
-
-  done:
-    .return(retv)
-
-  fail:
-    $P0 = new 'Failure'
-    .return ($P0)
 .end
 
 # Local Variables:

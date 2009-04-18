@@ -8,12 +8,39 @@ src/classes/Positional.pir - Positional Role
 
 =cut
 
-.namespace []
+.namespace ['Positional[::T]']
 
-.sub '' :anon :load :init
-    .local pmc positional
-    positional = '!keyword_role'('Positional')
+.sub '_positional_role_body'
+    .param pmc type :optional
+
+    $P0 = get_hll_global ['Positional[::T]'], 'postcircumfix:[ ]'
+    capture_lex $P0
+    $P0 = get_hll_global ['Positional[::T]'], 'of'
+    capture_lex $P0
+    
+    # Capture type.
+    if null type goto no_type
+    type = type.'WHAT'()
+    goto type_done
+  no_type:
+    type = get_hll_global 'Object'
+  type_done:
+    .lex 'T', type
+    
+    # Create role.
+    .local pmc metarole
+    metarole = "!meta_create"("role", "Positional[::T]", 0)
+    .tailcall '!create_parametric_role'(metarole)
 .end
+.sub '' :load :init
+    .local pmc block, signature
+    block = get_hll_global ['Positional[::T]'], '_positional_role_body'
+    signature = new ["Signature"]
+    setprop block, "$!signature", signature
+    signature."!add_param"("T", 1 :named("optional"))
+    "!ADDTOROLE"(block)
+.end
+
 
 =head2 Operators
 
@@ -25,11 +52,11 @@ Returns a list element or slice.
 
 =cut
 
-.namespace ['Positional']
-.sub 'postcircumfix:[ ]' :method
+.sub 'postcircumfix:[ ]' :method :outer('_positional_role_body')
     .param pmc args            :slurpy
     .param pmc options         :slurpy :named
-    .local pmc result
+    .local pmc result, type
+    type = find_lex 'T'
     if args goto do_index
     ## return complete invocant as a list
     .tailcall self.'list'()
@@ -47,9 +74,15 @@ Returns a list element or slice.
   result_fetch:
     result = self[$I0]
     unless null result goto end
+    .local int cur_elems
+    cur_elems = elements self
+  viv_loop:
+    if cur_elems > $I0 goto end
     result = 'undef'()
-    self[$I0] = result
-    goto end
+    setprop result, 'type', type
+    self[cur_elems] = result
+    inc cur_elems
+    goto viv_loop
   result_whatever:
     result = 'list'(self)
     goto end
@@ -69,8 +102,14 @@ Returns a list element or slice.
   slice_index:
     elem = self[$I0]
     unless null elem goto slice_elem
+    cur_elems = elements self
+  viv_loop_slice:
+    if cur_elems > $I0 goto slice_elem
     elem = 'undef'()
-    self[$I0] = elem
+    setprop elem, 'type', type
+    self[cur_elems] = elem
+    inc cur_elems
+    goto viv_loop_slice
   slice_elem:
     push result, elem
     goto slice_loop
@@ -83,6 +122,33 @@ Returns a list element or slice.
   end:
     .return (result)
 .end
+.sub '' :load :init
+    .local pmc block, signature
+    block = get_hll_global ['Positional[::T]'], 'postcircumfix:[ ]'
+    signature = new ["Signature"]
+    setprop block, "$!signature", signature
+    signature."!add_param"("$args", 0 :named("named"))
+    signature."!add_param"("$options", 1 :named("named"))
+.end
+
+
+=item of
+
+Returns the type constraining what may be stored.
+
+=cut
+
+.sub 'of' :method :outer('_positional_role_body')
+    $P0 = find_lex 'T'
+    .return ($P0)
+.end
+.sub '' :load :init
+    .local pmc block, signature
+    block = get_hll_global ['Positional[::T]'], 'of'
+    signature = new ["Signature"]
+    setprop block, "$!signature", signature
+.end
+
 
 .namespace []
 .sub 'postcircumfix:[ ]' :multi(_)
@@ -94,7 +160,7 @@ Returns a list element or slice.
     $I0 = isa invocant, 'Perl6Object'
     if $I0 goto object_method
   foreign:
-    $P0 = get_hll_global ['Positional'], 'postcircumfix:[ ]'
+    $P0 = get_hll_global ['Positional[::T]'], 'postcircumfix:[ ]'
     .tailcall $P0(invocant, args :flat, options :flat :named)
   object_method:
     .tailcall invocant.'postcircumfix:[ ]'(args :flat, options :flat :named)

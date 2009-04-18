@@ -1,19 +1,15 @@
 #! perl
 # Copyright (C) 2009 The Perl Foundation
 
+use 5.008;
 use strict;
 use warnings;
-use 5.008;
+use Getopt::Long;
 
 MAIN: {
-    my %valid_options = (
-        'help'          => 'Display configuration help',
-        'parrot-config' => 'Use configuration given by parrot_config binary',
-        'gen-parrot'    => 'Automatically retrieve and build Parrot',
-    );
-
-    # Get any options from the command line
-    my %options = get_command_options( \%valid_options );
+    my %options;
+    GetOptions(\%options, 'help!', 'parrot-config=s',
+               'gen-parrot!', 'gen-parrot-option=s@');
 
     # Print help if it's requested
     if ($options{'help'}) {
@@ -23,7 +19,12 @@ MAIN: {
 
     # Update/generate parrot build if needed
     if ($options{'gen-parrot'}) {
-        system("$^X build/gen_parrot.pl");
+        my @opts    = @{ $options{'gen-parrot-option'} || [] };
+        my @command = ($^X, "build/gen_parrot.pl", @opts);
+
+        print "Generating Parrot ...\n";
+        print "@command\n\n";
+        system @command;
     }
 
     # Get a list of parrot-configs to invoke.
@@ -66,31 +67,13 @@ END
 }
 
 
-#  Process command line arguments into a hash.
-sub get_command_options {
-    my $valid_options = shift;
-
-    my %options = ();
-    for my $arg (@ARGV) {
-        if ($arg =~ /^--(\w[-\w]*)(?:=(.*))?/ && $valid_options->{$1}) {
-            my ($key, $value) = ($1, $2);
-            $value = 1 unless defined $value;
-            $options{$key} = $value;
-            next;
-        }
-        die qq/Invalid option "$arg".  See "perl Configure.pl --help" for valid options.\n/;
-    }
-    return %options;
-}
-
-
 sub read_parrot_config {
     my @parrot_config_exe = @_;
     my %config = ();
     for my $exe (@parrot_config_exe) {
         no warnings;
         if (open my $PARROT_CONFIG, '-|', "$exe --dump") {
-            print "Reading configuration information from $exe\n";
+            print "\nReading configuration information from $exe ...\n";
             while (<$PARROT_CONFIG>) {
                 if (/(\w+) => '(.*)'/) { $config{$1} = $2 }
             }
@@ -116,7 +99,7 @@ sub create_makefile {
     }
 
     my $outfile = 'Makefile';
-    print "Creating $outfile\n";
+    print "\nCreating $outfile ...\n";
     open(my $MAKEOUT, '>', $outfile) ||
         die "Unable to write $outfile\n";
     print {$MAKEOUT} $maketext;
@@ -145,9 +128,10 @@ Configure.pl - Rakudo Configure
 General Options:
     --help             Show this text
     --gen-parrot       Download and build a copy of Parrot to use
+    --gen-parrot-option='--option=value'
+                       Set parrot config option when using --gen-parrot
     --parrot-config=(config)
                        Use configuration information from config
-
 END
 
     return;

@@ -62,18 +62,37 @@ the Signature.
     attr['multi_invocant'] = 1
   have_mi:
 
+    # Work out any role type that the sigil implies. (Skip for slurpy, though.)
+    $I0 = attr["slurpy"]
+    if $I0 goto sigil_done
+    .local pmc role_type
+    .local string sigil
+    sigil = substr varname, 0, 1
+    if sigil == '$' goto sigil_done
+    if sigil == '@' goto sigil_array
+    if sigil == '%' goto sigil_hash
+    if sigil == ':' goto sigil_done
+    goto sigil_code
+  sigil_array:
+    role_type = get_hll_global 'Positional'
+    goto sigil_done
+  sigil_hash:
+    role_type = get_hll_global 'Associative'
+    goto sigil_done
+  sigil_code:
+    role_type = get_hll_global 'Callable'
+    goto sigil_done
+  sigil_done:
+
     # Get constraints list, which may have class and role types as well as
     # subset types. If we have no unique role or class type, they all become
     # constraints; otherwise, we find the unique type. Finally, we turn the
     # list of constraints into a junction.
     .local pmc cur_list, cur_list_iter, constraints, type, test_item
-    constraints = 'list'()
+    constraints = new 'ResizablePMCArray'
     type = null
     cur_list = attr["type"]
-    unless null cur_list goto have_type_attr
-    $P0 = get_hll_global 'Any'
-    cur_list = 'all'($P0)
-    attr["type"] = cur_list
+    if null cur_list goto cur_list_loop_end
   have_type_attr:
     cur_list = cur_list.'eigenstates'()
     cur_list_iter = iter cur_list
@@ -101,16 +120,31 @@ the Signature.
     type = null
     constraints = cur_list
   cur_list_loop_end:
+
+    # Set parametric type, if any.
+    .local pmc all_types
+    all_types = new 'ResizablePMCArray'
     unless null type goto have_type
+    unless null role_type goto simple_role_type
     type = get_hll_global 'Any'
+    goto done_role_type
+  simple_role_type:
+    type = role_type
+    goto done_role_type
   have_type:
+    if null role_type goto done_role_type
+    type = role_type.'!select'(type)
+  done_role_type:
     attr["nom_type"] = type
     $I0 = elements constraints
     if $I0 == 0 goto no_constraints
-    constraints = 'all'(constraints)
+    $P0 = 'infix:&'(type, constraints :flat)
+    attr["type"] = $P0
+    constraints = 'infix:&'(constraints :flat)
     goto set_constraints
   no_constraints:
-    constraints = null
+    constraints = new 'Undef'
+    attr["type"] = type
   set_constraints:
     attr["cons_type"] = constraints
 
@@ -128,6 +162,11 @@ Ensures that if there is no explicit invocant, we add one.
 =cut
 
 .sub '!add_implicit_self' :method
+    .param pmc type :optional
+    unless null type goto have_type
+    type = get_hll_global 'Object'
+  have_type:
+
     .local pmc params
     params = self.'params'()
     $I0 = elements params
@@ -142,9 +181,7 @@ Ensures that if there is no explicit invocant, we add one.
     $P0['name'] = 'self'
     $P0['invocant'] = 1
     $P0['multi_invocant'] = 1
-    # XXX Need to get type of class/role/grammar method is in.
-    $P1 = get_hll_global 'Object'
-    $P0['nom_type'] = $P1
+    $P0['nom_type'] = type
     unshift params, $P0
 .end
 
@@ -313,7 +350,6 @@ lexicals as needed and performing type checks.
     orig = callerlex[name]
     if sigil == '@' goto param_array
     if sigil == '%' goto param_hash
-    if sigil != '$' goto param_sub
     var = '!CALLMETHOD'('Scalar', orig)
     ##  typecheck the argument unless it's undef (for optional parameter)
     if null optional goto not_optional
@@ -326,22 +362,17 @@ lexicals as needed and performing type checks.
     unless $P0 goto err_param_type
     goto param_val_done
   param_array:
-    $I0 = does orig, 'Positional'
-    if $I0 goto param_array_1
-    $I0 = does orig, 'array'
-    unless $I0 goto err_array
-  param_array_1:
+    $P0 = type.'ACCEPTS'(orig)
+    unless $P0 goto err_array
     var = '!DEREF'(orig)
     var = '!CALLMETHOD'('Array', var)
     goto param_val_done
   param_hash:
-    $I0 = does orig, 'Associative'
-    if $I0 goto param_hash_1
-    $I0 = does orig, 'hash'
-    unless $I0 goto err_hash
-  param_hash_1:
+    $P0 = type.'ACCEPTS'(orig)
+    unless $P0 goto err_hash
     var = '!DEREF'(orig)
     var = '!CALLMETHOD'('Hash', var)
+    goto param_val_done
   param_val_done:
     ## handle readonly/copy traits
     $S0 = param['readtype']
@@ -373,10 +404,6 @@ lexicals as needed and performing type checks.
     ## place the updated variable back into lex
     callerlex[name] = var
     goto param_loop
-  param_sub:
-    $I0 = isa orig, 'Sub'
-    unless $I0 goto err_sub
-    if $I0 goto param_loop
 
   param_done:
   end:
@@ -393,13 +420,11 @@ lexicals as needed and performing type checks.
     errmsg = 'Parameter type check failed'
     goto err_throw
   err_array:
-    errmsg = 'Non-Positional argument'
+    errmsg = 'Non-Positional argument or Positional of wrong element type'
     goto err_throw
   err_hash:
-    errmsg = 'Non-Associative argument'
+    errmsg = 'Non-Associative argument or Associative of wrong value type'
     goto err_throw
-  err_sub:
-    errmsg = 'Non-Callable argument'
   err_throw:
     .local string callername
     callername = callersub
