@@ -2034,6 +2034,15 @@ method scoped($/) {
                 $past.viviself( $( $<fulltypename>[0] ).clone() );
             }
         }
+        elsif $past.isa(PAST::Block) && $<fulltypename> {
+            $past.loadinit().push(PAST::Op.new(
+                :pasttype('call'),
+                :name('!sub_trait_verb'),
+                PAST::Var.new( :name('block'), :scope('register') ),
+                'trait_verb:returns',
+                $( $<fulltypename>[0] )
+            ));
+        }
     }
     make $past;
 }
@@ -2748,6 +2757,9 @@ method EXPR($/, $key) {
         # Need to make it flatten the argument.
         my $past := $( $/[0] );
         $past.flat(1);
+        if $past<sigil> eq '%' {
+            $past.named(1);
+        }
         make $past;
     }
     elsif ~$type eq 'infix://=' || ~$type eq 'infix:||=' || ~$type eq 'infix:&&=' {
