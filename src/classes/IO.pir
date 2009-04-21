@@ -19,7 +19,7 @@ This file implements the IO file handle class.
     p6meta.'new_class'('IOIterator', 'parent'=>'Perl6Object', 'attr'=>'$!IO')
 
     $P0 = get_hll_namespace ['IO']
-    '!EXPORT'('readline', 'from'=>$P0)
+    '!EXPORT'('get', 'from'=>$P0)
 .end
 
 =head2 Methods
@@ -28,13 +28,13 @@ This file implements the IO file handle class.
 
 .namespace ['IO']
 
-=item readline
+=item get
 
 Reads a line from the file handle.
 
 =cut
 
-.sub 'readline' :method
+.sub 'get' :method
     $P0 = get_hll_global 'IOIterator'
     $P0 = $P0.'new'('IO' => self)
     .return ($P0)
@@ -55,8 +55,7 @@ Gets the iterator for the IO object.
 
 .namespace []
 .sub 'prefix:=' :multi('IO')
-    .param pmc io
-    .tailcall io.'readline'()
+    'die'("prefix:<=> has been superseeded by $handle.lines and $handle.get")
 .end
 
 =back
