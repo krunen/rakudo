@@ -121,10 +121,12 @@ token afterws {
 token pod_comment {
     ^^ '=' <.unsp>?
     [
+    | 'begin' \h+ 'END' >> ::
+        [ .*? \n '=' <.unsp>? 'end' \h+ 'END' >> \N* || .* ]
     | 'begin' \h+ <identifier> ::
         [
         ||  .*? \n '=' <.unsp>? 'end' \h+ $<identifier> >> \N* {*} #= tagged
-        ||  .*                                                 {*} #= end
+        ||  <.panic: "=begin without matching =end">
         ]
     | 'begin' >> :: \h* 
         [ $$ || '#' || <.panic: "Unrecognized token after =begin"> ]
@@ -276,7 +278,10 @@ rule statement_control {
 rule if_statement {
     $<sym>=[if<.nofun>]
     <xblock>
-    [ 'elsif' <xblock> ]*
+    [ 
+        [ <!before 'else'\s*'if'> || <.panic: "Please use 'elsif'"> ]
+        'elsif' <xblock> 
+    ]*
     [ 'else' <pblock> ]?
     {*}
 }
@@ -339,7 +344,7 @@ rule for_statement {
 }
 
 rule use_statement {
-    $<sym>=[use] <name>
+    $<sym>=[use] <name><colonpair>*
     <EXPR>?
     {*}
 }
@@ -415,15 +420,15 @@ rule multisig {
 }
 
 rule routine_def {
-    [ <deflongname=identifier> ]? [ <multisig> | <trait> ]*
-    <block>
+    [ <deflongname=longname> ]? [ <multisig> | <trait> ]*
     {*}
+    <block>
     || <.panic: "Malformed routine definition">
 }
 
 rule method_def {
     [
-    | $<longname>=[<[ ! ]>?<name>] [ <multisig> | <trait> ]*
+    | $<deflongname>=[<[ ! ]>?<longname>] [ <multisig> | <trait> ]*
     | <multisig> <trait>*
     | ::
     ]
@@ -452,7 +457,7 @@ rule trait_auxiliary {
 rule trait_verb {
     [
     | $<sym>=[of|returns] <typename>
-    | $<sym>=[handles] <EXPR>
+    | $<sym>=[handles] <noun>
     ]
     {*}
 }
@@ -569,18 +574,20 @@ token expect_term {
 token post {
     <!afterws>
     [ <.unsp> || \\ ]?
+    <postfix_prefix_meta_operator>?
     [
     | <dotty> {*}                                #= dotty
     | <postcircumfix> {*}                        #= postcircumfix
     ]
 }
 
+token postfix_prefix_meta_operator { '»' | '>>' }
 
 token dotty {
     [
     | '.VAR' {*}                                      #= VAR
     | '.' <.unspacey> <dottyop> {*}                   #= .
-    | ('.' <[+*?^:]>) <.unspacey> <dottyop> {*}       #= .*
+    | ('.' <[+*?^:=]>) <.unspacey> <dottyop> {*}      #= .*
     | '!' <methodop> {*}                              #= !
     ]
 }
@@ -595,7 +602,7 @@ token dottyop {
 token methodop {
     [
     | <name>
-    | <?before '$' | '@' > <variable>
+    | <?before '$' | '@' | '&' > <variable>
     | <?before <[ ' " ]> > <quote>
 #       { $<quote> ~~ /\W/ or .panic("Useless use of quotes") }
     ] <.unsp>?
@@ -612,7 +619,8 @@ token postcircumfix {
     | '(' <semilist> ')' {*}                          #= ( )
     | '[' <semilist> ']' {*}                          #= [ ]
     | '{' <semilist> '}' {*}                          #= { }
-    | <?before '<' > <quote_expression: :w :q> {*}    #= < >
+    | <?before '<<' | '«' > <quote_expression: :ww :qq> {*} #= < >
+    | <?before '<' >  <quote_expression: :w :q> {*}   #= < >
 }
 
 
@@ -674,7 +682,7 @@ token args {
 ##  XXX: cheat until we get term:pi, term:rand, term:undef, etc.
 token named_0ary {
     | [pi|rand|undef|nothing|time|next|last|continue|break|Inf|NaN] >>
-    | ['...'|'???'|'!!!'|'=<>']
+    | ['...'|'???'|'!!!']
 }
 
 rule package_declarator {
@@ -690,6 +698,7 @@ rule package_def {
         {{
             $P0 = match['module_name']
             $P0 = $P0[0]
+            $P0 = $P0['longname']
             $P0 = $P0['name']
             $S0 = $P0.'text'()
             match.'add_type'($S0)
@@ -720,14 +729,26 @@ rule enum_declarator {
     ]?
 
     [
-    | <?before '[' > <circumfix> {*}             #= circumfix
+    | <?before '(' > <circumfix> {*}             #= circumfix
     | <?before '<' | '«' > <quote> {*}          #= quote
     ]
 }
 
 rule scope_declarator {
     $<sym>=[my|our|state|constant|has]
+    {{
+        # XXX Becomes context variable.
+        $P0 = match['sym']
+        $S0 = $P0.'text'()
+        $P1 = get_hll_global ['Perl6';'Grammar';'Actions'], '@?SCOPE'
+        unshift $P1, $S0
+    }}
     <scoped>
+    {{
+        # XXX Goes away when we have context vars.
+        $P1 = get_hll_global ['Perl6';'Grammar';'Actions'], '@?SCOPE'
+        $S0 = shift $P1
+    }}
     {*}
 }
 
@@ -748,6 +769,7 @@ token declarator {
     | <routine_declarator>
     | <regex_declarator>
     | <type_declarator>
+    | <constant_declarator>
     ]
     {*}
 }
@@ -760,13 +782,38 @@ token variable_declarator {
     {*}
 }
 
+token constant_declarator {
+    <identifier>
+    <?{{
+        # XXX <?{ $*SCOPE eq 'constant' }>
+        $P0 = get_hll_global ['Perl6';'Grammar';'Actions'], '@?SCOPE'
+        $S0 = $P0[0]
+        $I0 = $S0 == 'constant'
+        .return ($I0)
+    }}>
+    <!{{
+        # XXX <!{ $¢.is_name($<identifier>.Str) }>
+        $P0 = match['identifier']
+        $S0 = $P0.'text'()
+        .tailcall match.'is_type'($S0)
+    }}>
+    <.ws>
+    <trait>*
+    {*}
+}
+
+
 token variable {
     <?sigil>
     [
-    | <sigil> <twigil>? <desigilname> {*}                #= desigilname
-    | <special_variable> {*}                             #= special_variable
-    | <sigil> $<matchidx>=[\d+] {*}                      #= $0
-    | <sigil> <?before '<'> <postcircumfix> {*}          #= $<>
+    || <sigil> '.' <longname> 
+           [ [<.unsp> | '\\']? <?before '('> <postcircumfix> ]?
+           {*}                                            #= methcall
+    || '&' <twigil>? <sublongname=subshortname> {*}       #= subnoun
+    || <sigil> <twigil>? <desigilname> {*}                #= desigilname
+    || <special_variable> {*}                             #= special_variable
+    || <sigil> $<matchidx>=[\d+] {*}                      #= $0
+    || <sigil> <?before '<'> <postcircumfix> {*}          #= $<>
     ]
 }
 
@@ -793,8 +840,8 @@ token circumfix {
 }
 
 token module_name {
-    <name>
-    [
+    <longname>
+    $<role_params>=[
         :dba('generic role')
         <?{{
             ## ($+PKGDECL//'') eq 'role' (more like (@?PKGDECL[0]//'') eq 'role')
@@ -805,6 +852,10 @@ token module_name {
         }}>
         '[' ~ ']' <signature>
     ]?
+}
+
+token longname {
+    <name> <colonpair>*
 }
 
 token name {
@@ -821,6 +872,21 @@ token morename {
         | '(' <EXPR> ')'
         ]
     ]?
+}
+
+token subshortname {
+    <category> <colonpair>+
+}
+
+token category { 'infix' | 'prefix' | 'postfix' | 'circumfix' | 'postcircumfix' | 'trait_auxiliary' }
+
+## used internally to convert p6 opnames to internal ones
+regex opname { 
+    <category> ':'
+    [ '<<' \s* [ ([\S+]**[\s+]) \s* ] '>>'
+    | '«' \s* [ ([\S+]**[\s+]) \s* ] '»'
+    | '<' \s* [ ([\S+]**[\s+]) \s* ] '>'
+    ]
 }
 
 token value {
@@ -851,28 +917,32 @@ token quote {
     [
     | <.before \'>     <quote_expression: :q>
     | <.before '"' >   <quote_expression: :qq>
-    | <.before '<<' >  <quote_expression: :ww :qq>
+    | <.before '<<' | '«'>  <quote_expression: :ww :qq>
     | <.before '<' >   <quote_expression: :w :q>
-    # | <.before '«' > <quote_expression: :ww :qq>  FIXME: unicode
     | <.before '/'>    <quote_expression: :regex>
-    | [m|rx] <.ws> 
-        [ [':P5'|':Perl5'] <.ws> <quote_expression: :regex :P5>
+    | [m|rx] <.nofun> <.ws> 
+        [ [':P5'|':Perl5'] <.nofun> <.ws> <quote_expression: :regex :P5>
         |              <quote_expression: :regex>
         ]
+    | qq [ <.ws> ':' ]?
+        [ w         <.nofun> <.ws> <quote_expression: :qq :w>
+        | $<x>=[x?] <.nofun> <.ws> <quote_expression: :qq>
+        ]
     | q [ <.ws> ':' ]?
-        [ q <.ws>      <quote_expression: :qq>
-        | w <.ws>      <quote_expression: :q :w>
-        | 'PIR' <.ws>  <quote_expression: :PIR>
-        | x <.ws>      <.panic: "qx not yet implemented">
-        |   <.ws>      <quote_expression: :q>
+        [ q         <.nofun> <.ws> <quote_expression: :qq>
+        | w         <.nofun> <.ws> <quote_expression: :q :w>
+        | PIR       <.nofun> <.ws> <quote_expression: :PIR>
+        | $<x>=[x?] <.nofun> <.ws> <quote_expression: :q>
         ]
     | Q [ <.ws> ':' ]?
-        [ 'PIR' <.ws>  <quote_expression: :PIR>
-        | 'q'   <.ws>  <quote_expression: :q>
-        | 'qq'  <.ws>  <quote_expression: :qq>
-        | 'b'   <.ws>  <quote_expression: :b>
-        |       <.ws>  <quote_expression: >
+        [ PIR       <.nofun> <.ws> <quote_expression: :PIR>
+        | q         <.nofun> <.ws> <quote_expression: :q>
+        | qq        <.nofun> <.ws> <quote_expression: :qq>
+        | b         <.nofun> <.ws> <quote_expression: :b>
+        | $<x>=[x?] <.nofun> <.ws> <quote_expression: >
         ]
+    | s <.nofun> <.ws> <quote_expression: :q> 
+        <.panic: 's/// not implemented, try .subst as workaround'>
     ]
     {*}
 }

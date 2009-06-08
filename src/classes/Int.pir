@@ -17,7 +17,7 @@ Int - Perl 6 integers
 .sub 'onload' :anon :init :load
     .local pmc p6meta, intproto
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
-    intproto = p6meta.'new_class'('Int', 'parent'=>'Integer Any')
+    intproto = p6meta.'new_class'('Int', 'parent'=>'parrot;Integer Any')
     p6meta.'register'('Integer', 'parent'=>intproto, 'protoobject'=>intproto)
     p6meta.'register'('BigInt', 'parent'=>intproto, 'protoobject'=>intproto)
 
@@ -28,7 +28,7 @@ Int - Perl 6 integers
 
 =item Scalar
 
-This is a value type, so just returns itself.
+This is a value type, so just returns its dereferenced self.
 
 =cut
 
@@ -73,15 +73,15 @@ Increment and Decrement Methods
 =cut
 
 .sub 'pred' :method
-    $P0 = clone self
-    dec $P0
-    .return ($P0)
+    $N0 = self
+    dec $N0
+    .tailcall '!upgrade_to_num_if_needed'($N0)
 .end
 
 .sub 'succ' :method
-    $P0 = clone self
-    inc $P0
-    .return ($P0)
+    $N0 = self
+    inc $N0
+    .tailcall '!upgrade_to_num_if_needed'($N0)
 .end
 
 

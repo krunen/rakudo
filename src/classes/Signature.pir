@@ -36,7 +36,7 @@ Again, this probably isn't definitive either, but it'll get us going.
     load_bytecode 'PCT.pbc'
     .local pmc p6meta
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
-    p6meta.'new_class'('Signature', 'parent'=>'Any', 'attr'=>'@!params')
+    p6meta.'new_class'('Signature', 'parent'=>'Any', 'attr'=>'@!params $!default_type')
 .end
 
 =head2 Methods
@@ -89,7 +89,7 @@ the Signature.
     # constraints; otherwise, we find the unique type. Finally, we turn the
     # list of constraints into a junction.
     .local pmc cur_list, cur_list_iter, constraints, type, test_item
-    constraints = new 'ResizablePMCArray'
+    constraints = root_new ['parrot';'ResizablePMCArray']
     type = null
     cur_list = attr["type"]
     if null cur_list goto cur_list_loop_end
@@ -123,10 +123,12 @@ the Signature.
 
     # Set parametric type, if any.
     .local pmc all_types
-    all_types = new 'ResizablePMCArray'
+    all_types = root_new ['parrot';'ResizablePMCArray']
     unless null type goto have_type
     unless null role_type goto simple_role_type
-    type = get_hll_global 'Any'
+    type = getattribute self, '$!default_type'
+    unless null type goto done_role_type
+    type = get_hll_global 'Object'
     goto done_role_type
   simple_role_type:
     type = role_type
@@ -143,7 +145,7 @@ the Signature.
     constraints = 'infix:&'(constraints :flat)
     goto set_constraints
   no_constraints:
-    constraints = new 'Undef'
+    constraints = root_new ['parrot';'Undef']
     attr["type"] = type
   set_constraints:
     attr["cons_type"] = constraints
@@ -152,6 +154,19 @@ the Signature.
     .local pmc params
     params = self.'params'()
     push params, attr
+.end
+
+
+=item !set_default_param_type
+
+Sets the default parameter type if none is supplied (since it differs for
+blocks and routines).
+
+=cut
+
+.sub '!set_default_param_type' :method
+    .param pmc type
+    setattribute self, '$!default_type', type
 .end
 
 
@@ -177,7 +192,7 @@ Ensures that if there is no explicit invocant, we add one.
     .return ()
 
   add_implicit_self:
-    $P0 = new 'Hash'
+    $P0 = root_new ['parrot';'Hash']
     $P0['name'] = 'self'
     $P0['invocant'] = 1
     $P0['multi_invocant'] = 1
@@ -216,7 +231,7 @@ Get the array of parameter describing hashes.
 .sub 'params' :method
     $P0 = getattribute self, "@!params"
     unless null $P0 goto done
-    $P0 = new 'ResizablePMCArray'
+    $P0 = root_new ['parrot';'ResizablePMCArray']
     setattribute self, "@!params", $P0
   done:
     .return ($P0)
@@ -230,7 +245,7 @@ Gets a perl representation of the signature.
 
 .sub 'perl' :method
     .local pmc s
-    s = new 'Str'
+    s = new ['Str']
     concat s, ':('
 
     # Output parameters.
@@ -267,13 +282,32 @@ Gets a perl representation of the signature.
     # First any nominal type.
     $P0 = cur_param["nom_type"]
     if null $P0 goto any_type
+    $I0 = isa $P0, 'Role'
+    unless $I0 goto type_as_is
+    $S0 = cur_param["name"]
+    $S0 = substr $S0, 0, 1
+    if $S0 == '$' goto type_as_is
+    $S1 = $P0.'perl'()
+    $I0 = index $S1, '['
+    inc $I0
+    $I1 = length $S1
+    $I1 -= $I0
+    dec $I1
+    $S1 = substr $S1, $I0, $I1
+    concat s, $S1
+    goto type_done
+  type_as_is:
     $P0 = $P0.'perl'()
+    if $P0 == 'Positional' goto no_type
+    if $P0 == 'Associative' goto no_type
+    if $P0 == 'Callable' goto no_type
     concat s, $P0
     goto type_done
   any_type:
     concat s, "Any"
   type_done:
     concat s, " "
+  no_type:
 
     # If it's slurpy, the *.
     $P0 = cur_param["slurpy"]
@@ -332,14 +366,17 @@ lexicals as needed and performing type checks.
     callerlex = $P0['lexpad';1]
     getprop callersig, '$!signature', callersub
     if null callersig goto end
-    .local pmc it
-    $P0 = callersig.'params'()
-    if null $P0 goto end
-    it = iter $P0
+    .local pmc params
+    params = getattribute callersig, "@!params"
+    if null params goto end
+    .local int cur_param, count
+    count = elements params
+    cur_param = -1
   param_loop:
-    unless it goto param_done
+    inc cur_param
+    unless cur_param < count goto param_done
     .local pmc param
-    param = shift it
+    param = params[cur_param]
     .local string name, sigil
     name = param['name']
     if name == 'self' goto param_loop
@@ -363,14 +400,14 @@ lexicals as needed and performing type checks.
     goto param_val_done
   param_array:
     $P0 = type.'ACCEPTS'(orig)
-    unless $P0 goto err_array
-    var = '!DEREF'(orig)
+    unless $P0 goto err_param_type_non_scalar
+    var = descalarref orig
     var = '!CALLMETHOD'('Array', var)
     goto param_val_done
   param_hash:
     $P0 = type.'ACCEPTS'(orig)
-    unless $P0 goto err_hash
-    var = '!DEREF'(orig)
+    unless $P0 goto err_param_type_non_scalar
+    var = descalarref orig
     var = '!CALLMETHOD'('Hash', var)
     goto param_val_done
   param_val_done:
@@ -379,7 +416,7 @@ lexicals as needed and performing type checks.
     if $S0 == 'rw' goto param_readtype_done
     if $S0 == 'copy' goto param_readtype_copy
     ne_addr orig, var, param_readtype_var
-    var = new 'ObjectRef', var
+    var = root_new ['parrot';'ObjectRef'], var
   param_readtype_var:
     $P0 = get_hll_global ['Bool'], 'True'
     setprop var, 'readonly', $P0
@@ -390,12 +427,12 @@ lexicals as needed and performing type checks.
     var = clone var
     goto param_readtype_done
   param_readtype_copy_array:
-    $P0 = new 'Perl6Array'
+    $P0 = new ['Perl6Array']
     'infix:='($P0, var)
     var = $P0
     goto param_readtype_done
   param_readtype_copy_hash:
-    $P0 = new 'Perl6Hash'
+    $P0 = new ['Perl6Hash']
     'infix:='($P0, var)
     var = $P0
   param_readtype_done:
@@ -409,6 +446,8 @@ lexicals as needed and performing type checks.
   end:
     .return ()
 
+  err_param_type_non_scalar:
+    set var, orig
   err_param_type:
     # Is it a junctional parameter?
     $I0 = isa var, 'Junction'
@@ -417,15 +456,12 @@ lexicals as needed and performing type checks.
     'return'($P0)
   not_junctional:
     .local string errmsg
-    errmsg = 'Parameter type check failed'
-    goto err_throw
-  err_array:
-    errmsg = 'Non-Positional argument or Positional of wrong element type'
-    goto err_throw
-  err_hash:
-    errmsg = 'Non-Associative argument or Associative of wrong value type'
-    goto err_throw
-  err_throw:
+    errmsg = 'Parameter type check failed; expected something matching '
+    $S0 = type.'WHAT'()
+    concat errmsg, $S0
+    concat errmsg, ' but got something of type '
+    $S0 = orig.'WHAT'()
+    concat errmsg, $S0
     .local string callername
     callername = callersub
     if callername goto have_callername

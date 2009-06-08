@@ -22,7 +22,7 @@ Implementation is a bit different from other basic objects (Int...) because
 .sub 'onload' :anon :init :load
     .local pmc p6meta, complexproto
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
-    complexproto = p6meta.'new_class'('Perl6Complex', 'parent'=>'Complex Any', 'name'=>'Complex')
+    complexproto = p6meta.'new_class'('Perl6Complex', 'parent'=>'parrot;Complex Any', 'name'=>'Complex')
     complexproto.'!IMMUTABLE'()
     p6meta.'register'('Complex', 'parent'=>complexproto, 'protoobject'=>complexproto)
 
@@ -124,7 +124,7 @@ Casts a value to a complex number.
     $P0 = deref self
     .return ($P0)
   cast:
-    $P0 = new 'Complex'
+    $P0 = root_new ['parrot';'Complex']
     $N0 = self
     $P0[0] = $N0
     .return ($P0)
@@ -145,7 +145,7 @@ Casts a value to a complex number.
 .sub 'postfix:i' :multi(_)
     .param pmc a
     .local pmc proto
-    $P0 = new 'Complex'
+    $P0 = root_new ['parrot';'Complex']
     $P0[1] = 1.0
     mul $P0, $P0, a
     .return ($P0)

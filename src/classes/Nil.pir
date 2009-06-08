@@ -25,8 +25,8 @@ src/classes/Nil.pir - Nil objects
 =cut
 
 .namespace ['Nil']
-.sub 'list' :method
-    $P0 = new 'List'
+.sub 'list' :method :subid('')
+    $P0 = new ['List']
     .return ($P0)
 .end
 
@@ -52,7 +52,7 @@ src/classes/Nil.pir - Nil objects
 
 .namespace ['Nil']
 .sub 'Scalar' :method
-    $P0 = new 'Failure'
+    $P0 = new ['Failure']
     .return ($P0)
 .end
 

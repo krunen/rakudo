@@ -16,7 +16,7 @@ src/classes/Range.pir - methods for the Range class
     rangeproto = p6meta.'new_class'('Range', 'parent'=>'Any', 'attr'=>'$!by $!from $!to $!from_exclusive $!to_exclusive')
     
     $P0 = p6meta.'get_parrotclass'(rangeproto)
-    $P1 = new 'ResizablePMCArray'
+    $P1 = root_new ['parrot';'ResizablePMCArray']
     push $P1, 'postcircumfix:[ ]'
     $P0.'resolve_method'($P1)
     $P0 = get_hll_global 'Positional'
@@ -41,7 +41,7 @@ just return a clone of the Range.
 .sub '' :method('list')
     .local pmc range_it, result
     range_it = self.'iterator'()
-    result = new 'List'
+    result = new ['List']
   range_loop:
     unless range_it goto range_end
     $P0 = shift range_it
@@ -135,7 +135,7 @@ Construct a range from the endpoints.
 =cut
 
 .namespace []
-.sub 'infix:..'
+.sub 'infix:..' :multi()
     .param pmc from
     .param pmc to
     .local pmc proto
@@ -143,7 +143,7 @@ Construct a range from the endpoints.
     .tailcall proto.'new'('from'=>from, 'to'=>to)
 .end
 
-.sub 'infix:^..'
+.sub 'infix:^..' :multi()
     .param pmc from
     .param pmc to
     .local pmc proto, true
@@ -152,7 +152,7 @@ Construct a range from the endpoints.
     .tailcall proto.'new'('from'=>from, 'to'=>to, 'from_exclusive'=>true)
 .end
 
-.sub 'infix:..^'
+.sub 'infix:..^' :multi()
     .param pmc from
     .param pmc to
     .local pmc proto, true
@@ -161,7 +161,7 @@ Construct a range from the endpoints.
     .tailcall proto.'new'('from'=>from, 'to'=>to, 'to_exclusive'=>true)
 .end
 
-.sub 'infix:^..^'
+.sub 'infix:^..^' :multi()
     .param pmc from
     .param pmc to
     .local pmc proto, true

@@ -11,8 +11,23 @@ VERSION = PARROT_VERSION;
 #  include <unicode/uchar.h>
 #endif
 
+/* We cache a couple of type IDs for an op that we hit on every method call. */
+static INTVAL p6s_id = 0;
+static INTVAL or_id = 0;
+
+/*
+
+=item rebless_subclass(in PMC, in PMC)
+
+Takes PMC $1 and reblesses it in-place, without any change of address, to be
+an instance of class $2, where $2 is a subclass of the class of $1.
+
+=cut
+
+*/
 inline op rebless_subclass(in PMC, in PMC) :base_core {
     PMC *value;
+    INTVAL p6opaque = pmc_type(interp, string_from_literal(interp, "P6opaque"));
 
     /* First verify that the object's class is a superclass of the one we're
      * to re-bless it into. While we're at it, count the number of attributes
@@ -86,8 +101,11 @@ inline op rebless_subclass(in PMC, in PMC) :base_core {
         for (i = 0; i < new_attribs; i++)
             VTABLE_set_pmc_keyed_int(interp, PARROT_OBJECT(value)->attrib_store,
                 i, pmc_new(interp, enum_class_Undef));
+
+        /* And make sure the new object is of the right type. */
+        new_ins->vtable = interp->vtables[p6opaque];
     }
-    else if (value->vtable->base_type != enum_class_Object
+    else if ((value->vtable->base_type != enum_class_Object && value->vtable->base_type != p6opaque)
             || current_class->vtable->base_type != enum_class_Class) {
         /* If we're here, we found a really odd state - the class claims to be
          * a standard Parrot one but the object it supposedly created is not.
@@ -112,13 +130,23 @@ inline op rebless_subclass(in PMC, in PMC) :base_core {
     goto NEXT();
 }
 
-inline op find_lex_lift(out PMC, in STR) :base_core {
+/*
+
+=item find_lex_skip_current(out PMC, in STR)
+
+Finds the lexical named $2 and returns it. However, unlike find_lex this op
+skips the current sub and starts looking immediately at its outers.
+
+=cut
+
+*/
+inline op find_lex_skip_current(out PMC, in STR) :base_core {
     Parrot_Context *ctx = CONTEXT(interp);
     $1 = PMCNULL;
     
     while (ctx->outer_ctx) {
-        const Parrot_Context   * const outer   = ctx->outer_ctx;
-        PMC                    * const lex_pad = outer->lex_pad;
+        Parrot_Context   * const outer   = ctx->outer_ctx;
+        PMC              * const lex_pad = outer->lex_pad;
 
         if (!PMC_IS_NULL(lex_pad) && VTABLE_exists_keyed_str(interp, lex_pad, $2)) {
             $1 = VTABLE_get_pmc_keyed_str(interp, lex_pad, $2);
@@ -132,12 +160,23 @@ inline op find_lex_lift(out PMC, in STR) :base_core {
 }
 
 
+/*
+
+=item inline op is_uprop(out INT, in STR, in STR, in INT)
+
+Sets a true value in $1 if character $4 in string $3 has the unicode property
+named $2.
+
+=cut
+
+*/
 inline op is_uprop(out INT, in STR, in STR, in INT) :base_core {
 #if PARROT_HAS_ICU
     char     *cstr;
-    INTVAL   ord;
-    int32_t  strwhich, ordwhich;
-    opcode_t *handler;
+    INTVAL    ord;
+    int32_t   strwhich, ordwhich;
+    UProperty strprop;
+    opcode_t  *handler;
 
     if ($4 > 0 && (UINTVAL)$4 == ($3->strlen)) {
         $1 = 0;
@@ -159,7 +198,7 @@ inline op is_uprop(out INT, in STR, in STR, in INT) :base_core {
     }
 
     /* try bidi tests */
-    if (strncmp(cstr, "Bidi", 2) == 0) {
+    if (strncmp(cstr, "Bidi", 4) == 0) {
         strwhich = u_getPropertyValueEnum(UCHAR_BIDI_CLASS, cstr+4);
         ordwhich = u_getIntPropertyValue(ord, UCHAR_BIDI_CLASS);
         if (strwhich != UCHAR_INVALID_CODE) {
@@ -179,9 +218,9 @@ inline op is_uprop(out INT, in STR, in STR, in INT) :base_core {
     }
 
     /* try property */
-    strwhich = u_getPropertyEnum(cstr);
-    if (strwhich != UCHAR_INVALID_CODE) {
-        $1 = (u_hasBinaryProperty(ord, strwhich) != 0);
+    strprop = u_getPropertyEnum(cstr);
+    if (strprop != UCHAR_INVALID_CODE) {
+        $1 = (u_hasBinaryProperty(ord, strprop) != 0);
         Parrot_str_free_cstring(cstr);
         goto NEXT();
     }
@@ -209,6 +248,131 @@ inline op is_uprop(out INT, in STR, in STR, in INT) :base_core {
 #endif
 }
 
+
+/*
+
+=item get_next_candidate_info(out PMC, out PMC, out PMC)
+
+Looks through the outers of our caller, until we find a Routine, for a lexical
+named __CANDIDATE_LIST__. Hands this lexical back in $1, the PMC for the Routine
+it was found in as $2 and the lexpad of that routine as $3. This is a fairly
+special-purpose op that does just what callwith, callsame, nextwith and
+nextsame need.
+
+=cut
+
+*/
+inline op get_next_candidate_info(out PMC, out PMC, out PMC) :base_core {
+    Parrot_Context *ctx         = CONTEXT(interp)->caller_ctx;
+    STRING         *name        = string_from_literal(interp, "__CANDIDATE_LIST__");
+    STRING         *wrapper     = string_from_literal(interp, "$!wrapper_block");
+    PMC            *last_lexpad = PMCNULL;
+    PMC            *last_sub    = PMCNULL;
+
+    while (ctx) {
+        /* See if we've found a candidate list. */
+        PMC *lexpad = ctx->lex_pad;
+        PMC *clist  = VTABLE_get_pmc_keyed_str(interp, lexpad, name);
+        if (!PMC_IS_NULL(clist)) {
+            /* Found. Set results and we're done. */
+            $1 = clist;
+            if (PMC_IS_NULL(VTABLE_getprop(interp, ctx->current_sub, wrapper))) {
+                $2 = ctx->current_sub;
+                $3 = lexpad;
+            }
+            else {
+                $2 = last_sub;
+                $3 = last_lexpad;
+            }
+            break;
+        }
+        else {
+            /* Not found; keep looking. */
+            last_sub = ctx->current_sub;
+            last_lexpad = lexpad;
+            ctx = ctx->outer_ctx;
+        }
+    }
+    if (!ctx)
+        $1 = $2 = $3 = PMCNULL;
+
+    goto NEXT();
+}
+
+
+/*
+
+=item transform_to_p6opaque(inout PMC)
+
+Takes PMC $1 and swaps out its Object vtable for a P6opaque vtable. (Expect
+this op to be temporary, but for now it lets us get things in the right
+kinda direction.)
+
+=cut
+
+*/
+inline op transform_to_p6opaque(inout PMC) :base_core {
+    /* Sanity check. */
+    if ($1->vtable->base_type == enum_class_Object) {
+        INTVAL type_id = pmc_type(interp, string_from_literal(interp, "P6opaque"));
+        $1->vtable = interp->vtables[type_id];
+        goto NEXT();
+    }
+    else {
+        opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL, 
+            EXCEPTION_INVALID_OPERATION, "Can only transform an Object to p6opaque");
+        goto ADDRESS(handler);
+    }
+}
+
+
+/*
+
+=item deobjectref(out PMC, in PMC)
+
+If $2 is an ObjectRef, then follow the chain of ObjectRef
+references until we get to a value of some sort (which could be
+a Perl6Scalar).
+
+=cut
+
+*/
+inline op deobjectref(out PMC, in PMC) :base_core {
+    PMC * ref;
+    if (!p6s_id) {
+        p6s_id = pmc_type(interp, string_from_literal(interp, "Perl6Scalar"));
+        or_id  = pmc_type(interp, string_from_literal(interp, "ObjectRef"));
+    }
+    ref = $2;
+    while (ref->vtable->base_type == or_id)
+        ref = VTABLE_get_pmc(interp, ref);
+    $1 = ref;
+    goto NEXT();
+}
+
+/*
+
+=item descalarref(out PMC, in PMC)
+
+If $2 is an ObjectRef or Perl6Scalar, then follow the chain of
+ObjectRef/Perl6Scalar references until we get to the real
+underlying value.
+
+=cut
+
+*/
+inline op descalarref(out PMC, in PMC) :base_core {
+    PMC * ref;
+    if (!p6s_id) {
+        p6s_id = pmc_type(interp, string_from_literal(interp, "Perl6Scalar"));
+        or_id  = pmc_type(interp, string_from_literal(interp, "ObjectRef"));
+    }
+    ref = $2;
+    while (ref->vtable->base_type == or_id || ref->vtable->base_type == p6s_id)
+        ref = VTABLE_get_pmc(interp, ref);
+    $1 = ref;
+    goto NEXT();
+}
 
 /*
  * Local variables:

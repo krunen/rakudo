@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# Copyright (C) 2008, The Perl Foundation.
+# Copyright (C) 2008-2009, The Perl Foundation.
 # $Id$
 
 use strict;
@@ -50,9 +50,6 @@ my @ops = qw(
   =:=       'True'      comp
   !=:=      'False'     comp
 );
-
-
-my $output = $ARGV[0] || '-';
 
 
 my $assignfmt =
@@ -115,9 +112,8 @@ while (@ops) {
     my $is_chaining = $op_type eq 'comp' ? 1 : 0;
     push @code, qq(
         .sub 'infix:X${opname}'
-            .param pmc a
-            .param pmc b
-            .tailcall '!CROSSMETAOP'('$opname', $identity, $is_chaining, a, b)
+            .param pmc args :slurpy
+            .tailcall '!CROSSMETAOP'('$opname', $identity, $is_chaining, args :flat)
         .end\n);
 
     # Non-dwimming hyper ops.
@@ -163,8 +159,7 @@ while (@ops) {
 
 my $gtokens = join('', @gtokens);
 
-open my $fh, "> $output" or die "Could not write $output: $!";
-print $fh qq(
+print qq(
 .namespace []
 .sub '' :init :load
     .local pmc optable
@@ -174,7 +169,6 @@ $gtokens
 
 );
 
-print $fh @code;
+print @code;
 
-close $fh;
-0;
+exit 0;

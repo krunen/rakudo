@@ -10,8 +10,10 @@
 # 
 # S03-operators/binding-arrays.t - regressed to allow slices
 # S03-operators/binding-hashes.t - regressed to allow slices
-# S10-packages/import.t - regressed when implementing importing; think it's bogus anyway
-# S03-junctions/autothreading.t - regressed temporarily due to p6object changes
+# integration/rule-in-class-Str.t - 'is also' -> augment
+# S12-class/extending-arrays.t - 'is also' -> augment
+# S12-class/open.t - 'is also' -> augment
+# S12-class/is_also_instead.t - 'is also' -> augment
 
 integration/99problems-01-to-10.t
 integration/99problems-11-to-20.t
@@ -25,10 +27,11 @@ integration/lexical-array-in-inner-block.t
 integration/lexicals-and-attributes.t
 integration/man-or-boy.t
 integration/method-calls-and-instantiation.t
+integration/no-indirect-new.t
+integration/packages.t
 integration/pair-in-array.t
 integration/passing-pair-class-to-sub.t
 integration/real-strings.t
-integration/rule-in-class-Str.t
 integration/say-crash.t
 integration/substr-after-match-in-gather-in-for.t
 S02-builtin_data_types/anon_block.t
@@ -37,6 +40,7 @@ S02-builtin_data_types/array_ref.t
 S02-builtin_data_types/array.t
 S02-builtin_data_types/assigning-refs.t
 S02-builtin_data_types/bool.t
+S02-builtin_data_types/capture.t
 S02-builtin_data_types/catch_type_cast_mismatch.t
 S02-builtin_data_types/flattening.t
 S02-builtin_data_types/hash_ref.t
@@ -55,10 +59,12 @@ S02-builtin_data_types/range.t
 S02-builtin_data_types/subscripts_and_context.t
 S02-builtin_data_types/type.t
 S02-builtin_data_types/whatever.t
+S02-lexical-conventions/unicode.t                          # icu
 S02-literals/array-interpolation.t
 S02-literals/autoref.t
 S02-literals/char-by-name.t                                # icu
 S02-literals/char-by-number.t
+S02-literals/fmt-interpolation.t
 S02-literals/hash-interpolation.t
 S02-literals/hex_chars.t
 S02-literals/listquote.t
@@ -71,12 +77,16 @@ S02-literals/quoting-unicode.t
 S02-literals/radix.t
 S02-literals/string-interpolation.t
 S02-literals/sub-calls.t
+S02-literals/subscript.t
 S02-literals/types.t
 S02-literals/underscores.t
+S02-magicals/config.t
 S02-magicals/dollar_bang.t
 S02-magicals/dollar-underscore.t
+S02-magicals/env.t
 S02-magicals/progname.t
 S02-names_and_variables/fmt.t
+S02-names_and_variables/perl.t
 S02-names_and_variables/names.t
 S02-names_and_variables/varnames.t
 S02-one-pass-parsing/less-than.t
@@ -88,6 +98,7 @@ S02-whitespace_and_comments/one-pass-parsing.t
 S02-whitespace_and_comments/pod-in-multi-line-exprs.t
 S02-whitespace_and_comments/unicode-whitespace.t
 S02-whitespace_and_comments/unspace.t
+S03-junctions/autothreading.t
 S03-junctions/basic.t
 S03-junctions/boolean-context.t
 S03-junctions/chained-operators.t
@@ -124,6 +135,8 @@ S03-operators/scalar-assign.t
 S03-operators/short-circuit.t
 S03-operators/smartmatch.t
 S03-operators/spaceship-and-containers.t
+S03-operators/spaceship.t
+S03-operators/subscript-vs-lt.t
 S03-operators/ternary.t
 S03-operators/true.t
 S03-operators/value_equivalence.t
@@ -131,6 +144,7 @@ S04-blocks-and-statements/pointy-rw.t
 S04-blocks-and-statements/pointy.t
 S04-closure-traits/end.t
 S04-closure-traits/start.t
+S04-declarations/constant.t
 S04-declarations/implicit-parameter.t
 S04-declarations/multiple.t
 S04-declarations/my.t
@@ -182,6 +196,7 @@ S05-match/arrayhash.t
 S05-match/blocks.t
 S05-match/capturing-contexts.t
 S05-match/non-capturing.t
+S05-match/perl.t
 S05-match/positions.t
 S05-metachars/line-anchors.t
 S05-metachars/newline.t
@@ -213,6 +228,8 @@ S06-multi/lexical-multis.t
 S06-multi/proto.t
 S06-multi/syntax.t
 S06-multi/type-based.t
+S06-operator-overloading/imported-subs.t
+S06-operator-overloading/sub.t
 S06-other/main.t
 S06-other/main-eval.t
 S06-routine-modifiers/scoped-named-subs.t
@@ -244,6 +261,7 @@ S09-autovivification/autoincrement.t
 S09-subscript_slice/slice.t
 S09-typed-arrays/arrays.t
 S09-typed-arrays/hashes.t
+S10-packages/basic.t
 S10-packages/use-with-class.t
 S11-modules/export.t
 S11-modules/import.t
@@ -261,47 +279,54 @@ S12-class/anonymous.t
 S12-class/attributes.t
 S12-class/basic.t
 S12-class/declaration-order.t
-S12-class/extending-arrays.t
 S12-class/inheritance-class-methods.t
 S12-class/inheritance.t
 S12-class/instantiate.t
-S12-class/is_also_instead.t
 S12-class/namespaced.t
-S12-class/open.t
 S12-class/parent_attributes.t
 S12-construction/autopairs.t
+S12-construction/BUILD.t
 S12-construction/construction.t
 S12-construction/new.t
 S12-enums/anonymous.t
 S12-enums/as-role.t
 S12-enums/basic.t
+S12-enums/thorough.t
 S12-introspection/can.t
+S12-introspection/meta-class.t
+S12-introspection/walk.t
 S12-methods/calling_sets.t
 S12-methods/calling_syntax.t
+S12-methods/chaining.t
 S12-methods/class-and-instance.t
 S12-methods/default-trait.t
+S12-methods/defer-call.t
+S12-methods/defer-next.t
 S12-methods/indirect_notation.t
 S12-methods/instance.t
 S12-methods/multi.t
+S12-methods/parallel-dispatch.t
 S12-methods/private.t
 S12-methods/syntax.t
 S12-methods/topic.t
 S12-methods/typed-attributes.t
 S12-methods/what.t
-S12-role/attributes.t
-S12-role/basic.t
-S12-role/composition.t
-S12-role/crony.t
-S12-role/instantiation.t
-S12-role/mixin.t
-S12-role/namespaced.t
-S12-role/parameter-subtyping.t
-S12-role/parameterized-basic.t
-S12-role/parameterized-mixin.t
-S12-role/parameterized-type.t
 S12-subset/multi-dispatch.t
 S12-subset/subtypes.t
 S13-type-casting/methods.t
+S13-overloading/metaoperators.t
+S13-overloading/operators.t
+S14-roles/attributes.t
+S14-roles/basic.t
+S14-roles/composition.t
+S14-roles/crony.t
+S14-roles/instantiation.t
+S14-roles/mixin.t
+S14-roles/namespaced.t
+S14-roles/parameter-subtyping.t
+S14-roles/parameterized-basic.t
+S14-roles/parameterized-mixin.t
+S14-roles/parameterized-type.t
 S16-filehandles/filetest.t
 S16-filehandles/io.t
 S16-filehandles/io_in_for_loops.t
@@ -337,6 +362,7 @@ S32-hash/keys_values.t
 S32-hash/pairs.t
 S32-hash/push.t
 S32-hash/slice.t
+S32-io/IO-Socket-INET.t
 S32-list/end.t
 S32-list/first.t
 S32-list/grep.t
@@ -365,10 +391,10 @@ S32-num/sqrt.t
 S32-scalar/defined.t
 S32-scalar/undef.t
 S32-str/append.t
-S32-str/capitalize.t
+S32-str/capitalize.t                                       # icu
 S32-str/chomp.t
 S32-str/chop.t
-S32-str/comb.t
+S32-str/comb.t                                             # icu
 S32-str/flip.t
 S32-str/index.t
 S32-str/lcfirst.t
@@ -381,8 +407,10 @@ S32-str/samecase.t                                         # icu
 S32-str/split-simple.t
 S32-str/sprintf.t
 S32-str/substr.t
+S32-temporal/Temporal.t
 S32-str/trim.t
 S32-str/ucfirst.t
-S32-str/uc.t
+S32-str/uc.t                                               # icu
 S32-str/unpack.t
+S32-str/words.t                                            # icu
 S32-trig/trig.t

@@ -16,7 +16,7 @@ Protoobject - methods on Protoobjects
 
 .namespace ['P6protoobject']
 .sub 'defined' :method
-    $P0 = get_hll_global ['Bool'], 'False'
+    $P0 = get_root_global [.RAKUDO_HLL ; 'Bool'], 'False'
     .return ($P0)
 .end
 
@@ -29,6 +29,11 @@ Returns a Perl representation of itself.
 
 .sub 'perl' :method
     $S0 = self
+    $I0 = length $S0
+    if $I0 < 2 goto done
+    $I0 -= 2
+    $S0 = substr $S0, 0, $I0
+  done:
     .return ($S0)
 .end
 
@@ -127,14 +132,14 @@ Indicate that objects in the class are mutable or immutable.
 
 .namespace ['P6protoobject']
 .sub '!IMMUTABLE' :method
-    $P0 = get_hll_global ['Int'], 'Scalar'
+    $P0 = get_root_global [.RAKUDO_HLL ; 'Int'], 'Scalar'
     $P1 = self.'HOW'()
     $P1.'add_method'('Scalar', $P0, 'to'=>self)
 .end
 
 .namespace ['P6protoobject']
 .sub '!MUTABLE' :method
-    $P0 = get_hll_global ['Perl6Object'], 'Scalar'
+    $P0 = get_root_global [.RAKUDO_HLL ; 'Perl6Object'], 'Scalar'
     $P1 = self.'HOW'()
     $P1.'add_method'('Scalar', $P0, 'to'=>self)
 .end
@@ -147,21 +152,24 @@ Indicate that objects in the class are mutable or immutable.
 
 .namespace ['P6protoobject']
 .sub '' :vtable('get_bool') :method
-    $P0 = '!FAIL'('Use of protoobject as value')
+    .const 'Sub' $P1 = '!FAIL'
+    $P0 = $P1('Use of type object as value')
     $I0 = istrue $P0
     .return ($I0)
 .end
 
 .namespace ['P6protoobject']
 .sub '' :vtable('get_integer') :method
-    $P0 = '!FAIL'('Use of protoobject as value')
+    .const 'Sub' $P1 = '!FAIL'
+    $P0 = $P1('Use of type object as value')
     $I0 = $P0
     .return ($I0)
 .end
 
 .namespace ['P6protoobject']
 .sub '' :vtable('get_number') :method
-    $P0 = '!FAIL'('Use of protoobject as value')
+    .const 'Sub' $P1 = '!FAIL'
+    $P0 = $P1('Use of type object as value')
     $N0 = $P0
     .return ($N0)
 .end

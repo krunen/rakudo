@@ -14,16 +14,6 @@ care of much of that.
 
 =cut
 
-.namespace []
-.sub '' :anon :init :load
-    .local pmc p6meta
-    load_bytecode 'PCT.pbc'
-    $P0 = get_root_global ['parrot'], 'P6metaclass'
-    $P0.'new_class'('Perl6Object', 'name'=>'Object')
-    p6meta = $P0.'HOW'()
-    set_hll_global ['Perl6Object'], '$!P6META', p6meta
-.end
-
 =head2 Methods
 
 =over 4
@@ -45,7 +35,7 @@ like this.
 
     # Make a clone.
     .local pmc result
-    self = '!DEREF'(self)
+    self = deobjectref self
     result = clone self
 
     # Set any new attributes.
@@ -70,6 +60,19 @@ like this.
 
     .return (result)
 .end
+
+.macro fixup_cloned_sub(orig, copy)
+    .local pmc tmp, tmp2
+    tmp = getprop '$!signature', .orig
+    if null tmp goto sub_fixup_done
+    setprop .copy, '$!signature', tmp
+    tmp = getattribute .orig, ['Sub'], 'proxy'
+    tmp = getprop '$!real_self', tmp
+    if null tmp goto sub_fixup_done
+    tmp2 = getattribute .copy, ['Sub'], 'proxy'
+    setprop tmp2, '$!real_self', tmp
+  sub_fixup_done:
+.endm
 
 
 =item defined()
@@ -146,8 +149,8 @@ Return invocant in list context.  Default is to return a List containing self.
 =cut
 
 .namespace ['Perl6Object']
-.sub 'list' :method
-    $P0 = new 'List'
+.sub '' :method('list')
+    $P0 = new ['List']
     push $P0, self
     .return ($P0)
 .end
@@ -199,7 +202,7 @@ Boolean value of object -- defaults to C<.defined> (S02).
 
 .namespace ['Perl6Object']
 .sub 'Array' :method
-    $P0 = new 'Perl6Array'
+    $P0 = new ['Perl6Array']
     $P0.'!STORE'(self)
     .return ($P0)
 .end
@@ -210,7 +213,7 @@ Boolean value of object -- defaults to C<.defined> (S02).
 
 .namespace ['Perl6Object']
 .sub 'Hash' :method
-    $P0 = new 'Perl6Hash'
+    $P0 = new ['Perl6Hash']
     $P0.'!STORE'(self)
     .return ($P0)
 .end
@@ -237,7 +240,7 @@ an object reference (unless the invocant already is one).
     unless $I0 goto not_ref
     .return (self)
   not_ref:
-    $P0 = new 'Perl6Scalar', self
+    $P0 = root_new ['parrot';'Perl6Scalar'], self
     .return ($P0)
 .end
 
@@ -250,7 +253,7 @@ the object's type and address.
 
 .namespace ['Perl6Object']
 .sub 'Str' :method
-    $P0 = new 'ResizableStringArray'
+    $P0 = root_new ['parrot';'ResizableStringArray']
     $P1 = self.'WHAT'()
     push $P0, $P1
     $I0 = get_addr self
@@ -269,49 +272,35 @@ the object's type and address.
 
 .namespace ['Perl6Object']
 .sub 'bless' :method
+    .param pmc candidate
     .param pmc posargs         :slurpy
     .param pmc attrinit        :slurpy :named
 
-    .local pmc candidate
-    candidate = self.'CREATE'()
+    $I0 = isa candidate, 'Whatever'
+    unless $I0 goto have_candidate
+    candidate = self.'CREATE'('P6opaque')
+  have_candidate:
+
     .tailcall self.'BUILDALL'(candidate, attrinit, posargs)
 .end
 
 
 .sub 'BUILD' :method
-    .param pmc candidate
     .param pmc attrinit        :slurpy :named
 
-    .local pmc p6meta, parrotclass, attributes, it
+    .local pmc p6meta, parentproto, parrotclass, attributes, it
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
-    parrotclass = p6meta.'get_parrotclass'(self)
+    parentproto = find_caller_lex '$CLASS'
+    parrotclass = p6meta.'get_parrotclass'(parentproto)
     attributes = inspect parrotclass, 'attributes'
     it = iter attributes
   attrinit_loop:
     unless it goto attrinit_done
-    .local string attrname
-    .local pmc attrhash, itypeclass
+    .local string attrname, keyname
+    .local pmc attr, attrhash
     attrname = shift it
+    attr = getattribute self, parrotclass, attrname
     attrhash = attributes[attrname]
-    itypeclass = attrhash['itype']
-    unless null itypeclass goto attrinit_itype
-    $S0 = substr attrname, 0, 1
-    if $S0 == '@' goto attrinit_array
-    if $S0 == '%' goto attrinit_hash
-    itypeclass = get_class ['Perl6Scalar']
-    goto attrinit_itype
-  attrinit_array:
-    itypeclass = get_class ['Perl6Array']
-    goto attrinit_itype
-  attrinit_hash:
-    itypeclass = get_class ['Perl6Hash']
-  attrinit_itype:
-    .local pmc attr
-    attr = new itypeclass
-    setattribute candidate, parrotclass, attrname, attr
-    $P0 = attrhash['type']
-    setprop attr, 'type', $P0
-    .local string keyname
     $I0 = index attrname, '!'
     if $I0 < 0 goto attrinit_loop
     inc $I0
@@ -320,11 +309,12 @@ the object's type and address.
     unless null $P0 goto attrinit_assign
     $P0 = attrhash['init_value']
     if null $P0 goto attrinit_loop
+    $P0 = $P0(self, attr)
   attrinit_assign:
     'infix:='(attr, $P0)
     goto attrinit_loop
   attrinit_done:
-    .return (candidate)
+    .return (self)
 .end
 
 
@@ -353,6 +343,7 @@ the object's type and address.
     parentproto = $P0.'WHAT'()
     $I0 = can parentproto, 'BUILD'
     unless $I0 goto parents_loop
+    .lex '$CLASS', parentproto
     # Look through posargs for a corresponding protoobject
     # with a WHENCE property.  If found, that WHENCE property
     # is used as the arguments to the parent class BUILD.
@@ -365,10 +356,12 @@ the object's type and address.
     ne_addr $P0, $P1, posargs_loop
     $P0 = argproto.'WHENCE'()
     if null $P0 goto posargs_done
-    parentproto.'BUILD'(candidate, $P0 :flat :named)
+    $P1 = find_method parentproto, 'BUILD'
+    $P1(candidate, $P0 :flat :named)
     goto parents_loop
   posargs_done:
-    parentproto.'BUILD'(candidate, attrinit :flat :named)
+    $P1 = find_method parentproto, 'BUILD'
+    $P1(candidate, attrinit :flat :named)
     goto parents_loop
   parents_done:
     .return (candidate)
@@ -379,14 +372,111 @@ the object's type and address.
 
 Create a candidate object of the type given by the invocant.
 
+XXX This had probably best really just tailcall .^CREATE; move this stuff later.
+
 =cut
 
 .sub 'CREATE' :method
-    .local pmc p6meta
+    .param string repr    :optional
+    .param int have_repr  :opt_flag
+
+    # Default to P6opaque.
+    if have_repr goto repr_done
+    repr = 'P6opaque'
+  repr_done:
+
+    # If we already have an "example" of how this representation looks for the
+    # current class, just clone it.
+    .local pmc how
+    .local string repr_lookup
+    how = self.'HOW'()
+    repr_lookup = concat 'repr_', repr
+    $P0 = getprop repr_lookup, how
+    if null $P0 goto no_example
+    $P0 = clone $P0
+    .return ($P0)
+
+  no_example:
+    if repr != 'P6opaque' goto unknown_repr
+
+    # P6opaque. Create example.
+    .local pmc p6meta, parrot_class, example
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
-    $P0 = p6meta.'get_parrotclass'(self)
-    $P1 = new $P0
-    .return ($P1)
+    parrot_class = p6meta.'get_parrotclass'(self)
+    example = new parrot_class
+
+    # Set up attribute containers along with their types and any other
+    # traits. (We could do this while constructing the class too, but
+    # that would have the unfortunate side-effect of increased startup
+    # cost, which we're currently wanting to avoid. Let's see how far
+    # we can go while doing the init here.)
+    .local pmc parents, cur_class, attributes, class_it, it
+    parents = inspect parrot_class, 'all_parents'
+    class_it = iter parents
+  classinit_loop:
+    unless class_it goto classinit_loop_end
+    cur_class = shift class_it
+    attributes = inspect cur_class, 'attributes'
+    it = iter attributes
+  attrinit_loop:
+    unless it goto attrinit_done
+    .local string attrname
+    .local pmc attrhash, itypeclass, type
+    attrname = shift it
+    $I0 = index attrname, '!'
+    if $I0 < 0 goto attrinit_loop
+    attrhash = attributes[attrname]
+    itypeclass = attrhash['itype']
+    type = attrhash['type']
+    $S0 = substr attrname, 0, 1
+    unless null itypeclass goto attrinit_itype
+    if $S0 == '@' goto attrinit_array
+    if $S0 == '%' goto attrinit_hash
+    $P0 = get_root_namespace ['parrot';'Perl6Scalar']
+    itypeclass = get_class $P0
+    goto attrinit_itype
+  attrinit_array:
+    itypeclass = get_class ['Perl6Array']
+    goto attrinit_itype
+  attrinit_hash:
+    itypeclass = get_class ['Perl6Hash']
+  attrinit_itype:
+    .local pmc attr
+    attr = new itypeclass
+    setattribute example, cur_class, attrname, attr
+    if null type goto type_done
+    if $S0 == '@' goto pos_type
+    if $S0 == '%' goto ass_type
+    setprop attr, 'type', type
+    goto type_done
+  ass_type:
+    $P0 = get_hll_global 'Associative'
+    goto apply_type
+  pos_type:
+    $P0 = get_hll_global 'Positional'
+  apply_type:
+    $P0 = $P0.'!select'(type)
+    'infix:does'(attr, $P0)
+  type_done:
+    goto attrinit_loop
+  attrinit_done:
+    # Only go to next class if we didn't already reach the top of the Perl 6
+    # hierarchy.
+    $S0 = cur_class
+    if $S0 != 'Perl6Object' goto classinit_loop
+  classinit_loop_end:
+    
+    # Turn the example from a Parrot Object into a p6opaque; we'll ideally be
+    # able to create it as one in the future.
+    transform_to_p6opaque example
+
+    # Stash the example, clone it and we're done.
+    setprop how, repr_lookup, example
+    $P0 = clone example
+    .return ($P0)
+
+  unknown_repr:
+    'die'('Unknown representation: ', repr)
 .end
 
 
@@ -399,8 +489,9 @@ Create a new object having the same class as the invocant.
 .sub 'new' :method
     .param pmc posargs         :slurpy
     .param pmc attrinit        :slurpy :named
-
-    .tailcall self.'bless'(posargs :flat, attrinit :flat :named)
+    .local pmc candidate
+    candidate = self.'CREATE'('P6opaque')
+    .tailcall self.'bless'(candidate, posargs :flat, attrinit :flat :named)
 .end
 
 =item 'PARROT'
@@ -447,6 +538,43 @@ until we get roles).
     $P0 = self.'ACCEPTS'(topic)
     $P1 = not $P0
     .return ($P1)
+.end
+
+
+=item !STORE(source)
+
+Store C<source> into C<self>, performing type checks
+as needed.  (This method is listed with the other public
+methods simply because I expect it may switch to public
+in the future.)
+
+=cut
+
+.sub '!STORE' :method :subid('Object::!STORE')
+    .param pmc source
+    source = '!CALLMETHOD'('Scalar', source)
+    $I0 = defined source
+    unless $I0 goto do_store
+    .local pmc type
+    getprop type, 'type', self
+    if null type goto do_store
+    $I0 = isa type, 'NameSpace'
+    if $I0 goto do_store
+    $I0 = type.'ACCEPTS'(source)
+    unless $I0 goto err_type
+  do_store:
+    source = deobjectref source
+    eq_addr self, source, store_done
+    copy self, source
+    .fixup_cloned_sub(source, self)
+  store_done:
+    .return (self)
+
+  err_type:
+    $S0 = type.'perl'()
+    $S1 = source.'WHAT'()
+    'die'("Type mismatch in assignment; expected something matching type ", $S0, " but got something of type ", $S1)
+    .return (self)
 .end
 
 
@@ -521,6 +649,30 @@ Create a clone of self, also cloning the attributes given by attrlist.
   attr_end:
     .return (result)
 .end
+
+
+=item !rebox
+
+If we end up with an object that isn't a subclass of Perl6Object
+(e.g., a parrot Integer, Float, or Str), the C<!rebox> method will
+adjust it.
+
+=cut
+
+.namespace ['Perl6Object']
+.sub '!rebox' :method
+    $I0 = isa self, ['Perl6Object']
+    if $I0 goto done
+    .local pmc p6meta
+    p6meta = get_hll_global ['Perl6Object'], '$!P6META'
+    $P0 = self.'WHAT'()
+    $P0 = p6meta.'get_parrotclass'($P0)
+    $P0 = new $P0
+    assign $P0, self
+    copy self, $P0
+  done:
+.end
+    
 
 =item !.?
 
@@ -617,7 +769,7 @@ methods, dies if there are none.
 =item !MANY_DISPATCH_HELPER
 
 This is a helper for implementing .+, .? and .*. In the future, it may well be
-the basis of WALK also. It returns all methods we could possible call.
+the basis of WALK also. It returns all methods we could possibly call.
 
 =cut
 
@@ -681,6 +833,31 @@ Helper for doing calls on the metaclass.
     .local pmc how
     how = self.'HOW'()
     .tailcall how.method_name(self, pos_args :flat, named_args :flat :named)
+.end
+
+=item !.=
+
+Helper for doing .= calls.
+
+=cut
+
+.sub '!.=' :method
+    .param string method_name
+    .param pmc pos_args     :slurpy
+    .param pmc named_args   :slurpy :named
+
+    # Get result and assign it to self. (XXX Also while $/ is not accessed
+    # as a context var properly, need to cheat bit with that to keep
+    # some other things happy.)
+    $P0 = find_lex_skip_current '$/'
+    .lex '$/', $P0
+    ($P0) = self.method_name(pos_args :flat, named_args :flat :named)
+    $P1 = getinterp
+    $P1 = $P1['lexpad'; 1]
+    if null $P1 goto done
+    $P1['$/'] = $P0
+  done:
+    .tailcall 'infix:='(self, $P0)
 .end
 
 =back

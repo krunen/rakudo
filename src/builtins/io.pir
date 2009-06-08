@@ -22,7 +22,7 @@ src/builtins/io.pir - Perl6 builtins for I/O
     unless it goto iter_end
     $P0 = shift it
     unless null $P0 goto iter_nonull
-    $P0 = new 'Failure'
+    $P0 = '!FAIL'()
   iter_nonull:
     out.'print'($P0)
     goto iter_loop
@@ -83,8 +83,10 @@ done_mode:
     $P0 = open filename, mode
     if $P0 goto opened_ok
     'die'("Unable to open file") # XXX better message
-opened_ok:
 
+  opened_ok:
+    # Set default encoding to utf8
+    $P0.'encoding'('utf8')
     # Create IO object and set handle.
     .local pmc obj
     obj = get_hll_global 'IO'
@@ -135,7 +137,7 @@ It is an error to use bare C<unlink> without arguments.
     'die'("Cannot call unlink without any arguments")
   ok:
 
-    os = new 'OS'
+    os = root_new ['parrot';'OS']
     success_count = 0
     it = iter to_delete
   it_loop:
@@ -163,9 +165,24 @@ Shows the supplied message and then waits for input from $*IN.
     .param string prompt
     'print'(prompt)
     $P0 = get_hll_global "$IN"
-    $S0 = $P0.'readline'()
+    $S0 = $P0.'get'()
     .return ($S0)
 .end
+
+
+.sub '!qx'
+    .param string cmd
+    .local pmc pio
+    pio = open cmd, 'rp'
+    unless pio goto err_qx
+    pio.'encoding'('utf8')
+    $P0 = pio.'readall'()
+    pio.'close'()
+    .return ($P0)
+  err_qx:
+    .tailcall '!FAIL'('Unable to execute "', cmd, '"')
+.end
+  
 
 =back
 

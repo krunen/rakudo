@@ -5,14 +5,21 @@ class Any is also {
         fail('No values matched');
     }
 
-    our List multi method grep(Code $test) {
+    our List multi method grep($test) {
         gather {
-            take $_ if $test($_) for @.list;
+            take $_ if $_ ~~ $test for @.list;
         }
     }
 
-    our Str multi method join(Str $separator = '') {
-        @.list.reduce({ $^a ~ $separator ~ $^b })
+    our Str multi method join($separator = '') {
+        Q:PIR {
+            $P0 = self.'list'()
+            $P0.'!flatten'()
+            $P1 = find_lex '$separator'
+            $S1 = $P1
+            $S0 = join $S1, $P0
+            %r = box $S0
+        }
     }
 
     our List multi method map(*&expr) {
@@ -29,10 +36,31 @@ class Any is also {
         }
     }
 
+    # RT #63700 - parse failed on &infix:<cmp>
+    multi method max( $values: Code $by = sub { $^a cmp $^b } ) {
+         my @list = $values.list;
+         return -Inf unless @list.elems;
+         if $by.arity < 2 {
+            my $transform = $by;
+            $by := sub { $transform($^a) cmp $transform($^b) };
+         }
+         my $res = @list.shift;
+         for @list -> $x {
+             if (&$by($res, $x) < 0) {
+                 $res = $x;
+             }
+         }
+         $res;
+     };
+
      # RT #63700 - parse failed on &infix:<cmp>
     multi method min( $values: Code $by = sub { $^a cmp $^b } ) {
          my @list = $values.list;
          return +Inf unless @list.elems;
+         if $by.arity < 2 {
+            my $transform = $by;
+            $by := sub { $transform($^a) cmp $transform($^b) };
+         }
          my $res = @list.shift;
          for @list -> $x {
              if (&$by($res, $x) > 0) {
@@ -97,17 +125,20 @@ multi first(Code $test, *@values) {
     @values.first($test)
 }
 
-our List multi grep(Code $test, *@values) {
+our List multi grep($test, *@values) {
     @values.grep($test)
 }
 
 our Str multi join(Str $separator = '', *@values) {
-    die("Not enough arguments for join") if ! @values;
     @values.join($separator)
 }
 
 our List multi map(Code $expr, *@values) {
     @values.map($expr)
+}
+
+multi max(Code $by, *@values) {
+    @values.max($by);
 }
 
 multi min(Code $by, *@values) {

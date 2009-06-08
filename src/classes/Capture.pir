@@ -15,7 +15,7 @@ This file sets up the Perl 6 C<Capture> class.
 .sub 'onload' :anon :init :load
     .local pmc p6meta, captureproto
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
-    captureproto = p6meta.'new_class'('Perl6Capture', 'parent'=>'Capture Any', 'name'=>'Capture')
+    captureproto = p6meta.'new_class'('Perl6Capture', 'parent'=>'parrot;Capture Any', 'name'=>'Capture')
     captureproto.'!IMMUTABLE'()
 .end
 
@@ -64,7 +64,7 @@ Build a capture from its argument(s).
     .param pmc arg
     $I0 = isa arg, 'Perl6Scalar'
     if $I0 goto have_ref
-    arg = new 'Perl6Scalar', arg
+    arg = root_new ['parrot';'Perl6Scalar'], arg
   have_ref:
     .return (arg)
 .end

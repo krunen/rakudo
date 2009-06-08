@@ -12,9 +12,9 @@ Match - Perl 6 match objects
 .sub '' :anon :load :init
     .local pmc p6meta, matchproto
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
-    matchproto = p6meta.'new_class'('Match', 'parent'=>'PGE::Grammar Any')
+    matchproto = p6meta.'new_class'('Match', 'parent'=>'parrot;PGE::Grammar Any')
     $P0 = p6meta.'get_parrotclass'(matchproto)
-    $P1 = new 'ResizablePMCArray'
+    $P1 = root_new ['parrot';'ResizablePMCArray']
     push $P1, 'of'
     $P0.'resolve_method'($P1)
     $P0 = get_hll_global 'Positional'
@@ -34,17 +34,21 @@ properly delegate to the underlying Capture PMC.
 
 =cut
 
-.sub 'hash' :method
+.sub '' :method('item')
+    .return (self)
+.end
+
+.sub '' :method('hash')
     $P0 = getattribute self, ['Capture'], 'proxy'
     $P1 = $P0.'hash'()
     .return ($P1)
 .end
 
-#.sub 'list' :method
-#    $P0 = getattribute self, ['Capture'], 'proxy'
-#    $P1 = $P0.'list'()
-#    .return ($P1)
-#.end
+.sub '' :method('list')
+    $P0 = getattribute self, ['Capture'], 'proxy'
+    $P1 = $P0.'list'()
+    .return ($P1)
+.end
 
 
 =item of

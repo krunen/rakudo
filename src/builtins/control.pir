@@ -31,9 +31,9 @@ the moment -- we'll do more complex handling a bit later.)
     .param int has_value       :opt_flag
 
     if has_value goto have_value
-    value = new 'Nil'
+    value = new ['Nil']
   have_value:
-    $P0         = new 'Exception'
+    $P0         = root_new ['parrot';'Exception']
     $P0['type'] = .CONTROL_RETURN
     setattribute $P0, 'payload', value
     throw $P0
@@ -54,9 +54,9 @@ the moment -- we'll do more complex handling a bit later.)
   message_args:
     message = join '', args
   have_message:
-    $P0 = new 'Exception'
+    $P0 = root_new ['parrot';'Exception']
     $P0['message'] = message
-    $P1 = new 'Failure'
+    $P1 = new ['Failure']
     setattribute $P1, '$!exception', $P0
     .return ($P1)
 .end
@@ -82,7 +82,7 @@ the moment -- we'll do more complex handling a bit later.)
 .sub 'take'
     .param pmc value
 
-    $P0         = new 'Exception'
+    $P0         = root_new ['parrot';'Exception']
     $P0['type'] = .CONTROL_TAKE
     $P0['severity'] = .EXCEPT_NORMAL
     setattribute $P0, 'payload', value
@@ -99,7 +99,7 @@ the moment -- we'll do more complex handling a bit later.)
     .local pmc list
     .local pmc eh
     list = 'list'()
-    eh = new 'ExceptionHandler'
+    eh = root_new ['parrot';'ExceptionHandler']
     eh.'handle_types'(.CONTROL_TAKE)
     set_addr eh, handler
     push_eh eh
@@ -123,7 +123,7 @@ the moment -- we'll do more complex handling a bit later.)
 
 .sub 'last'
     .local pmc e
-    e = new 'Exception'
+    e = root_new ['parrot';'Exception']
     e['severity'] = .EXCEPT_NORMAL
     e['type'] = .CONTROL_LOOP_LAST
     throw e
@@ -135,7 +135,7 @@ the moment -- we'll do more complex handling a bit later.)
 
 .sub 'next'
     .local pmc e
-    e = new 'Exception'
+    e = root_new ['parrot';'Exception']
     e['severity'] = .EXCEPT_NORMAL
     e['type'] = .CONTROL_LOOP_NEXT
     throw e
@@ -147,7 +147,7 @@ the moment -- we'll do more complex handling a bit later.)
 
 .sub 'redo'
     .local pmc e
-    e = new 'Exception'
+    e = root_new ['parrot';'Exception']
     e['severity'] = .EXCEPT_NORMAL
     e['type'] = .CONTROL_LOOP_REDO
     throw e
@@ -159,7 +159,7 @@ the moment -- we'll do more complex handling a bit later.)
 
 .sub 'continue'
     .local pmc e
-    e = new 'Exception'
+    e = root_new ['parrot';'Exception']
     e['severity'] = .EXCEPT_NORMAL
     e['type'] = .CONTROL_CONTINUE
     throw e
@@ -173,7 +173,7 @@ the moment -- we'll do more complex handling a bit later.)
     .param pmc arg :optional
     .param int has_arg :opt_flag
     .local pmc e
-    e = new 'Exception'
+    e = root_new ['parrot';'Exception']
     e['severity'] = .EXCEPT_NORMAL
     e['type'] = .CONTROL_BREAK
     unless has_arg, no_arg
@@ -190,7 +190,7 @@ the moment -- we'll do more complex handling a bit later.)
     .param pmc message        :optional
     .param int have_message   :opt_flag
     if have_message goto message_done
-    message = new 'Str'
+    message = new ['Str']
     message = "Attempt to execute stub code (...)"
   message_done:
     'fail'(message)
@@ -217,7 +217,7 @@ the moment -- we'll do more complex handling a bit later.)
     if message > '' goto have_message
     message = "Died\n"
   have_message:
-    ex = new 'Exception'
+    ex = root_new ['parrot';'Exception']
     ex = message
     ex['severity'] = .EXCEPT_FATAL
     ex['type'] = .CONTROL_ERROR
@@ -327,11 +327,12 @@ on error.
 
     # We want to make the lexicals known to the Perl 6 compiler. (One day
     # PCT maybe will provide a way to tell any language about these.)
-    .local pmc blocks, block_info, interp, sub
-    interp = new 'ParrotInterpreter'
+    .local pmc blocks, block_info, interp, sub, my_caller
+    interp = getinterp
     $P0 = get_hll_global ['PAST'], 'Block'
     block_info = $P0.'new'()
-    sub = interp["sub"; 1]
+    my_caller = interp["sub"; 1]
+    set sub, my_caller
   lex_loop:
     if null sub goto lex_loop_end
     $P0 = sub.'get_lexinfo'()
@@ -351,23 +352,24 @@ on error.
     block_info['eval'] = 1
     blocks.'unshift'(block_info)
 
+    # Also set namespace.
+    $P0 = my_caller.'get_namespace'()
+    $P0 = $P0.'get_name'()
+    $S0 = shift $P0
+    block_info.'namespace'($P0)
+
     .local pmc compiler, invokable
     .local pmc res, exception
     unless have_lang goto no_lang
     push_eh catch
     $S0 = lang
-    $S0 = concat 'languages/', $S0
-    $S0 = concat $S0, '/'
-    $S1 = lang
-    $S0 = concat $S0, $S1
-    $S0 = concat $S0, '.pbc'
-    load_bytecode $S0
-    $S0 = lang
+    $S1 = downcase $S0
+    load_language $S1
     compiler = compreg $S0
     goto got_lang
   no_lang:
     push_eh catch
-    compiler = compreg 'Perl6'
+    compiler = compreg 'perl6'
   got_lang:
     invokable = compiler.'compile'(code)
 
@@ -375,13 +377,12 @@ on error.
     blocks.'shift'()
 
     # Set lexical scope.
-    $P0 = interp["sub"; 1]
     $P1 = invokable[0]
-    $P1.'set_outer'($P0)
+    $P1.'set_outer'(my_caller)
 
     # Invoke.
     res = invokable()
-    exception = new 'Failure'
+    exception = new ['Failure']
     goto done
 
   catch:
@@ -416,7 +417,7 @@ on error.
     ## count_eh is broken
     # $I0 = count_eh
     # eq $I0, 0, no_eh
-    ex = new 'Exception'
+    ex = root_new ['parrot';'Exception']
     ex['severity'] = .EXCEPT_WARNING
     ex['message'] = message
     throw ex
@@ -437,26 +438,41 @@ on error.
     .param pmc pos_args    :slurpy
     .param pmc named_args  :slurpy :named
 
-    # Is our caller a wrapping? If so, call inner.
-    .local pmc caller, inner
-    $P0 = new 'ParrotInterpreter'
-    caller = $P0['sub'; 1]
-  search_loop:
-    inner = getprop '$!wrap_inner', caller
-    if null inner goto try_outer
-    .tailcall inner(pos_args :flat, named_args :flat :named)
-  try_outer:
-    $I0 = isa caller, 'Routine' # Should not search out of current routine.
-    if $I0 goto not_wrapped
-    caller = caller.'get_outer'()
-    if null caller goto not_wrapped
-    $P0 = getprop '$!real_self', caller
-    if null $P0 goto search_loop
-    caller = $P0
-    goto search_loop
+    # For callwith, it's easy - just want to get the next candidate, call
+    # it and hand back it's return values. A tailcall does fine.
+    .local pmc clist, lexpad, self, next
+    get_next_candidate_info clist, $P0, lexpad
+    next = clist.'get'()
+    $I0 = isa next, 'Method'
+    unless $I0 goto not_method
+    self = lexpad['self']
+    .tailcall next(self, pos_args :flat, named_args :flat :named)
+  not_method:
+    .tailcall next(pos_args :flat, named_args :flat :named)
+.end
 
-  not_wrapped:
-    'die'('Use of callwith in non-wrapped case not yet implemented.')
+
+=item nextwith
+
+=cut
+
+.sub 'nextwith'
+    .param pmc pos_args    :slurpy
+    .param pmc named_args  :slurpy :named
+
+    # Find next candiate, invoke it and get its return value, then use
+    # return to return it as if it was from our original call.
+    .local pmc clist, lexpad, self, next, result
+    get_next_candidate_info clist, $P0, lexpad
+    next = clist.'get'()
+    $I0 = isa next, 'Method'
+    unless $I0 goto not_method
+    self = lexpad['self']
+    (result) = next(self, pos_args :flat, named_args :flat :named)
+    'return'(result)
+  not_method:
+    (result) = next(pos_args :flat, named_args :flat :named)
+    'return'(result)
 .end
 
 
@@ -465,38 +481,74 @@ on error.
 =cut
 
 .sub 'callsame'
-    # Is our caller a wrapping? If so, find what we need to call.
-    .local pmc caller, inner
-    $P0 = new 'ParrotInterpreter'
-    caller = $P0['sub'; 1]
-  search_loop:
-    inner = getprop '$!wrap_inner', caller
-    unless null inner goto found_inner
-  try_outer:
-    $I0 = isa caller, 'Routine' # Should not search out of current routine.
-    if $I0 goto not_wrapped
-    caller = caller.'get_outer'()
-    if null caller goto not_wrapped
-    $P0 = getprop '$!real_self', caller
-    if null $P0 goto search_loop
-    caller = $P0
-    goto search_loop
+    # Find next candidate as well as caller and lexpad.
+    .local pmc clist, routine, lexpad, next
+    get_next_candidate_info clist, routine, lexpad
+    next = clist.'get'()
+    
+    # Build arguments based upon what the caller was originall invoked with,
+    # and tailcall the next candidate.
+    .local pmc pos_args, named_args
+    (pos_args, named_args) = '!get_original_args'(routine, lexpad)
+    .tailcall next(pos_args :flat, named_args :flat :named)
+.end
 
-  found_inner:
-    # Now we need to get the arguments passed.
-    # XXX TODO: not sure how to do this well just yet. For now, just die if there
-    # are args, but call things that don't get any.
-    .local pmc params
-    params = inner.'signature'()
-    params = params.'params'()
-    $I0 = params
-    if $I0 > 0 goto unimpl
-    .tailcall inner()
-  unimpl:
-    'die'("callsame passing on arguments not yet implemented")
 
-  not_wrapped:
-    'die'('Use of callsame in non-wrapped case not yet implemented.')
+=item nextsame
+
+=cut
+
+.sub 'nextsame'
+    # Find next candidate as well as caller and lexpad.
+    .local pmc clist, routine, lexpad, next
+    get_next_candidate_info clist, routine, lexpad
+    next = clist.'get'()
+    
+    # Build arguments based upon what the caller was originall invoked with,
+    # get the result of the next candidate and use return to retrun from
+    # the caller.
+    .local pmc pos_args, named_args, result
+    (pos_args, named_args) = '!get_original_args'(routine, lexpad)
+    (result) = next(pos_args :flat, named_args :flat :named)
+    'return'(result)
+.end
+
+
+=item !get_original_args
+
+Helper for callsame and nextsame that uses the signature and lexpad of a
+routine to build up the next caller args. Maybe once day Parrot gives us
+some Capture support and this gets massively easier.
+
+=cut
+
+.sub '!get_original_args'
+    .param pmc routine
+    .param pmc lexpad
+
+    .local pmc signature, it, cur_param, pos_args, named_args
+    pos_args = root_new ['parrot';'ResizablePMCArray']
+    named_args = root_new ['parrot';'Hash']
+    signature = routine.'signature'()
+    $I0 = defined signature
+    unless $I0 goto it_loop_end
+    $P0 = signature.'params'()
+    it = iter $P0
+  it_loop:
+    unless it goto it_loop_end
+    cur_param = shift it
+    $S0 = cur_param['name']
+    $P0 = lexpad[$S0]
+    $P1 = cur_param['named']
+    unless null $P1 goto named
+    push pos_args, $P0
+    goto it_loop
+  named:
+    named_args[$P1] = $P0
+    goto it_loop
+  it_loop_end:
+
+    .return (pos_args, named_args)
 .end
 
 

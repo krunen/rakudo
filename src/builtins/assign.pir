@@ -10,7 +10,6 @@ src/builtins/assign.pir - assignments
 
 =cut
 
-
 .namespace []
 .sub 'infix:=' :multi(_,_)
     .param pmc cont
@@ -23,171 +22,15 @@ src/builtins/assign.pir - assignments
     'die'('Cannot assign to readonly variable.')
   ro_ok:
 
-    # This is a workaround because Parrot's multi-dispatch sometimes gets us
-    # here by accident when we have a Perl6Array that got re-blessed.
-    $I0 = isa cont, 'Perl6Array'
-    unless $I0 goto not_array
-    .tailcall cont.'!STORE'(source)
-  not_array:
-    $I0 = isa cont, 'Perl6Hash'
-    unless $I0 goto not_hash
-    .tailcall cont.'!STORE'(source)
-  not_hash:
-
-    source = '!CALLMETHOD'('Scalar', source)
-    $I0 = defined source
-    unless $I0 goto do_assign
-    getprop type, 'type', cont
-    if null type goto do_assign
-    # XXX FIXME We should instead translate this to a proto.
-    $I0 = isa type, 'NameSpace'
-    if $I0 goto do_assign
-    $I0 = type.'ACCEPTS'(source)
-    if $I0 goto do_assign
-    'die'("Type mismatch in assignment.")
-  do_assign:
-    eq_addr cont, source, assign_done
-    copy cont, source
-    # We need to copy over any $!signature property on sub objects
-    $I0 = isa source, 'Sub'
-    unless $I0 goto assign_done
-    $P0 = getprop '$!signature', source
-    setprop cont, '$!signature', $P0
-    $I0 = isa source, 'Code'
-    unless $I0 goto assign_done
-    $P0 = getattribute source, ['Sub'], 'proxy'
-    $P0 = getprop '$!real_self', $P0
-    $P1 = getattribute cont, ['Sub'], 'proxy'
-    setprop $P1, '$!real_self', $P0
-  assign_done:
-    .return (cont)
-.end
-
-
-.sub 'infix:=' :multi(['Perl6Array'], _)
-    .param pmc cont
-    .param pmc source
     $I0 = isa cont, 'Perl6Scalar'
-    unless $I0 goto cont_array
-    # FIXME: use a :subid to directly lookup and call infix:=(_,_) above
-    $P0 = get_hll_global 'Object'
-    setref cont, $P0
-    .tailcall 'infix:='(cont, source)
-
-  cont_array:
-    .local pmc ro
-    getprop ro, 'readonly', cont
-    if null ro goto ro_ok
-    unless ro goto ro_ok
-    'die'('Cannot assign to readonly variable.')
-  ro_ok:
+    if $I0 goto obj_store
+    $I0 = can cont, '!STORE'
+    unless $I0 goto obj_store
     .tailcall cont.'!STORE'(source)
-.end
 
-
-.sub 'infix:=' :multi(['Perl6Hash'], _)
-    .param pmc cont
-    .param pmc source
-    $I0 = isa cont, 'Perl6Scalar'
-    unless $I0 goto cont_hash
-    # FIXME: use a :subid to directly lookup and call infix:=(_,_) above
-    $P0 = get_hll_global 'Object'
-    setref cont, $P0
-    .tailcall 'infix:='(cont, source)
-
-  cont_hash:
-    .local pmc ro
-    getprop ro, 'readonly', cont
-    if null ro goto ro_ok
-    unless ro goto ro_ok
-    'die'('Cannot assign to readonly variable.')
-  ro_ok:
-    .tailcall cont.'!STORE'(source)
-.end
-
-
-.sub 'infix:=' :multi(['List'], _)
-    .param pmc list
-    .param pmc source
-
-    ##  get the list of containers and sources
-    $P0 = new ['List']
-    splice $P0, list, 0, 0
-    list = $P0
-    source = source.'list'()
-    source.'!flatten'()
-
-    ##  now, go through our list of containers, flattening
-    ##  any intermediate lists we find, and marking each
-    ##  container with a property so we can clone it in source
-    ##  if needed
-    .local pmc true
-    .local int i
-    true = box 1
-    i = 0
-  mark_loop:
-    $I0 = elements list
-    unless i < $I0 goto mark_done
-    .local pmc cont
-    cont = list[i]
-    $I0 = isa cont, ['Perl6Scalar']
-    if $I0 goto mark_next
-    $I0 = isa cont, ['Perl6Array']
-    if $I0 goto mark_next
-    $I0 = does cont, 'array'
-    unless $I0 goto mark_next
-    splice list, cont, $I0, 1
-    goto mark_loop
-  mark_next:
-    setprop cont, 'target', true
-    inc i
-    goto mark_loop
-  mark_done:
-
-    ## now build our 'real' source list, cloning any targets we encounter
-    .local pmc slist, it
-    slist = new 'List'
-    it = iter source
-  source_loop:
-    unless it goto source_done
-    $P0 = shift it
-    $P1 = getprop 'target', $P0
-    if null $P1 goto source_next
-    $P0 = clone $P0
-  source_next:
-    push slist, $P0
-    goto source_loop
-  source_done:
-
-    ## now perform the assignments, clearing targets as we go
-    .local pmc pmcnull
-    null pmcnull
-    it = iter list
-  assign_loop:
-    unless it goto assign_done
-    .local pmc cont
-    cont = shift it
-    setprop cont, 'target', pmcnull
-    $I0 = isa cont, 'Perl6Scalar'
-    if $I0 goto assign_scalar
-    $I0 = isa cont, 'Perl6Array'
-    if $I0 goto assign_array
-    $I0 = isa cont, 'Perl6Hash'
-    if $I0 goto assign_hash
-  assign_scalar:
-    if slist goto have_slist
-    slist = new 'Nil'
-  have_slist:
-    $P0 = shift slist
-    'infix:='(cont, $P0)
-    goto assign_loop
-  assign_array:
-  assign_hash:
-    cont.'!STORE'(slist)
-    slist = new 'Nil'
-    goto assign_loop
-  assign_done:
-    .return (list)
+  obj_store:
+    .const 'Sub' STORE = 'Object::!STORE'
+    .tailcall STORE(cont, source)
 .end
 
 
@@ -286,7 +129,16 @@ src/builtins/assign.pir - assignments
     .param int dwim_lhs
     .param int dwim_rhs
 
-    # Make sure they're both lists. XXX Need to handle hashes in future.
+    # If we have a hash, go to the hyper op for hashes implementation.
+    $P0 = get_hll_global 'Associative'
+    $I0 = $P0.'ACCEPTS'(a)
+    unless $I0 goto not_hash
+    $I0 = $P0.'ACCEPTS'(b)
+    unless $I0 goto not_hash
+    .tailcall '!HYPEROPHASH'(opname, a, b, dwim_lhs, dwim_rhs)
+  not_hash:
+
+    # Make sure they're both lists.
     a = a.'list'()
     b = b.'list'()
 
@@ -330,7 +182,7 @@ src/builtins/assign.pir - assignments
     # Create result list and get iterators over the two.
   go_hyper:
     .local pmc result, it_a, it_b
-    result = new 'Perl6Array'
+    result = new ['Perl6Array']
     it_a = iter a
     it_b = iter b
 
@@ -363,7 +215,7 @@ src/builtins/assign.pir - assignments
     cur_a = 'list'(cur_a)
   recurse:
     $P0 = '!HYPEROP'(opname, cur_a, cur_b, dwim_lhs, dwim_rhs)
-    $P0 = new 'Perl6Scalar', $P0
+    $P0 = root_new ['parrot';'Perl6Scalar'], $P0
     push result, $P0
     goto loop
 
@@ -375,16 +227,97 @@ src/builtins/assign.pir - assignments
 .end
 
 
+.sub '!HYPEROPHASH'
+    .param string opname
+    .param pmc a
+    .param pmc b
+    .param int dwim_lhs
+    .param int dwim_rhs
+
+    # First, work out applicable keys.
+    .local pmc keys_applicable, it
+    keys_applicable = root_new ['parrot';'ResizablePMCArray']
+    $I0 = dwim_lhs * dwim_rhs
+    if $I0 goto intersection
+    $I0 = dwim_lhs + dwim_rhs
+    unless $I0 goto union
+    if dwim_rhs goto keys_a
+    keys_applicable = b.'keys'()
+    goto have_applicable_keys
+  keys_a:
+    keys_applicable = a.'keys'()
+    goto have_applicable_keys
+
+  intersection:
+    it = iter a
+  intersection_it_loop:
+    unless it goto intersection_it_loop_end
+    $P0 = shift it
+    $I0 = b.'exists'($P0)
+    unless $I0 goto intersection_it_loop
+    push keys_applicable, $P0
+    goto intersection_it_loop
+  intersection_it_loop_end:
+    goto have_applicable_keys
+
+  union:
+    it = iter a
+  union_it_loop_a:
+    unless it goto union_it_loop_a_end
+    $P0 = shift it
+    push keys_applicable, $P0
+    goto union_it_loop_a
+  union_it_loop_a_end:
+    it = iter b
+  union_it_loop_b:
+    unless it goto union_it_loop_b_end
+    $P0 = shift it
+    $I0 = a.'exists'($P0)
+    if $I0 goto union_it_loop_b
+    push keys_applicable, $P0
+    goto union_it_loop_b
+  union_it_loop_b_end:
+    goto have_applicable_keys
+
+  have_applicable_keys:
+    .local pmc opfunc, result
+    $S0 = concat 'infix:', opname
+    opfunc = find_name $S0
+    result = new ['Perl6Hash']
+    it = iter keys_applicable
+  it_loop:
+    unless it goto it_loop_end
+    $P0 = shift it
+    # XXX Would be nice to do:
+    # $P1 = a.'postcircumfix:{ }'($P0)
+    # $P2 = b.'postcircumfix:{ }'($P0)
+    # But we can't until the auto-vivification-on-read bug is fixed.
+    $P1 = a[$P0]
+    unless null $P1 goto got_first
+    $P1 = 'undef'()
+  got_first:
+    $P2 = b[$P0]
+    unless null $P2 goto got_second
+    $P2 = 'undef'()
+  got_second:
+    $P3 = opfunc($P1, $P2)
+    result[$P0] = $P3
+    goto it_loop
+  it_loop_end:
+
+    .return (result)
+.end
+
+
 .sub '!CROSSMETAOP'
     .param string opname
     .param string identity
     .param int chain
-    .param pmc a
-    .param pmc b
+    .param pmc args :slurpy
 
     # Use the X operator to get all permutation lists.
     .local pmc lists
-    lists = 'infix:X'(a, b)
+    lists = 'infix:X'(args :flat)
 
     # Go over the lists and combine them with reduce meta-op.
     .local pmc result, it, combinder

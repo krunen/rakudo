@@ -6,7 +6,7 @@
 .sub '' :anon :init :load
     .local pmc p6meta, failureproto, exceptionproto
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
-    failureproto = p6meta.'new_class'('Failure', 'parent'=>'Undef Any', 'attr'=>'$!exception')
+    failureproto = p6meta.'new_class'('Failure', 'parent'=>'parrot;Undef Any', 'attr'=>'$!exception')
     p6meta.'register'('Undef', 'parent'=>failureproto, 'protoobject'=>failureproto)
 
     $P0 = box 1
@@ -56,7 +56,7 @@
     unless x goto no_args
     die "Obsolete use of undef; in Perl 6 please use undefine instead"
   no_args:
-    $P0 = new 'Failure'
+    $P0 = new ['Failure']
     .return ($P0)
 .end
 
@@ -73,7 +73,7 @@
     $I0 = isa exception, 'Exception'
     if $I0 goto have_exception
   make_exception:
-    exception = new 'Exception'
+    exception = root_new ['parrot';'Exception']
     exception['message'] = 'Use of uninitialized value'
     setattribute self, '$!exception', exception
   have_exception:

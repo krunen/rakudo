@@ -20,32 +20,36 @@ symbols for C<Bool::True> and C<Bool::False>.
 .sub 'onload' :anon :init :load
     .local pmc p6meta, boolproto
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
-    boolproto = p6meta.'new_class'('Bool', 'parent'=>'Boolean Any')
+    boolproto = p6meta.'new_class'('Bool', 'parent'=>'parrot;Boolean Any')
     boolproto.'!IMMUTABLE'()
     p6meta.'register'('Boolean', 'parent'=>boolproto, 'protoobject'=>boolproto)
 
+    # True and False need to appear type-ish.
+    $P1 = get_hll_global 'Abstraction'
+
     $P0 = boolproto.'new'()
     $P0 = 0
+    'infix:does'($P0, $P1)
     set_hll_global ['Bool'], 'False', $P0
+    set_hll_global 'False', $P0
 
     $P0 = boolproto.'new'()
     $P0 = 1
+    'infix:does'($P0, $P1)
     set_hll_global ['Bool'], 'True', $P0
-
-    # Mark as enum elements.
-    $P0 = class $P0
-    $P1 = box 1
-    setprop $P0, 'enum', $P1
+    set_hll_global 'True', $P0
 .end
 
 
-.sub 'succ' :method :vtable('increment')
-    self = 1
+.sub 'succ' :method
+    $P0 = get_global 'True'
+    .return ($P0)
 .end
 
 
-.sub 'pred' :method :vtable('decrement')
-    self = 0
+.sub 'pred' :method
+    $P0 = get_global 'False'
+    .return ($P0)
 .end
 
 =back

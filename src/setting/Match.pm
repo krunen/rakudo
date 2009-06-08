@@ -14,7 +14,7 @@ class Match is also {
             take $sp;
             take "ast  => {$.ast.perl},\n";
             take $sp;
-            take "text => {$.text.perl},\n";
+            take "Str => {$.Str.perl},\n";
             take $sp;
             take "from => $.from,\n";
             take $sp;
@@ -22,9 +22,10 @@ class Match is also {
             if @(self) {
                 take $sp;
                 take "positional => [\n";
-                for @(self) {
+                # work around RT #64952
+                for ^self.list {
                     take "$sp ";
-                    take $_!_perl($indent + 4);
+                    self!_perl_quant(self.[$_], $indent);
                     take ",\n";
                 }
                 take $sp;
@@ -33,14 +34,9 @@ class Match is also {
             if %(self) {
                 take $sp;
                 take "named => \{\n";
-                for %(self).kv -> $name, $match {
-                    take "$sp '$name' => ";
-                    # XXX why is this a Str, not a Match?
-                    if $match ~~ Match {
-                        take $match!_perl($indent + 3);
-                    } else {
-                        take $match.perl;
-                    }
+                for %(self).pairs {
+                    take "$sp '{.key}' => ";
+                    self!_perl_quant(.value, $indent);
                     take ",\n";
                 }
                 take "$sp\},\n";
@@ -50,13 +46,30 @@ class Match is also {
         }
     }
 
+    method !_perl_quant($obj, $indent) {
+        my $sp = ' ' x $indent;
+        if $obj ~~ undef {
+            take 'undef';
+        } elsif $obj ~~ Match {
+            take $obj!_perl($indent + 3);
+        } else {
+            take "[\n";
+            for $obj.list {
+                take $sp ~ '    ';
+                take $_!_perl($indent + 5);
+                take ",\n";
+            }
+            take "$sp ]";
+        }
+    }
+
     multi method caps() {
         my @caps = gather {
             for self.list.pairs, self.hash.pairs -> $p {
                 # in regexes like [(.) ...]+, the capture for (.) is 
                 # a List. flatten that.
                 if $p.value ~~ List {
-                    take ($p.key => $_.value) for @($p);
+                    take ($p.key => $_) for @($p.value);
                 } else {
                     take $p;
                 }
@@ -66,16 +79,16 @@ class Match is also {
     }
 
     multi method chunks() {
-        my $prev = 0;
+        my $prev = $.from;
         gather {
             for @.caps {
                 if .value.from > $prev {
-                    take '~' => self.substr($prev, .value.from - $prev)
+                    take '~' => self.substr($prev - $.from, .value.from - $prev)
                 }
                 take $_;
                 $prev = .value.to;
             }
-            take self.substr($prev) if $prev < self.chars;
+            take ('~' => self.substr($prev - $.from)) if $prev < $.to;
         }
     }
 }

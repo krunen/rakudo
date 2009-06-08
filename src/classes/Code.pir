@@ -16,7 +16,7 @@ for executable objects.
 .sub 'onload' :anon :load :init
     .local pmc p6meta, codeproto
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
-    codeproto = p6meta.'new_class'('Code', 'parent'=>'Sub Any')
+    codeproto = p6meta.'new_class'('Code', 'parent'=>'parrot;Sub Any')
     $P0 = get_hll_global 'Callable'
     $P0 = $P0.'!select'()
     p6meta.'add_role'($P0, 'to'=>codeproto)
@@ -58,7 +58,7 @@ for executable objects.
     if match goto store_match
     goto it_loop
   it_loop_end:
-    match = new 'Undef' # Otherwise we'd get a Null PMC Exception later
+    match = root_new ['parrot';'Undef'] # Otherwise we'd get a Null PMC Exception later
     goto store_match
 
     # Otherwise, just match on the topic.
@@ -70,7 +70,8 @@ for executable objects.
     push_eh not_regex
     $P0 = getinterp
     $P1 = $P0['lexpad';1]
-    $P1['$/'] = match
+    $P2 = root_new ['parrot';'Perl6Scalar'], match
+    $P1['$/'] = $P2
   not_regex:
     .return (match)
 .end
@@ -133,23 +134,6 @@ Just calls this block with the supplied parameters.
 .end
 
 
-=item count()
-
-Return the number of required and optional parameters for a Block.
-Note that we currently do this by adding the method to Parrot's 
-"Sub" PMC, so that it works for non-Rakudo subs.
-
-=cut
-
-.namespace ['Sub']
-.sub 'count' :method
-    $P0 = inspect self, "pos_required"
-    $P1 = inspect self, "pos_optional"
-    add $P0, $P1
-    .return ($P0)
-.end
-
-
 =item perl()
 
 Return a response to .perl.
@@ -168,7 +152,7 @@ Gets the signature for the block, or returns Failure if it lacks one.
 =cut
 
 .sub 'signature' :method
-    $P0 = '!DEREF'(self)
+    $P0 = descalarref self
     $P0 = getprop '$!signature', $P0
     if null $P0 goto no_sig
     .return ($P0)

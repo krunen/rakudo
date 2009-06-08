@@ -23,8 +23,8 @@ short name for a particular set of parameters.
 .sub 'onload' :anon :init :load
     .local pmc p6meta, roleproto
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
-    roleproto = p6meta.'new_class'('Perl6Role', 'parent'=>'Any', 'name'=>'Role', 'attr'=>'$!selector @!created')
-    p6meta.'register'('Role', 'proto'=>'roleproto')
+    roleproto = p6meta.'new_class'('Perl6Role', 'parent'=>'Object', 'name'=>'Role', 'attr'=>'$!selector $!created $!shortname')
+    p6meta.'register'('P6role', 'proto'=>'roleproto')
 .end
 
 
@@ -39,7 +39,7 @@ Adds a parameterized variant of the role.
     .local pmc selector
     selector = getattribute self, '$!selector'
     unless null selector goto have_selector
-    selector = new 'Perl6MultiSub'
+    selector = root_new ['parrot';'Perl6MultiSub']
     setattribute self, '$!selector', selector
   have_selector:
     push selector, variant
@@ -56,7 +56,7 @@ Selects a variant of the role to do based upon the supplied parameters.
     .param pmc pos_args  :slurpy
     .param pmc name_args :slurpy :named
 
-    # @!created is an array of hashes describing role instantiations that have
+    # $!created is an array of hashes describing role instantiations that have
     # already taken place. This means that we always hand back, for Foo[Int],
     # the same Parrot-level role rather than creating one each time we ask for
     # a Foo[Int]. The hash contains:
@@ -67,10 +67,10 @@ Selects a variant of the role to do based upon the supplied parameters.
     # check those.
     .local pmc result, created_list, ins_hash, it, test_pos_args
     .local int num_pos_args, num_name_args, i
-    created_list = getattribute self, '@!created'
+    created_list = getattribute self, '$!created'
     unless null created_list goto got_created_list
-    created_list = new 'ResizablePMCArray'
-    setattribute self, '@!created', created_list
+    created_list = root_new ['parrot';'ResizablePMCArray']
+    setattribute self, '$!created', created_list
     goto select_role
   got_created_list:
     num_pos_args = elements pos_args
@@ -107,7 +107,7 @@ Selects a variant of the role to do based upon the supplied parameters.
     .local pmc selector
     selector = getattribute self, '$!selector'
     result = selector(pos_args :flat, name_args :flat :named)
-    ins_hash = new 'Hash'
+    ins_hash = root_new ['parrot';'Hash']
     ins_hash["pos_args"] = pos_args
     ins_hash["role"] = result
     push created_list, ins_hash
@@ -131,13 +131,13 @@ Checks if the given topic does the role.
 
     # If the topic is the same as self, then we're done.
     $I0 = 1
-    topic = '!DEREF'(topic)
+    topic = descalarref topic
     eq_addr self, topic, done
     $I0 = 0
 
     # Go over the roles we've created and see if one of them is done.
     .local pmc created, it
-    created = getattribute self, '@!created'
+    created = getattribute self, '$!created'
     if null created goto it_loop_end
     it = iter created
   it_loop:
@@ -170,8 +170,26 @@ Selects a role based upon type.
 
     # Need to unwrap the arguments (they are wrapped by postcircumfix:[ ]
     # multi), then call !select.
-    pos_args = pos_args[0]
+    pos_args.'!flatten'()
     .tailcall self.'!select'(pos_args :flat, name_args :flat :named)
+.end
+
+
+=item new
+
+XXX Because of the way punning is currently handled - look for methods the role
+should handles and pun the rest - we end up punning some bits we should not.
+Need a cleaner solution in the end...for now we make sure the new from P6object
+doesn't get through to here.
+
+=cut
+
+.sub 'new' :method
+    .param pmc pos_args  :slurpy
+    .param pmc name_args :slurpy :named
+    $P0 = self.'!select'()
+    $P0 = $P0.'!pun'()
+    .tailcall $P0.'new'(pos_args :flat, name_args :flat :named)
 .end
 
 
@@ -182,185 +200,69 @@ just here so postcircumfix:[ ] doesn't explode).
 
 =cut
 
-.sub 'elements' :vtable
+.sub 'elems' :vtable('elements')
     $P0 = getattribute self, '$!selector'
     $I0 = elements $P0
     .return ($I0)
 .end
 
 
-=item WHICH
+=item perl
 
 =cut
 
-.sub 'WHICH' :method
-    $I0 = get_addr self
-    .return ($I0)
-.end
-
-
-=item WHAT
-
-=cut
-
-.sub 'WHAT' :method
-    .return (self)
-.end
-
-
-=item Str (vtable get_string)
-
-=cut
-
-.sub 'Str' :method :vtable('get_string')
-    $P0 = getprop '$!shortname', self
-    .return ($P0)
-.end
-
-
-=back
-
-=head1 Methods on Parrot Roles
-
-We also add some methods to the Parrot roles.
-
-=item !pun
-
-Puns the role to a class and returns that class.
-
-=cut
-
-.namespace ["Role"]
-.sub '!pun' :method
-    # See if we have already created a punned class; use it if so.
-    .local pmc pun
-    pun = getprop '$!pun', self
-    if null pun goto make_pun
-    .return (pun)
-  make_pun:
-
-    # Otherwise, need to create a punned class.
-    .local pmc p6meta, metaclass, proto
-    p6meta = get_hll_global ['Perl6Object'], '$!P6META'
-    metaclass = new ['Class']
-    $P0 = box 'class'
-    setprop metaclass, 'pkgtype', $P0
-    metaclass.'add_role'(self)
-    # XXX Would be nice to call !meta_compose here; for some reason, Parrot
-    # ends up calling the wrong multi-variant. Something to investigate, when
-    # I/someone has the energy for it.
-    '!compose_role_attributes'(metaclass, self)
-    proto = p6meta.'register'(metaclass, 'parent'=>'Any')
-    
-    # Set name (don't use name=>... in register so we don't make a
-    # namespace entry though).
-    $P0 = self.'Str'()
-    $P1 = proto.'HOW'()
-    setattribute $P1, 'shortname', $P0
-
-    # Stash it away, then instantiate it.
-    setprop self, '$!pun', proto
-    .return (proto)
-.end
-
-
-=item ACCEPTS
-
-=cut
-
-.sub 'ACCEPTS' :method
-    .param pmc topic
-    
-    # First, check if this role is directly done by the topic.
-    $I0 = does topic, self
-    if $I0 goto done
-
-    # Otherwise, need to consider subtypes in the parameters.
-    .local pmc all_variants, it, want_rf, our_types, cur_variant
-    $P0 = getprop '$!owner', self
-    all_variants = getattribute $P0, '@!created'
-    want_rf = getprop '$!orig_role', self
-    our_types = getprop '@!type_args', self
-    it = iter all_variants
-  it_loop:
-    unless it goto it_loop_end
-    cur_variant = shift it
-
-    # We can exclude a variant if it wasn't from the same role factory.
-    $P0 = cur_variant['role']
-    $P1 = getprop '$!orig_role', $P0
-    eq_addr $P1, want_rf, same_variant
-    goto it_loop
-  same_variant:
-
-    # Also we can exclude it if our topic doens't do it.
-    $I0 = does topic, $P0
-    unless $I0 goto it_loop
-
-    # If it's from the same variant, check all types of the role we're
-    # considering here are broader-or-equal types.
-    .local pmc check_types
-    check_types = cur_variant['pos_args']
-    $I0 = elements check_types
-    $I1 = elements our_types
-    if $I0 != $I1 goto it_loop
-    $I0 = 0
-  type_loop:
-    if $I0 >= $I1 goto type_loop_end
-    $P0 = our_types[$I0]
-    $P1 = check_types[$I0]
-    $I2 = $P0.'ACCEPTS'($P1)
-    unless $I2 goto it_loop
-    inc $I0
-    goto type_loop
-  type_loop_end:
-
-    # If we get here, we found a role that through the subtypes of its
-    # parameters is applicable.
-    $I0 = 1
-    goto done
-  it_loop_end:
-
-    # If we get here, no applicable roles.
-    $I0 = 0
-  done:
-    $P0 = 'prefix:?'($I0)
-    .return ($P0)
-.end
-.sub 'REJECTS' :method
-    .param pmc topic
-    $P0 = self.'ACCEPTS'(topic)
-    .tailcall 'prefix:!'($P0)
-.end
-
-
-=item WHICH
-
-=cut
-
-.sub 'WHICH' :method
-    $I0 = get_addr self
-    .return ($I0)
-.end
-
-
-=item WHAT
-
-=cut
-
-.sub 'WHAT' :method
-    .return (self)
-.end
-
-
-=item Str (vtable get_string)
-
-=cut
-
-.sub 'Str' :method :vtable('get_string')
-    $P0 = getprop '$!owner', self
+.sub 'perl' :method
+    $P0 = getattribute self, '$!shortname'
     $S0 = $P0
     .return ($S0)
+.end
+
+
+=item WHICH
+
+=cut
+
+.sub 'WHICH' :method
+    $I0 = get_addr self
+    .return ($I0)
+.end
+
+
+=item WHAT
+
+=cut
+
+.sub 'WHAT' :method
+    .return (self)
+.end
+
+
+=item Str (vtable get_string)
+
+=cut
+
+.sub 'Str' :method :vtable('get_string')
+    $P0 = getattribute self, '$!shortname'
+    $S0 = $P0
+    concat $S0, '()'
+    .return ($S0)
+.end
+
+
+.include "interpinfo.pasm"
+.sub '!pun_helper'
+    .param pmc role
+    .param pmc pos_args   :slurpy
+    .param pmc named_args :slurpy :named
+    $I0 = isa role, 'P6role'
+    if $I0 goto already_selected
+    role = role.'!select'()
+  already_selected:
+    $P0 = interpinfo .INTERPINFO_CURRENT_SUB
+    $P0 = getprop 'name', $P0
+    $S0 = $P0
+    $P0 = role.'!pun'()
+    .tailcall $P0.$S0(pos_args :flat, named_args :flat :named)
 .end
 
 =back

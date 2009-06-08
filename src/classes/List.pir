@@ -10,7 +10,7 @@ src/classes/List.pir - Perl 6 List class and related functions
 .sub '' :anon :load :init
     .local pmc p6meta, listproto
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
-    listproto = p6meta.'new_class'('List', 'parent'=>'ResizablePMCArray Any')
+    listproto = p6meta.'new_class'('List', 'parent'=>'parrot;ResizablePMCArray Any')
     $P0 = get_hll_global 'Positional'
     $P0 = $P0.'!select'()
     p6meta.'add_role'($P0, 'to'=>listproto)
@@ -40,8 +40,6 @@ Smart-matches against the list.
 
     # Need to DWIM on *s.
   array:
-    .local pmc whatever
-    whatever = get_hll_global 'Whatever'
     .local pmc it_a, it_b, cur_a, cur_b
     it_a = iter self
     it_b = iter topic
@@ -53,7 +51,7 @@ Smart-matches against the list.
     cur_b = shift it_b
 
     # If there curent thing is Whatever, need special handling.
-    $I0 = isa cur_a, whatever
+    $I0 = isa cur_a, ['Whatever']
     unless $I0 goto not_whatever
 
     # If we don't have anything left other than the Whatever, it matches any
@@ -64,7 +62,7 @@ Smart-matches against the list.
     unless it_a goto true
     .local pmc looking_for
     looking_for = shift it_a
-    $I0 = isa looking_for, whatever
+    $I0 = isa looking_for, ['Whatever']
     if $I0 goto handle_whatever
   whatever_loop:
     $P0 = 'infix:==='(looking_for, cur_b)
@@ -86,7 +84,7 @@ Smart-matches against the list.
     unless $I0 goto false
     unless it_a goto it_loop_end
     cur_a = shift it_a
-    $I0 = isa cur_a, whatever
+    $I0 = isa cur_a, ['Whatever']
     if $I0 goto handle_whatever
     unless it_b goto false
     goto it_loop
@@ -119,6 +117,99 @@ A List in item context becomes an Array.
     .tailcall values.'!flatten'()
 .end
 
+
+=item !STORE(source)
+
+Store the values from C<source> into C<self>.
+
+=cut
+
+.namespace ['List']
+.sub '!STORE' :method
+    .param pmc source
+
+    ##  get the list of containers and sources
+    .local pmc list
+    $P0 = new ['List']
+    splice $P0, self, 0, 0
+    list = $P0
+    source = source.'list'()
+    source.'!flatten'()
+
+    ##  now, go through our list of containers, flattening
+    ##  any intermediate lists we find, and marking each
+    ##  container with a property so we can clone it in source
+    ##  if needed
+    .local pmc true
+    .local int i
+    true = box 1
+    i = 0
+  mark_loop:
+    $I0 = elements list
+    unless i < $I0 goto mark_done
+    .local pmc cont
+    cont = list[i]
+    $I0 = isa cont, ['Perl6Scalar']
+    if $I0 goto mark_next
+    $I0 = isa cont, ['Perl6Array']
+    if $I0 goto mark_next
+    $I0 = does cont, 'array'
+    unless $I0 goto mark_next
+    splice list, cont, $I0, 1
+    goto mark_loop
+  mark_next:
+    setprop cont, 'target', true
+    inc i
+    goto mark_loop
+  mark_done:
+
+    ## now build our 'real' source list, cloning any targets we encounter
+    .local pmc slist, it
+    slist = new ['List']
+    it = iter source
+  source_loop:
+    unless it goto source_done
+    $P0 = shift it
+    $P1 = getprop 'target', $P0
+    if null $P1 goto source_next
+    $P0 = clone $P0
+  source_next:
+    push slist, $P0
+    goto source_loop
+  source_done:
+
+    ## now perform the assignments, clearing targets as we go
+    .local pmc pmcnull
+    null pmcnull
+    it = iter list
+  assign_loop:
+    unless it goto assign_done
+    .local pmc cont
+    cont = shift it
+    setprop cont, 'target', pmcnull
+    $I0 = isa cont, 'Perl6Scalar'
+    if $I0 goto assign_scalar
+    $I0 = isa cont, 'Perl6Array'
+    if $I0 goto assign_array
+    $I0 = isa cont, 'Perl6Hash'
+    if $I0 goto assign_hash
+  assign_scalar:
+    if slist goto have_slist
+    slist = new ['Nil']
+  have_slist:
+    $P0 = shift slist
+    'infix:='(cont, $P0)
+    goto assign_loop
+  assign_array:
+  assign_hash:
+    cont.'!STORE'(slist)
+    slist = new ['Nil']
+    goto assign_loop
+  assign_done:
+    .return (list)
+.end
+
+
 =back
 
 =head2 Coercion methods
@@ -145,7 +236,7 @@ A list in Scalar context becomes a Scalar containing an Array.
 
 .sub 'Scalar' :method
     $P0 = self.'Array'()
-    $P0 = new 'Perl6Scalar', $P0
+    $P0 = root_new ['parrot';'Perl6Scalar'], $P0
     .return ($P0)
 .end
 
@@ -155,25 +246,6 @@ A list in Scalar context becomes a Scalar containing an Array.
     $S0 = join ' ', self
     .return ($S0)
 .end
-
-=item ResizablePMCArray.list
-
-This version of list morphs a ResizablePMCArray into a List.
-
-=cut
-
-.namespace ['ResizablePMCArray']
-.sub 'list' :method
-    ##  this code morphs a ResizablePMCArray into a List
-    ##  without causing a clone of any of the elements
-    $P0 = new 'ResizablePMCArray'
-    splice $P0, self, 0, 0
-    $P1 = new 'List'
-    copy self, $P1
-    splice self, $P0, 0, 0
-    .return (self)
-.end
-
 
 =back
 
@@ -234,6 +306,16 @@ layer.  It will likely change substantially when we have lazy lists.
     .local pmc elem
     elem = self[i]
     $I0 = isa elem, 'Perl6Scalar'
+    if $I0 goto flat_next
+    # always treat a Junction, Role and Whatever as one item, whether they can !flatten or not
+    # XXX this is due to C<can> giving dubious answers due to auto-thread/pun/closure creation
+    $I0 = isa elem, 'Junction'
+    if $I0 goto flat_next
+    $I0 = isa elem, 'Whatever'
+    if $I0 goto flat_next
+    $I0 = isa elem, 'Perl6Role'
+    if $I0 goto flat_next
+    $I0 = isa elem, 'P6role'
     if $I0 goto flat_next
     $I0 = can elem, '!flatten'
     if $I0 goto flat_elem
@@ -346,13 +428,13 @@ The zip operator.
     .local pmc result
 
     # create a list to hold the results
-    result = new 'List'
+    result = new ['List']
 
     unless arglist goto result_done
 
     # create a set of iterators, one per argument
     .local pmc iterlist, arglist_it
-    iterlist = new 'ResizablePMCArray'
+    iterlist = root_new ['parrot';'ResizablePMCArray']
     arglist_it = iter arglist
   arglist_loop:
     unless arglist_it goto arglist_done
@@ -370,7 +452,7 @@ The zip operator.
   outer_loop:
     .local pmc iterlist_it, reselem
     iterlist_it = iter iterlist
-    reselem = new 'List'
+    reselem = new ['List']
   iterlist_loop:
     unless iterlist_it goto iterlist_done
     arg_it = shift iterlist_it
@@ -398,7 +480,7 @@ The non-hyper cross operator.
     .local pmc res
 
     .local pmc res, outer, inner, it, val
-    res = new 'List'
+    res = new ['List']
 
     ##  if the are no arguments, result is empty list
     unless args goto done
@@ -443,7 +525,7 @@ The non-hyper cross operator.
   one_arg_loop:
     unless it goto done
     val = shift it
-    $P0 = new 'List'
+    $P0 = new ['List']
     push $P0, val
     push res, $P0
     goto one_arg_loop
@@ -466,7 +548,7 @@ The min operator.
     .local int elems
     elems = elements args
     if elems > 0 goto have_args
-    $P0 = new 'Undef'
+    $P0 = root_new ['parrot';'Undef']
     .return($P0)
 have_args:
 
@@ -500,7 +582,7 @@ The max operator.
     .local int elems
     elems = elements args
     if elems > 0 goto have_args
-    $P0 = new 'Undef'
+    $P0 = root_new ['parrot';'Undef']
     .return($P0)
 have_args:
 

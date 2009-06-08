@@ -45,9 +45,30 @@ class Any is also {
             %r = box $I0
         }
     }
+
+    # Used by the :Trig subs and methods in the Int and Num classes.
+    our Num multi method !to-radians($base) {
+        given $base {
+            when /:i ^d/ { self * pi/180 }    # Convert from degrees.
+            when /:i ^g/ { self * pi/200 }    # Convert from gradians.
+            when /:i ^r/ { self }             # Convert from radians.
+            when Num     { self * 2 * pi }    # Convert from revolutions.
+            default { die "Unable to convert to base: $base" }
+        }
+    }
+
+    our Num multi method !from-radians(Num $x, $base) {
+        given $base {
+            when /:i ^d/ { $x * 180/pi  }    # Convert to degrees.
+            when /:i ^g/ { $x * 200/pi  }    # Convert to gradians.
+            when /:i ^r/ { $x }              # Convert to radians.
+            when Num     { $x /(2 * pi) }    # Convert to revolutions.
+            default { die "Unable to convert to base: $base" }
+        }
+    }
 }
 
-our Int sub rand (*@args) {
+our Num sub rand (*@args) {
     die "too many arguments passed - 0 params expected" if @args;
     1.rand
 }

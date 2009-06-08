@@ -28,56 +28,67 @@ src/builtins/op.pir - Perl 6 builtin operators
 
 
 ## autoincrement
-.sub 'postfix:++' :multi(_)
+.sub 'prefix:++' :multi(_) :subid('!prefix:++')
+    .param pmc a
+    $I0 = defined a
+    unless $I0 goto inc_undef
+    $P1 = a.'succ'()
+    .tailcall 'infix:='(a, $P1)
+  inc_undef:
+    .tailcall 'infix:='(a, 1)
+.end
+
+.sub 'postfix:++' :multi(_) :subid('!postfix:++')
     .param pmc a
     $P0 = a.'clone'()
-    $I0 = defined a
-    if $I0 goto have_a
-    'infix:='(a, 0)
-  have_a:
-    $P1 = a.'clone'()
-    inc $P1
-    'infix:='(a, $P1)
+    .const 'Sub' $P1 = '!prefix:++'
+    $P1(a)
     .return ($P0)
+.end
+
+.sub 'prefix:--' :multi(_) :subid('!prefix:--')
+    .param pmc a
+    $I0 = defined a
+    unless $I0 goto dec_undef
+    $P1 = a.'pred'()
+    .tailcall 'infix:='(a, $P1)
+  dec_undef:
+    .tailcall 'infix:='(a, -1)
 .end
 
 .sub 'postfix:--' :multi(_)
     .param pmc a
     $P0 = a.'clone'()
-    $I0 = defined a
-    if $I0 goto have_a
-    'infix:='(a, 0)
-  have_a:
-    $P1 = a.'clone'()
-    dec $P1
-    'infix:='(a, $P1)
+    .const 'Sub' $P1 = '!prefix:--'
+    $P1(a)
     .return ($P0)
 .end
 
-
-.sub 'prefix:++' :multi(_)
+.sub 'prefix:++' :multi(Integer) :subid('!prefix:++Int')
     .param pmc a
-    $I0 = defined a
-    if $I0 goto have_a
-    'infix:='(a, 0)
-  have_a:
-    $P0 = a.'clone'()
-    inc $P0
-    'infix:='(a, $P0)
+    unless a < 2147483647 goto fallback
+    $P0 = getprop 'readonly', a
+    unless null $P0 goto fallback
+    $P0 = getprop 'type', a
+    if null $P0 goto fast_inc
+    $P1 = get_hll_global 'Int'
+    $I0 = issame $P0, $P1
+    unless $I0 goto fallback
+  fast_inc:
+    inc a
     .return (a)
+  fallback:
+    .const 'Sub' fb = '!prefix:++'
+    .tailcall fb(a)
 .end
 
-
-.sub 'prefix:--' :multi(_)
+.sub 'postfix:++' :multi(Integer)
     .param pmc a
-    $I0 = defined a
-    if $I0 goto have_a
-    'infix:='(a, 0)
-  have_a:
-    $P0 = a.'clone'()
-    dec $P0
-    'infix:='(a, $P0)
-    .return (a)
+    $P0 = deobjectref a
+    $P0 = clone $P0
+    .const 'Sub' $P1 = '!prefix:++Int'
+    $P1(a)
+    .return ($P0)
 .end
 
 
@@ -144,7 +155,7 @@ src/builtins/op.pir - Perl 6 builtin operators
 
 .sub 'prefix:~' :multi(_)
     .param string a
-    $P0 = new 'Str'
+    $P0 = new ['Str']
     $P0 = a
     .return ($P0)
 .end
@@ -317,7 +328,7 @@ src/builtins/op.pir - Perl 6 builtin operators
     .param string a
     .param string b
     $S0 = concat a, b
-    $P0 = new 'Str'
+    $P0 = new ['Str']
     assign $P0, $S0
     .return ($P0)
 .end
@@ -402,17 +413,20 @@ src/builtins/op.pir - Perl 6 builtin operators
 
     # Get the class of the variable we're adding roles to.
     .local pmc p6meta, parrot_class
+    var.'!rebox'()
     parrot_class = class var
 
     # Derive a new class that does the role(s) specified.
     .local pmc derived
-    derived = new 'Class'
+    derived = root_new ['parrot';'Class']
     addparent derived, parrot_class
-    $I0 = isa role, 'Perl6Role'
+    $I0 = isa role, ['Perl6Role']
     if $I0 goto one_role_select
-    $I0 = isa role, 'Role'
+    #$P0 = get_root_namespace ['parrot';'Role']
+    #$P0 = get_class $P0
+    $I0 = isa role, 'P6role'
     if $I0 goto one_role
-    $I0 = isa role, 'List'
+    $I0 = isa role, ['List']
     if $I0 goto many_roles
   error:
     'die'("'does' expects a role or a list of roles")
@@ -420,7 +434,8 @@ src/builtins/op.pir - Perl 6 builtin operators
   one_role_select:
     role = role.'!select'()
   one_role:
-    '!keyword_does'(derived, role)
+    addrole derived, role
+    '!compose_role_attributes'(derived, role)
     goto added_roles
 
   many_roles:
@@ -435,7 +450,8 @@ src/builtins/op.pir - Perl 6 builtin operators
     unless $I0 goto error
     cur_role = cur_role.'!select'()
   have_parrot_role:
-    '!keyword_does'(derived, cur_role)
+    addrole derived, cur_role
+    '!compose_role_attributes'(derived, cur_role)
     goto roles_loop
   roles_loop_end:
   added_roles:
@@ -455,7 +471,9 @@ src/builtins/op.pir - Perl 6 builtin operators
     rebless_subclass var, derived
 
     # We need to set any initial attribute values up.
-    new_proto.'BUILD'(var)
+    .lex '$CLASS', new_proto
+    $P0 = find_method new_proto, 'BUILD'
+    $P0(var)
 
     # If we were given something to initialize with, do so.
     unless have_init_value goto no_init
@@ -494,10 +512,14 @@ attr_error:
     # If not, it may be an enum. If we don't have a value, get the class of
     # the thing passed as a role and find out.
     if have_value goto error
-    .local pmc the_class
-    push_eh error
-    the_class = class role
-    role = getprop 'enum', the_class
+    .local pmc maybe_enum
+    maybe_enum = role.'WHAT'()
+    $P0 = getprop '$!is_enum', maybe_enum
+    if null $P0 goto error
+    unless $P0 goto error
+    value = role
+    role = maybe_enum
+    goto have_role
     unless null role goto have_role
 
     # Did anything go wrong?
@@ -518,6 +540,135 @@ attr_error:
     'infix:does'(var, role)
   return:
     .return (var)
+.end
+
+
+=item !generate_meta_ops
+
+Generates meta-ops for user defined operators.
+
+=cut
+
+.sub '!generate_meta_ops'
+    .param string full_name
+    .param string equiv
+
+    # If op is already generated, defined, we're done.
+    .local string name
+    name = substr full_name, 6
+    $S0 = concat 'infix:R', name
+    $P0 = get_hll_global $S0
+    unless null $P0 goto done
+
+    # Generate all the names we'll need.
+    .local string assignment, reverse, cross, reduce, hyper1, hyper2, hyper3, hyper4
+    .local string hyper1_asc, hyper2_asc, hyper3_asc, hyper4_asc
+    assignment = concat 'infix:', name
+                 concat assignment, '='
+    reverse    = concat 'infix:R', name
+    cross      = concat 'infix:X', name
+    reduce     = concat 'prefix:[', name
+                 concat reduce, ']'
+    hyper1_asc = concat 'infix:<<', name
+                 concat hyper1_asc, '>>'
+    hyper2_asc = concat 'infix:>>', name
+                 concat hyper2_asc, '<<'
+    hyper3_asc = concat 'infix:<<', name
+                 concat hyper3_asc, '<<'
+    hyper4_asc = concat 'infix:>>', name
+                 concat hyper4_asc, '>>'
+    hyper1     = concat unicode:"infix:\u00ab", name
+                 concat hyper1, unicode:"\u00bb"
+    hyper2     = concat unicode:"infix:\u00bb", name
+                 concat hyper2, unicode:"\u00ab"
+    hyper3     = concat unicode:"infix:\u00ab", name
+                 concat hyper3, unicode:"\u00ab"
+    hyper4     = concat unicode:"infix:\u00bb", name
+                 concat hyper4, unicode:"\u00bb"
+
+    # Add all of the tokens.
+    .local pmc optable
+    optable = get_hll_global ['Perl6';'Grammar'], '$optable'
+    optable.'newtok'(assignment, 'equiv'=>'infix::=', 'lvalue'=>1)
+    optable.'newtok'(reduce, 'equiv'=>'infix:=')
+    optable.'newtok'(reverse, 'equiv'=>equiv)
+    optable.'newtok'(cross, 'equiv'=>'infix:X')
+    optable.'newtok'(hyper1, 'equiv'=>equiv)
+    optable.'newtok'(hyper1_asc, 'equiv'=>equiv, 'subname'=>hyper1)
+    optable.'newtok'(hyper2, 'equiv'=>equiv)
+    optable.'newtok'(hyper2_asc, 'equiv'=>equiv, 'subname'=>hyper2)
+    optable.'newtok'(hyper3, 'equiv'=>equiv)
+    optable.'newtok'(hyper3_asc, 'equiv'=>equiv, 'subname'=>hyper3)
+    optable.'newtok'(hyper4, 'equiv'=>equiv)
+    optable.'newtok'(hyper4_asc, 'equiv'=>equiv, 'subname'=>hyper4)
+
+    # Now generate the subs.
+    $P0 = '!generate_meta_op_sub'('!generate_meta_op_helper_simple', '!ASSIGNMETAOP', name)
+    set_hll_global assignment, $P0
+    $P0 = '!generate_meta_op_sub'('!generate_meta_op_helper_reduce', name)
+    set_hll_global reduce, $P0
+    $P0 = '!generate_meta_op_sub'('!generate_meta_op_helper_reverse', full_name)
+    set_hll_global reverse, $P0
+    $P0 = '!FAIL'()
+    $P0 = '!generate_meta_op_sub'('!generate_meta_op_helper_cross', name)
+    set_hll_global cross, $P0
+    $P0 = '!generate_meta_op_sub'('!generate_meta_op_helper_hyper', '!HYPEROP', name, 0, 0)
+    set_hll_global hyper1, $P0
+    $P0 = '!generate_meta_op_sub'('!generate_meta_op_helper_hyper', '!HYPEROP', name, 1, 1)
+    set_hll_global hyper2, $P0
+    $P0 = '!generate_meta_op_sub'('!generate_meta_op_helper_hyper', '!HYPEROP', name, 0, 1)
+    set_hll_global hyper3, $P0
+    $P0 = '!generate_meta_op_sub'('!generate_meta_op_helper_hyper', '!HYPEROP', name, 1, 0)
+    set_hll_global hyper4, $P0
+  done:
+.end
+.sub '!generate_meta_op_sub'
+    .param string which_helper
+    .param pmc delegate_to
+    .param pmc args :slurpy
+    .lex '$delegate_to', delegate_to
+    .lex '@args', args
+    $P0 = find_name which_helper
+    $P0 = newclosure $P0
+    .return ($P0)
+.end
+.sub '!generate_meta_op_helper_simple' :outer('!generate_meta_op_sub')
+    .param pmc a
+    .param pmc b
+    $P0 = find_lex '$delegate_to'
+    $S0 = $P0
+    $P0 = find_name $S0
+    $P1 = find_lex '@args'
+    .tailcall $P0($P1 :flat, a, b)
+.end
+.sub '!generate_meta_op_helper_reverse' :outer('!generate_meta_op_sub')
+    .param pmc a
+    .param pmc b
+    $P0 = find_lex '$delegate_to'
+    $S0 = $P0
+    $P0 = find_name $S0
+    .tailcall $P0(b, a)
+.end
+.sub '!generate_meta_op_helper_reduce' :outer('!generate_meta_op_sub')
+    .param pmc args :slurpy
+    $P0 = find_lex '$delegate_to'
+    .tailcall '!REDUCEMETAOP'($P0, 0, args :flat)
+.end
+.sub '!generate_meta_op_helper_cross' :outer('!generate_meta_op_sub')
+    .param pmc args :slurpy
+    $P0 = find_lex '$delegate_to'
+    .tailcall '!CROSSMETAOP'($P0, 0, 0, args :flat)
+.end
+.sub '!generate_meta_op_helper_hyper' :outer('!generate_meta_op_sub')
+    .param pmc a
+    .param pmc b
+    $P0 = find_lex '$delegate_to'
+    $S0 = $P0
+    $P0 = find_name $S0
+    $P1 = find_lex '@args'
+    $I1 = pop $P1
+    $I0 = pop $P1
+    .tailcall $P0($P1 :flat, a, b, $I0, $I1)
 .end
 
 =back

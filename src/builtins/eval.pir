@@ -34,11 +34,12 @@ itself can be found in src/builtins/control.pir.
     lang = options['lang']
     if lang == 'Parrot' goto lang_parrot
     if lang goto lang_compile
-    lang = 'Perl6'
+    lang = 'perl6'
   lang_compile:
     .local pmc compiler
     compiler = compreg lang
-    .tailcall compiler.'evalfiles'(filename)
+    # XXX FIXME:  We should allow the compiler to choose default encoding/transcode
+    .tailcall compiler.'evalfiles'(filename, 'encoding'=>'utf8', 'transcode'=>'ascii iso-8859-1')
 
   lang_parrot:
     ##  load_bytecode currently doesn't accept non-ascii filenames (TT #65)
@@ -109,7 +110,7 @@ itself can be found in src/builtins/control.pir.
     goto inc_loop
   inc_end:
     $S0 = concat "Can't find ", basename
-    concat $S0, ' in @INC'
+    concat $S0, ' in @*INC'
     'die'($S0)
     .return (0)
 
@@ -123,12 +124,12 @@ itself can be found in src/builtins/control.pir.
     .local pmc outer_ns_chain, outer_blocks
     outer_ns_chain = get_hll_global ['Perl6';'Grammar';'Actions'], '@?NS'
     outer_blocks = get_hll_global ['Perl6';'Grammar';'Actions'], '@?BLOCK'
-    $P0 = new 'List'
+    $P0 = new ['List']
     set_hll_global ['Perl6';'Grammar';'Actions'], '@?NS', $P0
-    $P0 = new 'List'
+    $P0 = new ['List']
     set_hll_global ['Perl6';'Grammar';'Actions'], '@?BLOCK', $P0
     inc_hash[name] = realfilename
-    result = 'evalfile'(realfilename, 'lang'=>'Perl6')
+    result = 'evalfile'(realfilename, 'lang'=>'perl6')
     set_hll_global ['Perl6';'Grammar';'Actions'], '@?NS', outer_ns_chain
     set_hll_global ['Perl6';'Grammar';'Actions'], '@?BLOCK', outer_blocks
 
@@ -142,6 +143,41 @@ itself can be found in src/builtins/control.pir.
     .param pmc args            :slurpy
     .param pmc options         :slurpy :named
 
+    .local pmc ver, compiler_obj
+    .local string lang
+    compiler_obj = compreg 'perl6'
+
+    # This HLL stuff *should* be integrated with the rest... I spent an hour on it and failed.
+    ver = options['ver']
+    if null ver goto no_hll
+    $P0 = ver['lang']
+    if null $P0 goto no_hll
+    lang = $P0
+    .local pmc name, compiler, library, imports, callerns, foreignlibns
+    $P0 = getinterp
+    callerns = $P0['namespace';1]
+    'load-language'(lang)
+    compiler = compreg lang
+    name = compiler_obj.'parse_name'(module)
+    library = compiler.'load_library'(name)
+    imports = library['symbols']
+    imports = imports['DEFAULT']
+    .local pmc ns_iter, item
+    ns_iter = iter imports
+  import_loop:
+    unless ns_iter goto import_loop_end
+    $S0 = shift ns_iter
+    $P0 = imports[$S0]
+    callerns[$S0] = $P0
+    goto import_loop
+  import_loop_end:
+    foreignlibns = library['namespace']
+    if null foreignlibns goto no_foreign_ns
+    $S0 = pop name
+    set_hll_global name, $S0, foreignlibns
+  no_foreign_ns:
+    .return (library)
+  no_hll:
     # Require module.
     .local pmc retval
     retval = 'require'(module, 'module'=>1)
@@ -156,8 +192,6 @@ itself can be found in src/builtins/control.pir.
 
     # See if we've had a namespace name passed in.
     .local pmc import_ns
-    .local pmc compiler_obj
-    compiler_obj = compreg 'Perl6'
     $P0 = options['import_to']
     if null $P0 goto use_caller_ns
     $S0 = $P0
@@ -170,7 +204,7 @@ itself can be found in src/builtins/control.pir.
     import_ns = get_hll_namespace
     goto got_import_ns
   use_caller_ns:
-    $P0 = new 'ParrotInterpreter'
+    $P0 = getinterp
     $P0 = $P0['sub'; 1]
     import_ns = $P0.'get_namespace'()
   got_import_ns:
@@ -178,7 +212,7 @@ itself can be found in src/builtins/control.pir.
     # Get list of symbols to import.
     .local pmc tag_hash, tags
     tag_hash = options['tags']
-    tags = new 'ResizableStringArray'
+    tags = root_new ['parrot';'ResizableStringArray']
     if null tag_hash goto default_tag
     $P0 = iter tag_hash
   th_it_loop:
