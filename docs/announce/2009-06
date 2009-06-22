@@ -1,0 +1,74 @@
+Announce: Rakudo Perl 6 development release #18 ("Pittsburgh")
+
+On behalf of the Rakudo development team, I'm pleased to announce
+the June 2009 development release of Rakudo Perl #18 "Pittsburgh".
+Rakudo is an implementation of Perl 6 on the Parrot Virtual Machine [1].
+The tarball for the June 2009 release is available from
+http://github.com/rakudo/rakudo/downloads .
+
+Due to the continued rapid pace of Rakudo development and the
+frequent addition of new Perl 6 features and bugfixes, we continue
+to recommend that people wanting to use or work with Rakudo obtain
+the latest source directly from the main repository at github.
+More details are available at http://rakudo.org/how-to-get-rakudo .
+
+Rakudo Perl follows a monthly release cycle, with each release code named
+after a Perl Mongers group.  This release is named "Pittsburgh", which
+is the host for YAPC|10 (YAPC::NA 2009) [2] and the Parrot Virtual Machine
+Workshop [3].  Pittsburgh.pm has also sponsored hackathons for Rakudo 
+Perl as part of the 2008 Pittsburgh Perl Workshop [4].
+
+In this release of Rakudo Perl, we've focused our efforts on refactoring
+many of Rakudo's internals; these refactors improve performance, 
+bring us closer to the Perl 6 specification, operate more cleanly
+with Parrot, and provide a stronger foundation for features to be
+implemented in the near future.  Some of the specific major changes
+and improvements in this release include:
+
+* Rakudo is now passing 11,536 spectests, an increase of 194
+  passing tests since the May 2009 release.  With this release
+  Rakudo is now passing 68% of the available spectest suite.
+
+* Method dispatch has been substantially refactored; the new dispatcher
+  is significantly faster and follows the Perl 6 specification more
+  closely.
+
+* Object initialization via the BUILD and CREATE (sub)methods is
+  substantially improved.
+
+* All return values are now type checked (previously only explicit
+  'return' statements would perform type checking).
+
+* String handling is significantly improved: fewer Unicode-related
+  bugs exist, and parsing speed is greatly improved for some programs 
+  containing characters in the Latin-1 set.
+
+* The IO .lines and .get methods now follow the specification more closely.
+
+* User-defined operators now also receive some of their associated 
+  meta variants.
+
+* The 'is export' trait has been improved; more builtin functions
+  and methods can be written in Perl 6 instead of PIR.
+
+* Many Parrot changes have improved performance and reduced overall
+  memory leaks (although there's still much more improvement needed).
+
+The development team thanks all of our contributors and sponsors for
+making Rakudo Perl possible.  If you would like to contribute,
+see http://rakudo.org/how-to-help , ask on the perl6-compiler@perl.org
+mailing list, or ask on IRC #perl6 on freenode.
+
+The next release of Rakudo (#19) is scheduled for July 23, 2009.
+A list of the other planned release dates and codenames for 2009 is
+available in the "docs/release_guide.pod" file.  In general, Rakudo
+development releases are scheduled to occur two days after each
+Parrot monthly release.  Parrot releases the third Tuesday of each month.
+
+Have fun!
+
+References:
+[1]  Parrot, http://parrot.org/
+[2]  YAPC|10 http://yapc10.org/yn2009/
+[3]  Parrot Virtual Machine Workshop, http://yapc10.org/yn2009/talk/2045
+[4]  Pittsburgh Perl Workshop, http://pghpw.org/ppw2008/

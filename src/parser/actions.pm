@@ -421,7 +421,7 @@ method use_statement($/) {
             for $<colonpair> {
                 my $pair := $_.ast;
                 $ver.push( $pair );
-                if $pair[0].value() eq 'lang' {
+                if $pair[0].value() eq 'from' {
                     $/.add_type($name);
                 }
             }
@@ -2101,7 +2101,7 @@ method circumfix($/, $key) {
     if $key eq '( )' {
         $past := $<statementlist><statement>
                      ?? $<statementlist>.ast
-                     !! PAST::Op.new(:name('list'));
+                     !! PAST::Op.new(:pirop('new Ps'), 'Nil');
     }
     if $key eq '[ ]' {
         $past := PAST::Op.new(:name('circumfix:[ ]'), :node($/) );
