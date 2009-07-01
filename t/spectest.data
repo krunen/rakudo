@@ -120,6 +120,7 @@ S03-operators/context-forcers.t
 S03-operators/context.t
 S03-operators/cross-metaop.t
 S03-operators/equality.t
+S03-operators/eqv.t
 S03-operators/hyper.t
 S03-operators/increment.t
 S03-operators/inplace.t
@@ -231,6 +232,7 @@ S06-multi/lexical-multis.t
 S06-multi/proto.t
 S06-multi/syntax.t
 S06-multi/type-based.t
+S06-multi/value-based.t
 S06-operator-overloading/imported-subs.t
 S06-operator-overloading/sub.t
 S06-other/main.t
@@ -285,8 +287,10 @@ S12-class/declaration-order.t
 S12-class/inheritance-class-methods.t
 S12-class/inheritance.t
 S12-class/instantiate.t
+S12-class/interface-consistency.t
 S12-class/namespaced.t
 S12-class/parent_attributes.t
+S12-class/rw.t
 S12-construction/autopairs.t
 S12-construction/BUILD.t
 S12-construction/construction.t
@@ -344,6 +348,7 @@ S16-io/basic-open.t
 S16-io/say.t
 S16-unfiled/rebindstdhandles.t
 S16-unfiled/slurp.t
+S28-named-variables/cwd.t
 S28-named-variables/inc.t
 S29-any/cmp.t
 S29-any/isa.t
@@ -368,6 +373,7 @@ S32-hash/keys_values.t
 S32-hash/pairs.t
 S32-hash/push.t
 S32-hash/slice.t
+S32-io/chdir.t
 S32-io/IO-Socket-INET.t
 S32-list/end.t
 S32-list/first.t

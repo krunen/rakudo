@@ -437,23 +437,17 @@ rule method_def {
 
 rule trait {
     [
-    | <trait_auxiliary>
-    | <trait_verb>
+    | <trait_mod>
+    | <colonpair>
     ]
     {*}
 }
 
-rule trait_auxiliary {
+rule trait_mod {
     [
     | $<sym>=[is] <name><postcircumfix>?
     | $<sym>=[does] <name>['['<EXPR>?']']?
     | $<sym>=[will] <identifier> <block>
-    ]
-    {*}
-}
-
-rule trait_verb {
-    [
     | $<sym>=[of|returns] <fulltypename>
     | $<sym>=[handles] <noun>
     ]
@@ -495,7 +489,7 @@ token signature {
 }
 
 rule type_declarator {
-    'subset'
+    subset
     <name>
     {{
         $P0 = match['name']
@@ -503,13 +497,14 @@ rule type_declarator {
         match.'add_type'($S0)
     }}
     [ of <fulltypename> ]?
-    where <EXPR>
+    <trait>*
+    [where <EXPR>]?                # XXX <EXPR(item %chaining)>
     {*}
 }
 
-# XXX STD.pm also has value in here?
 rule type_constraint {
     [
+    | <value>
     | <fulltypename>
     | where <EXPR: 'm='>               # XXX <EXPR(item %chaining)>
     ]
@@ -702,8 +697,8 @@ rule package_def {
             match.'add_type'($S0)
         }}
     ]?
-    {*}                                                  #= open
     <trait>*
+    {*}                                                  #= open
     [
     | <block> {*}                                        #= block
     | <?{{ $P0 = get_global '$begin_compunit'

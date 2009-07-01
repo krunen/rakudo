@@ -25,6 +25,7 @@ multi sub infix:<...> (@lhs, Code $generator) {
 
 multi sub infix:<eqv> (Num $a, Num $b) { $a === $b }
 multi sub infix:<eqv> (Str $a, Str $b) { $a === $b }
+multi sub infix:<eqv> (Code $a, Code $b) { $a === $b }
 multi sub infix:<eqv> (Positional $a, Positional $b) {
     return Bool::False unless $a.WHAT === $b.WHAT;
     return Bool::False unless $a.elems == $b.elems;
@@ -41,6 +42,10 @@ multi sub infix:<eqv>(Pair $a, Pair $b) {
 multi sub infix:<eqv> ($a, $b) {
     return Bool::False unless $a.WHAT === $b.WHAT;
     die "infix:<eqv> is only implemented for certain special cases yet";
+}
+
+multi sub infix:<minmax>(@a, @b) {
+    (@a[0] min @b[0], @a[1] max @b[1]);
 }
 
 # vim: ft=perl6
