@@ -3,23 +3,32 @@ class Pair is also {
 =begin item ACCEPTS()
 
 Called from smartmatches '$_ ~~ X'.
-Delegates on to a method call '.:Xkey(Xval)'.
+
+For C<$_ ~~ Mapping> tests if C<$_{X.key} ~~ X.value>
+
+Else it delegates to a  method call '.:Xkey(Xval)'
+(TODO: should actually be .Xkey, not .:Xkey).
 
 =end item
-    method ACCEPTS($topic) {
+
+    multi method ACCEPTS(Mapping $topic) {
+	$topic{$.key} ~~ $.value;
+    }
+
+    multi method ACCEPTS($topic) {
         my $meth_name = ':' ~ $.key;
         return $topic."$meth_name"($.value);
     }
 
 =begin item fmt
 
-  our Str multi Pair::fmt ( Str $format )
+  our Str multi Pair::fmt ( Str $format = "%s\t%s" )
 
 Returns the invocant pair formatted by an implicit call to C<sprintf> on
 the key and value.
 
 =end item
-    method fmt(Str $format) {
+    method fmt(Str $format = "%s\t%s") {
         return sprintf($format, $.key, $.value);
     }
 

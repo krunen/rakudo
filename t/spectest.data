@@ -14,6 +14,7 @@
 # S12-class/extending-arrays.t - 'is also' -> augment
 # S12-class/open.t - 'is also' -> augment
 # S12-class/is_also_instead.t - 'is also' -> augment
+# S12-attributes/mutators.t - we no longer get away with missing rw and Proxy; some bogus passes anyway
 
 integration/99problems-01-to-10.t
 integration/99problems-11-to-20.t
@@ -124,6 +125,7 @@ S03-operators/eqv.t
 S03-operators/hyper.t
 S03-operators/increment.t
 S03-operators/inplace.t
+S03-operators/list-quote-junction.t
 S03-operators/misc.t
 S03-operators/not.t
 S03-operators/numeric-context.t
@@ -135,9 +137,9 @@ S03-operators/reduce-metaop.t
 S03-operators/relational.t
 S03-operators/repeat.t
 S03-operators/scalar-assign.t
+S03-operators/smartmatch.t
 S03-operators/series.t
 S03-operators/short-circuit.t
-S03-operators/smartmatch.t
 S03-operators/spaceship-and-containers.t
 S03-operators/spaceship.t
 S03-operators/subscript-vs-lt.t
@@ -235,6 +237,7 @@ S06-multi/type-based.t
 S06-multi/value-based.t
 S06-operator-overloading/imported-subs.t
 S06-operator-overloading/sub.t
+S06-other/anon-hashes-vs-blocks.t
 S06-other/main.t
 S06-other/main-eval.t
 S06-routine-modifiers/scoped-named-subs.t
@@ -272,13 +275,11 @@ S11-modules/export.t
 S11-modules/import.t
 S11-modules/import-tag.t
 S11-modules/nested.t
-S12-attributes/class2.t
 S12-attributes/class.t
 S12-attributes/clone.t
 S12-attributes/delegation.t
 S12-attributes/inheritance.t
 S12-attributes/instance.t
-S12-attributes/mutators.t
 S12-attributes/recursive.t
 S12-class/anonymous.t
 S12-class/attributes.t
