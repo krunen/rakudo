@@ -39,8 +39,18 @@ multi sub infix:<eqv>(Pair $a, Pair $b) {
     $a.key eqv $b.key && $a.value eqv $b.value;
 }
 
+multi sub infix:<eqv>(Mapping $a, Mapping $b) {
+    return Bool::False if +$a != +$b;
+    for $a.kv -> $k, $v {
+        return Bool::False unless $b.exists($k);
+        return Bool::False unless $b.{$k} eqv $v;
+    }
+    return Bool::True;
+}
+
 multi sub infix:<eqv> ($a, $b) {
     return Bool::False unless $a.WHAT === $b.WHAT;
+    return Bool::True  if     $a      === $b;
     die "infix:<eqv> is only implemented for certain special cases yet";
 }
 
@@ -50,6 +60,22 @@ multi sub infix:<minmax>(@a, @b) {
 
 multi sub infix:<leg>($a, $b) {
     ~$a cmp ~$b;
+}
+
+sub prefix:<[//]>(*@a) {
+    for @a -> $item {
+        $item // next;
+        return $item;
+    }
+    return ();
+}
+
+sub prefix:<[||]>(*@a) {
+    for @a -> $item {
+        $item || next;
+        return $item;
+    }
+    return ();
 }
 
 # vim: ft=perl6

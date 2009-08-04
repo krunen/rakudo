@@ -23,7 +23,7 @@ class Any is also {
         Q:PIR {
             $S0 = self
             downcase $S0
-            %r = box $S0
+            %r = 'prefix:~'($S0)
         }
     }
 
@@ -81,7 +81,24 @@ class Any is also {
         }
     }
 
-    our List multi method split(Code $delimiter, $limit = *) {
+=begin item split
+
+ our List multi Str::split ( Str $delimiter ,  Str $input = $+_, Int $limit = inf )
+ our List multi Str::split ( Rule $delimiter = /\s+/,  Str $input = $+_, Int $limit = inf )
+ our List multi Str::split ( Str $input :  Str $delimiter          , Int $limit = inf )
+ our List multi Str::split ( Str $input : Rule $delimiter          , Int $limit = inf )
+
+String delimiters must not be treated as rules but as constants.  The
+default is no longer S<' '> since that would be interpreted as a constant.
+P5's C<< split('S< >') >> will translate to C<.words> or some such.  Null trailing fields
+are no longer trimmed by default.  We might add some kind of :trim flag or
+introduce a trimlist function of some sort.
+
+B<Note:> partial implementation only
+
+=end item
+
+    our List multi method split(Code $delimiter, $limit = *, :$all) {
         my $s = ~self;
         my $l = $limit ~~ Whatever ?? Inf !! $limit;
         my $keep = '';
@@ -96,6 +113,11 @@ class Any is also {
                     $s.=substr($/.to)
                 }
                 $l--;
+                next if $l < 1;
+                if $all {
+                    $l--;
+                    take $/;
+                }
             }
             take $keep ~ $s if $l > 0;
         }
@@ -161,7 +183,7 @@ class Any is also {
         Q:PIR {
             $S0 = self
             upcase $S0
-            %r = box $S0
+            %r = 'prefix:~'($S0)
         }
     }
 
@@ -170,8 +192,8 @@ class Any is also {
     }
 }
 
-multi sub split($delimiter, $target, $limit = *) {
-    $target.split($delimiter, $limit);
+multi sub split($delimiter, $target, $limit = *, :$all) {
+    $target.split($delimiter, $limit, :$all);
 }
 
 # TODO: '$filename as Str' once support for that is in place

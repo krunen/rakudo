@@ -516,16 +516,19 @@ is composed (see C<!meta_compose> below).
     .return ($P0)
 
   class:
-    .local pmc metaclass, ns
+    .local pmc parrotclass, metaclass, ns
     ns = get_hll_namespace nsarray
     if also goto is_also
-    metaclass = newclass ns
+    parrotclass = newclass ns
     $P0 = box type
-    setprop metaclass, 'pkgtype', $P0
-    '!set_resolves_list'(metaclass)
+    setprop parrotclass, 'pkgtype', $P0
+    '!set_resolves_list'(parrotclass)
+    metaclass = new ['ClassHOW']
+    setattribute metaclass, 'parrotclass', parrotclass
     .return (metaclass)
   is_also:
-    metaclass = get_class ns
+    parrotclass = get_class ns
+    metaclass = getprop 'metaclass', parrotclass
     .return (metaclass)
 
   role:
@@ -534,32 +537,42 @@ is composed (see C<!meta_compose> below).
     # the namespace. Then we attach this "master role" to a new one we create
     # per invocation, so the methods can be newclosure'd and added into it in
     # the body.
-    .local pmc info, metarole
+    .local pmc info, parrotrole
     ns = get_hll_namespace nsarray
-    metarole = get_class ns
-    unless null metarole goto have_role
+    parrotrole = get_class ns
+    unless null parrotrole goto have_role
 
     info = root_new ['parrot';'Hash']
     $P0 = nsarray[-1]
     info['name'] = $P0
     info['namespace'] = nsarray
-    metarole = root_new ['parrot';'P6role'], info
+    parrotrole = root_new ['parrot';'P6role'], info
   have_role:
 
-    # Copy list of roles done by the metarole.
-    .local pmc result, tmp, it
-    result = root_new ['parrot';'P6role']
-    setprop result, '$!orig_role', metarole
-    tmp = metarole.'roles'()
+    # Copy list of roles done by the original role into this specific
+    # one.
+    .local pmc specific_role, tmp, it
+    specific_role = root_new ['parrot';'P6role']
+    setprop specific_role, '$!orig_role', parrotrole
+    tmp = parrotrole.'roles'()
     it = iter tmp
   roles_loop:
     unless it goto roles_loop_end
     tmp = shift it
-    result.'add_role'(tmp)
+    specific_role.'add_role'(tmp)
     goto roles_loop
   roles_loop_end:
 
-    .return (result)
+    # Now create a meta-object (RoleHOW) to package this all up in.
+    .local pmc metaclass
+    metaclass = new ['RoleHOW']
+    setprop specific_role, 'metaclass', metaclass
+    setattribute metaclass, 'parrotclass', specific_role
+    setattribute metaclass, 'protoobject', specific_role
+    setattribute metaclass, 'shortname', $P0
+    $P1 = box name
+    setattribute metaclass, 'longname', $P1
+    .return (metaclass)
 .end
 
 
@@ -570,43 +583,59 @@ and creating the protoobjects.
 
 =cut
 
-.sub '!meta_compose' :multi(['Class'])
+.sub '!meta_compose' 
     .param pmc metaclass
     .local pmc p6meta
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
 
+    # If it's a RoleHOW or otherwise just not a ClassHOW, nothing to do.
+    $I0 = isa metaclass, 'RoleHOW'
+    if $I0 goto no_pkgtype
+    $I0 = isa metaclass, 'ClassHOW'
+    unless $I0 goto no_pkgtype
+
+    # Extract the parrotclass form the metaclass.
+    .local pmc parrotclass
+    parrotclass = getattribute metaclass, 'parrotclass'
+
     # Parrot handles composing methods into roles, but we need to handle the
     # attribute composition ourselves.
     .local pmc roles, roles_it
-    roles = getprop '@!roles', metaclass
+    roles = getprop '@!roles', parrotclass
     if null roles goto roles_it_loop_end
     roles = '!get_flattened_roles_list'(roles)
     roles_it = iter roles
   roles_it_loop:
     unless roles_it goto roles_it_loop_end
     $P0 = shift roles_it
-    $I0 = does metaclass, $P0
+    $I0 = does parrotclass, $P0
     if $I0 goto roles_it_loop
-    metaclass.'add_role'($P0)
-    '!compose_role_attributes'(metaclass, $P0)
+    parrotclass.'add_role'($P0)
+    '!compose_role_attributes'(parrotclass, $P0)
     goto roles_it_loop
   roles_it_loop_end:
 
     # Create proto-object with default parent being Any or Grammar, unless
     # there already is a parent.
-    $P0 = metaclass.'parents'()
+    .local pmc proto
+    $P0 = parrotclass.'parents'()
     $I0 = elements $P0
     if $I0 goto register_parent_set
     $S0 = 'Any'
-    $P0 = getprop 'pkgtype', metaclass
+    $P0 = getprop 'pkgtype', parrotclass
     if null $P0 goto no_pkgtype
     if $P0 != 'grammar' goto register
     $S0 = 'Grammar'
   register:
-    .tailcall p6meta.'register'(metaclass, 'parent'=>$S0)
+    proto = p6meta.'register'(parrotclass, 'parent'=>$S0, 'how'=>metaclass)
+    goto have_proto
   register_parent_set:
-    .tailcall p6meta.'register'(metaclass)
+    proto = p6meta.'register'(parrotclass, 'how'=>metaclass)
+  have_proto:
+    transform_to_p6opaque proto
+    .return (proto)
   no_pkgtype:
+    .return (metaclass)
 .end
 
 
@@ -643,32 +672,6 @@ Flattens out the list of roles.
 .end
 
 
-=item !meta_compose(Role)
-
-Role meta composer -- does nothing.
-
-=cut
-
-.sub '!meta_compose' :multi(['Role'])
-    .param pmc metaclass
-    # Currently, nothing to do.
-    .return (metaclass)
-.end
-
-
-=item !meta_compose()
-
-Default meta composer -- does nothing.
-
-=cut
-
-.sub '!meta_compose' :multi()
-    .param pmc metaclass
-    # Currently, nothing to do.
-    .return (metaclass)
-.end
-
-
 =item !meta_attribute(metaclass, name, itypename [, 'type'=>type] )
 
 Add attribute C<name> to C<metaclass> with the given C<itypename>
@@ -700,10 +703,23 @@ and C<type>.
     substr name, offset, 1, '!'
   twigil_done:
 
+    # In the future, we'll want to have just called metaclass.add_attribute(...)
+    # here and let it handle all of this, but we ain't quite ready for that yet.
+    $I0 = isa metaclass, 'P6metaclass'
+    unless $I0 goto got_parrot_class
+    metaclass = getattribute metaclass, 'parrotclass'
+  got_parrot_class:
+
     $P0 = metaclass.'attributes'()
     $I0 = exists $P0[name]
     if $I0 goto attr_exists
     addattribute metaclass, name
+    $P1 = getprop '@!attribute_list', metaclass
+    unless null $P1 goto have_attrlist
+    $P1 = root_new ['parrot';'ResizableStringArray']
+    setprop metaclass, '@!attribute_list', $P1
+  have_attrlist:
+    push $P1, name
     $P0 = metaclass.'attributes'()
   attr_exists:
 
@@ -859,6 +875,14 @@ Helper method to compose the attributes of a role into a class.
     .param pmc class
     .param pmc role
 
+    # Need to get hold of attribute order list for the class.
+    .local pmc attr_order_list
+    attr_order_list = getprop '@!attribute_list', class
+    unless null attr_order_list goto have_attr_order_list
+    attr_order_list = root_new ['parrot';'ResizableStringArray']
+    setprop class, '@!attribute_list', attr_order_list
+  have_attr_order_list:
+
     .local pmc role_attrs, class_attrs, ra_iter, fixup_list
     .local string cur_attr
     role_attrs = inspect role, "attributes"
@@ -899,6 +923,7 @@ Helper method to compose the attributes of a role into a class.
   no_conflict:
     addattribute class, cur_attr
     push fixup_list, cur_attr
+    push attr_order_list, cur_attr
   merge:
     goto ra_iter_loop
   ra_iter_loop_end:
@@ -924,6 +949,39 @@ Helper method to compose the attributes of a role into a class.
   fixup_iter_loop_end:
 .end
 
+
+=item !add_metaclass_method
+
+=cut
+
+.sub '!add_metaclass_method'
+    .param pmc metaclass
+    .param pmc name
+    .param pmc method
+    
+    # Create role for the method and mix it into the meta-class.
+    $P0 = root_new ['parrot';'P6role']
+    $S0 = name
+    addmethod $P0, $S0, method
+    'infix:does'(metaclass, $P0)
+
+    # Add forward method to the class itself.
+    .lex '$meth_name', name
+    .const 'Sub' $P1 = '!metaclass_method_forwarder'
+    $P1 = newclosure $P1
+    $P0 = getattribute metaclass, 'parrotclass'
+    $P0.'add_method'(name, $P1)
+.end
+.sub '!metaclass_method_forwarder' :outer('!add_metaclass_method') :method :anon
+    .param pmc pos_args    :slurpy
+    .param pmc named_args  :slurpy :named
+    $P0 = self.'HOW'()
+    $P1 = find_lex '$meth_name'
+    $S0 = $P1
+    .tailcall $P0.$S0(self, pos_args :flat, named_args :flat :named)
+.end
+
+
 =item !create_parametric_role
 
 Helper method for creating parametric roles.
@@ -931,10 +989,11 @@ Helper method for creating parametric roles.
 =cut
 
 .sub '!create_parametric_role'
-    .param pmc mr
-    '!meta_compose'(mr)
-    .local pmc orig_role, meths, meth_iter
-    orig_role = getprop '$!orig_role', mr
+    .param pmc metarole
+    '!meta_compose'(metarole)
+    .local pmc parrotrole, orig_role, meths, meth_iter
+    parrotrole = getattribute metarole, 'parrotclass'
+    orig_role = getprop '$!orig_role', parrotrole
     meths = orig_role.'methods'()
     meth_iter = iter meths
   it_loop:
@@ -951,10 +1010,10 @@ Helper method for creating parametric roles.
     $P3 = getattribute $P1, ['Sub'], 'proxy'
     setprop $P3, '$!real_self', $P2
   ret_pir_skip_rs:
-    addmethod mr, $S0, $P1
+    addmethod parrotrole, $S0, $P1
     goto it_loop
   it_loop_end:
-    .return (mr)
+    .return (parrotrole)
 .end
 
 
@@ -1379,7 +1438,19 @@ over the rest of the code base.
     output = concat what_failed, " type check failed; expected "
 
     # Work out what we were looking for and show that.
+    $I0 = isa wanted_type, 'P6protoobject'
+    if $I0 goto simple_type
+    $I0 = isa wanted_type, 'Junction'
+    if $I0 goto junc_wanted
+  simple_type:
     $P0 = wanted_type.'WHAT'()
+    goto wanted_type_done
+  junc_wanted:
+    $P0 = wanted_type.'eigenstates'()
+    $I0 = elements $P0
+    if $I0 > 1 goto wanted_type_done
+    $P0 = $P0[0]
+  wanted_type_done:
     $S0 = $P0.'perl'()
     output = concat $S0
 

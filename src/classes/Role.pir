@@ -23,7 +23,7 @@ short name for a particular set of parameters.
 .sub 'onload' :anon :init :load
     .local pmc p6meta, roleproto
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
-    roleproto = p6meta.'new_class'('Perl6Role', 'parent'=>'Object', 'name'=>'Role', 'attr'=>'$!selector $!created $!shortname')
+    roleproto = p6meta.'new_class'('Perl6Role', 'parent'=>'Any', 'name'=>'Role', 'attr'=>'$!selector $!created $!shortname')
     p6meta.'register'('P6role', 'proto'=>'roleproto')
 .end
 
@@ -215,6 +215,22 @@ just here so postcircumfix:[ ] doesn't explode).
     $P0 = getattribute self, '$!shortname'
     $S0 = $P0
     .return ($S0)
+.end
+
+
+=item HOW
+
+=cut
+
+.sub 'HOW' :method
+    $I0 = isa self, 'P6protoobject'
+    if $I0 goto proto
+    $P0 = self.'!select'()
+    .tailcall $P0.'HOW'()
+  proto:
+    $P0 = typeof self
+    $P0 = getprop 'metaclass', $P0
+    .return ($P0)
 .end
 
 

@@ -25,57 +25,6 @@ for executable objects.
 .end
 
 
-=over 4
-
-=item ACCEPTS(topic)
-
-=cut
-
-.sub 'ACCEPTS' :method
-    .param pmc topic
-    .local pmc match
-
-    # If topic is an Array or Hash, need special treatment.
-    $I0 = isa topic, 'Perl6Array'
-    if $I0 goto is_array
-    $I0 = isa topic, 'Perl6Hash'
-    if $I0 goto is_hash
-    goto is_match
-
-    # Hash - just get keys and fall through to array case.
-  is_hash:
-    topic = topic.'keys'()
-
-    # Array - try matching against each entry. In future, can probably
-    # let junction dispatcher handle this for us.
-  is_array:
-    .local pmc it
-    it = iter topic
-  it_loop:
-    unless it goto it_loop_end
-    $P0 = shift it
-    match = self.'!invoke'($P0)
-    if match goto store_match
-    goto it_loop
-  it_loop_end:
-    match = root_new ['parrot';'Undef'] # Otherwise we'd get a Null PMC Exception later
-    goto store_match
-
-    # Otherwise, just match on the topic.
-  is_match:
-    match = self.'!invoke'(topic)
-
-  store_match:
-    # Store match object in $/.
-    push_eh not_regex
-    $P0 = getinterp
-    $P1 = $P0['lexpad';1]
-    $P2 = root_new ['parrot';'Perl6Scalar'], match
-    $P1['$/'] = $P2
-  not_regex:
-    .return (match)
-.end
-
 =item REJECTS(topic)
 
 =cut
@@ -132,6 +81,17 @@ Just calls this block with the supplied parameters.
     .param pmc named_args  :slurpy :named
     .tailcall self(pos_args :flat, named_args :flat :named)
 .end
+
+
+=item multi
+
+=cut
+
+.sub 'multi' :method
+    $P0 = get_hll_global ['Bool'], 'False'
+    .return ($P0)
+.end
+
 
 =item name
 

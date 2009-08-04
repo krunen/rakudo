@@ -1,0 +1,71 @@
+Announce: Rakudo Perl 6 development release #19 ("Chicago")
+
+On behalf of the Rakudo development team, I'm pleased to announce
+the June 2009 development release of Rakudo Perl #19 "Chicago".
+Rakudo is an implementation of Perl 6 on the Parrot Virtual Machine [1].
+The tarball for the July 2009 release is available from
+http://github.com/rakudo/rakudo/downloads .
+
+Due to the continued rapid pace of Rakudo development and the
+frequent addition of new Perl 6 features and bugfixes, we continue
+to recommend that people wanting to use or work with Rakudo obtain
+the latest source directly from the main repository at github.
+More details are available at http://rakudo.org/how-to-get-rakudo .
+
+Rakudo Perl follows a monthly release cycle, with each release code named
+after a Perl Mongers group.  The July 2009 release is named "Chicago",
+as chosen by Perl 6 contributor Kyle Hasselbacher.  Kyle has been
+doing a truly outstanding job of turning open tickets in the RT queues
+into tests for the spectest suite.  Chicago.pm has been the host for
+the 2006 and 2008 YAPC::NA conferences and sponsored Perl 6 hackathons
+at each conference.
+
+In this release of Rakudo Perl, we've focused our efforts on quality
+improvements and bootstrapping.  We now have operators and additional
+builtin functions written in Perl 6.
+
+Some of the specific major changes and improvements in this release include:
+  
+* Rakudo is now passing 11,876 spectests, an increase of 340
+  passing tests since the June 2009 release.  With this release
+  Rakudo is now passing 68% of the available spectest suite.
+ 
+* Operators can now be written in Perl 6, and this has been done for the
+  series operator '...', 'eqv' and the 'leg' operator.
+
+* The multi dispatcher has been refactored extensively, and now handles many
+  more edge cases correctly.
+ 
+* User defined traits now follow the specification much more closely; some
+  built-in traits are written in Perl 6.
+
+* Improved testing: Null PMC Access exceptions are never considered
+  "successful" by the test suite, even if the test was expecting a
+  (different) exception to be thrown.
+
+* Improved introspection: you can now get a list of roles composed into a
+  class, and a list of attributes.
+
+Since the Perl 6 specification is still in flux, some deprecated features
+will be removed from Rakudo. Prominently among those are:
+
+ * '=$handle' is deprecated in favor of '$handle.get' (one line)
+   and '$handle.lines' (all lines).
+
+ * 'int $obj' is deprecated in favor of '$obj.Int'.
+
+The development team thanks all of our contributors and sponsors for
+making Rakudo Perl possible.  If you would like to contribute,
+see http://rakudo.org/how-to-help , ask on the perl6-compiler@perl.org
+mailing list, or ask on IRC #perl6 on freenode.
+
+The next release of Rakudo (#20) is scheduled for August 20, 2009.
+A list of the other planned release dates and codenames for 2009 is
+available in the "docs/release_guide.pod" file.  In general, Rakudo
+development releases are scheduled to occur two days after each
+Parrot monthly release.  Parrot releases the third Tuesday of each month.
+
+Have fun!
+
+References:
+[1]  Parrot, http://parrot.org/

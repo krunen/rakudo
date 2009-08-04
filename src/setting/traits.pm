@@ -1,5 +1,8 @@
+# XXX This wants to be more general eventually, when we support custom
+# metaclasses.
+subset Class of Object where ClassHOW | RoleHOW;
 
-multi trait_mod:<is>(Object $child, Object $parent) {
+multi trait_mod:<is>(Class $child, Object $parent) {
     Q:PIR {
     .local pmc child, parent
     child = find_lex '$child'
@@ -21,6 +24,7 @@ multi trait_mod:<is>(Object $child, Object $parent) {
     .local pmc p6meta
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
     parent = p6meta.'get_parrotclass'(parent)
+    child = getattribute child, 'parrotclass'
     child.'add_parent'(parent)
     };
 }
@@ -81,25 +85,13 @@ multi trait_mod:<is>(Code $block, :$default!) {
     };
 }
 
-multi trait_mod:<does>(Object $class is rw, Object $role) {
+multi trait_mod:<does>(Class $class is rw, Object $role) {
     Q:PIR {
     .local pmc metaclass, role
     metaclass = find_lex "$class"
     metaclass = descalarref metaclass
     role = find_lex "$role"
     role = descalarref role
-
-    # XXX For now, we can't multi-dispatch differentiate classes
-    # and scalars. :-( So we'll have to do check here.
-    $I0 = isa metaclass, 'Class'
-    if $I0 goto is_class
-    $I0 = isa metaclass, 'P6role'
-    if $I0 goto is_class
-    $I0 = isa metaclass, 'Perl6Role'
-    if $I0 goto is_class
-    'infix:does'(metaclass, role)
-    .return ()
-  is_class:
 
     # If it's an un-selected role, do so.
     $I0 = isa role, 'P6role'
@@ -108,6 +100,7 @@ multi trait_mod:<does>(Object $class is rw, Object $role) {
   have_role:
     # Now add it to the list of roles to compose into the class.
     .local pmc role_list
+    metaclass = getattribute metaclass, 'parrotclass'
     role_list = getprop '@!roles', metaclass
     unless null role_list goto have_role_list
     role_list = root_new ['parrot';'ResizablePMCArray']
@@ -117,11 +110,7 @@ multi trait_mod:<does>(Object $class is rw, Object $role) {
     };
 }
 
-multi trait_mod:<does>(Array $var, $role) {
-    $var does $role;
-}
-
-multi trait_mod:<does>(Hash $var, $role) {
+multi trait_mod:<does>(Object $var, Object $role) {
     $var does $role;
 }
 

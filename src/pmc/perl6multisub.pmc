@@ -268,10 +268,12 @@ static INTVAL is_narrower(PARROT_INTERP, candidate_info *a, candidate_info *b) {
         PMC * const type_obj_a = a->types[i];
         PMC * const type_obj_b = b->types[i];
         if (type_obj_a == type_obj_b) {
-            /* Same type, so tied, unless one has constraints and the other doesn't. */
+            /* Same type; narrower if first has constraints and other doesn't;
+             * tied if neither has constraints or both have constraints. */
             if (!PMC_IS_NULL(a->constraints[i]) && PMC_IS_NULL(b->constraints[i]))
                 narrower++;
-            else
+            else if (PMC_IS_NULL(a->constraints[i]) && PMC_IS_NULL(b->constraints[i]) ||
+                     !PMC_IS_NULL(a->constraints[i]) && !PMC_IS_NULL(b->constraints[i]))
                 tied++;
         }
         else {
@@ -381,24 +383,21 @@ static candidate_info** sort_candidates(PARROT_INTERP, PMC *candidates, PMC **pr
                     CONST_STRING(interp, "multi_invocant"));
             PMC * const named       = VTABLE_get_pmc_keyed_str(interp, param,
                     CONST_STRING(interp, "named"));
+            PMC * const slurpy      = VTABLE_get_pmc_keyed_str(interp, param,
+                    CONST_STRING(interp, "slurpy"));
 
-            /* If it's named, don't need its type info but we will need a bindability
-             * check during the dispatch for it. */
-            if (!PMC_IS_NULL(named)) {
+            /* If it's named, and not slurpy, don't need its type info but we will
+             * need a bindability check during the dispatch for it. */
+            if (!PMC_IS_NULL(named) && PMC_IS_NULL(slurpy)) {
                 info->bind_check = 1;
                 continue;
             }
 
             /* Record type info for this parameter. */
             info->types[significant_param] = type;
-            if (PMC_IS_NULL(constraints) || VTABLE_isa(interp, constraints, CONST_STRING(interp, "Undef"))) {
-                info->constraints[significant_param] = PMCNULL;
-            }
-            else {
-                /* We will need a bindability check for constraints. */
-                info->constraints[significant_param] = constraints;
+            info->constraints[significant_param] = constraints;
+            if (!PMC_IS_NULL(constraints)) 
                 info->bind_check = 1;
-            }
             if (!PMC_IS_NULL(multi_inv) && VTABLE_get_bool(interp, multi_inv))
                 info->num_types++;
             significant_param++;

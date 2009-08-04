@@ -22,8 +22,8 @@ This is the base file for the Rakudo Perl 6 compiler.
     .local pmc p6meta
     load_bytecode 'PCT.pbc'
     $P0 = get_root_global ['parrot'], 'P6metaclass'
-    $P0.'new_class'('Perl6Object', 'name'=>'Object')
-    p6meta = $P0.'HOW'()
+    $P1 = $P0.'new_class'('Perl6Object', 'name'=>'Object')
+    p6meta = $P1.'HOW'()
     set_hll_global ['Perl6Object'], '$!P6META', p6meta
     .local pmc hllns, parrotns, imports, exports
     hllns = get_hll_namespace
@@ -259,6 +259,7 @@ and report exceptions.
   it_loop:
     unless it goto it_loop_end
     cur_block = shift it
+    if null cur_block goto it_loop # XXX Why'd we have null anyway? Parrot bug?
 
     if cur_info != "" goto got_cur_info
     cur_info = 'format_location'(cur_block)
@@ -311,7 +312,8 @@ and report exceptions.
 
   exit:
     pop_eh
-    exit 0
+    $I0 = exception['exit_code']
+    exit $I0
 .end
 .sub 'format_location'
     .param pmc cur_block
@@ -357,13 +359,13 @@ to the Perl 6 compiler.
     $P1 = $P0.'command_line'(args_str, 'encoding'=>'utf8', 'transcode'=>'ascii iso-8859-1')
 
     .include 'iterator.pasm'
-    .local pmc iter
+    .local pmc it
     $P0 = get_hll_global ['Perl6'], '@?END_BLOCKS'
-    iter = new 'Iterator', $P0
-    iter = .ITERATE_FROM_END
+    it = iter $P0
+    it = .ITERATE_FROM_END
   iter_loop:
-    unless iter goto iter_end
-    $P0 = pop iter
+    unless it goto iter_end
+    $P0 = pop it
     $P0()
     goto iter_loop
   iter_end:
@@ -462,7 +464,7 @@ Currently this does the equivalent of EXPORTALL on the core namespaces.
 ##  This goes at the bottom because the methods end up in the 'parrot'
 ##  HLL namespace.
 .HLL 'parrot'
-.include 'src/parrot/ClassHOW.pir'
+.include 'src/parrot/P6Invocation.pir'
 .include 'src/parrot/P6role.pir'
 .include 'src/parrot/Protoobject.pir'
 .include 'src/parrot/misc.pir'

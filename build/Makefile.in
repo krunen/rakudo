@@ -41,8 +41,8 @@ SOURCES = perl6.pir \
   src/parser/expression.pir \
   src/parser/methods.pir \
   src/parser/quote_expression.pir \
-  src/parrot/ClassHOW.pir \
   src/parrot/Protoobject.pir \
+  src/parrot/P6Invocation.pir \
   src/parrot/P6role.pir \
   src/parrot/misc.pir \
   src/parrot/state.pir \
@@ -52,6 +52,8 @@ SOURCES = perl6.pir \
 
 BUILTINS_PIR = \
   src/classes/Object.pir \
+  src/classes/ClassHOW.pir \
+  src/classes/RoleHOW.pir \
   src/classes/Any.pir \
   src/classes/Junction.pir \
   src/classes/Signature.pir \
@@ -114,11 +116,16 @@ SETTING = \
   src/setting/Any-num.pm \
   src/setting/Any-str.pm \
   src/setting/Array.pm \
+  src/setting/Attribute.pm \
   src/setting/Bool.pm \
+  src/setting/Buf.pm \
+  src/setting/Code.pm \
   src/setting/Hash.pm \
+  src/setting/Int.pm \
   src/setting/IO.pm \
   src/setting/IO/Socket.pm \
   src/setting/IO/Socket/INET.pm \
+  src/setting/Junction.pm \
   src/setting/List.pm \
   src/setting/Match.pm \
   src/setting/Num.pm \
@@ -126,6 +133,7 @@ SETTING = \
   src/setting/Operators.pm \
   src/setting/Pair.pm \
   src/setting/Range.pm \
+  src/setting/Str.pm \
   src/setting/Temporal.pm \
   src/setting/Whatever.pm \
 

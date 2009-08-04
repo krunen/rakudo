@@ -44,7 +44,7 @@ like this.
     parrotclass = p6meta.'get_parrotclass'(result)
     if null parrotclass goto attrinit_done
     attributes = inspect parrotclass, 'attributes'
-    it = iter attributes
+    it = parrotclass.'attriter'()
   attrinit_loop:
     unless it goto attrinit_done
     .local string attrname, shortname
@@ -63,12 +63,14 @@ like this.
 
 .macro fixup_cloned_sub(orig, copy)
     .local pmc tmp, tmp2
-    .local string tmp_str
     tmp = getprop '$!signature', .orig
     if null tmp goto sub_fixup_done
     setprop .copy, '$!signature', tmp
-    tmp_str = typeof .orig
-    if tmp_str == "Sub" goto sub_fixup_done
+    .local pmc oclass, sclass
+    oclass = typeof .orig
+    sclass = get_class ['Sub']
+    $I0 = issame oclass, sclass
+    if $I0 goto sub_fixup_done
     tmp = getattribute .orig, ['Sub'], 'proxy'
     tmp = getprop '$!real_self', tmp
     if null tmp goto sub_fixup_done
@@ -296,7 +298,7 @@ the object's type and address.
     parentproto = find_caller_lex '$CLASS'
     parrotclass = p6meta.'get_parrotclass'(parentproto)
     attributes = inspect parrotclass, 'attributes'
-    it = iter attributes
+    it = parrotclass.'attriter'()
   attrinit_loop:
     unless it goto attrinit_done
     .local string attrname, keyname
@@ -420,7 +422,7 @@ XXX This had probably best really just tailcall .^CREATE; move this stuff later.
     unless class_it goto classinit_loop_end
     cur_class = shift class_it
     attributes = inspect cur_class, 'attributes'
-    it = iter attributes
+    it = cur_class.'attriter'()
   attrinit_loop:
     unless it goto attrinit_done
     .local string attrname

@@ -1,4 +1,4 @@
-# Copyright (C) 2007-2008, The Perl Foundation.
+# Copyright (C) 2007-2009, The Perl Foundation.
 # $Id$
 
 class Perl6::Grammar::Actions ;
@@ -826,6 +826,7 @@ method method_def($/) {
 
     if $<deflongname> {
         my $name := ~$<deflongname>;
+        if $<meth_mod> eq '!' { $name := '!' ~ $name }
         my $match := Perl6::Grammar::opname($name, :grammar('Perl6::Grammar') );
         if $match { $name := add_optoken($block, $match); }
         $block.name( $name );
@@ -880,6 +881,21 @@ method method_def($/) {
             }
         }
         emit_traits($<trait>, $loadinit, $blockreg);
+    }
+
+    # If it's a metaclass method, make it anonymous and then push a call to
+    # !add_metaclass_method onto the current class definition.
+    if $<meth_mod> eq '^' {
+        our $?METACLASS;
+        our @?BLOCK;
+        $block.pirflags(~$block.pirflags() ~ ' :anon ');
+        @?BLOCK[0][0].push(PAST::Op.new(
+            :pasttype('call'),
+            :name('!add_metaclass_method'),
+            $?METACLASS,
+            $block.name,
+            PAST::Op.new( :inline('    .const "Sub" %r = "' ~ $block.subid ~ '"') )
+        ));
     }
 
     make $block;
@@ -1685,6 +1701,7 @@ method scope_declarator($/) {
 
                 # If the var has a '.' twigil, we need to create an
                 # accessor method for it in the block (class/grammar/role)
+                my $readtype;
                 if $var<twigil> eq '.' {
                     my $method := PAST::Block.new( :blocktype('method') );
                     if $var<sigil> eq '&' {
@@ -1694,7 +1711,7 @@ method scope_declarator($/) {
                     }
                     my $value := PAST::Var.new( :name($var.name()) );
                     my $default_readtype := package_has_trait('rw') ?? 'rw' !! 'readonly';
-                    my $readtype := trait_readtype( $var<traitlist> ) || $default_readtype;
+                    $readtype := trait_readtype( $var<traitlist> ) || $default_readtype;
                     if $readtype eq 'CONFLICT' {
                         $<scoped>.panic(
                             "Can use only one of readonly, rw, and copy on "
@@ -1736,6 +1753,12 @@ method scope_declarator($/) {
                         $init_value := make_attr_init_closure($init_value);
                         $init_value.named('init_value');
                         $has.push($init_value);
+                    }
+                    if $var<twigil> eq '.' {
+                        $has.push(PAST::Val.new( :value(1), :named('accessor') ));
+                    }
+                    if $readtype eq 'rw' {
+                        $has.push(PAST::Val.new( :value(1), :named('rw') ));
                     }
                     if $var<traitlist> {
                         # If we have a handles, then we pass that specially.
@@ -2236,7 +2259,7 @@ method typename($/) {
 
 method fulltypename($/) {
     my $past := $<typename>.ast;
-    if substr( $<typename>.text(), 0, 2) eq '::' {
+    if substr( ~$<typename>, 0, 2) eq '::' {
         $past.isdecl(1);
         $past.scope('lexical');
     }
@@ -2303,8 +2326,8 @@ method rad_number($/) {
     my $fracpart := ~$<fracpart>;
     my $base;
     my $exp;
-    if defined( $<base>[0] ) { $base := $<base>[0].text(); }
-    if defined( $<exp>[0] ) { $exp := $<exp>[0].text(); }
+    if defined( $<base>[0] ) { $base := ~$<base>[0]; }
+    if defined( $<exp>[0] ) { $exp := ~$<exp>[0]; }
     if ~$<postcircumfix> {
         my $radcalc := $<postcircumfix>.ast;
         $radcalc.name('radcalc');
@@ -2791,9 +2814,9 @@ method colonpair($/, $key) {
     }
     elsif $key eq 'varname' {
         if $<desigilname><longname> {
-            $pair_key := PAST::Val.new( :value( $<desigilname>.text() ) );
+            $pair_key := PAST::Val.new( :value( ~$<desigilname> ) );
             $pair_val := PAST::Var.new(
-                :name( ~$<sigil> ~ ~$<twigil> ~ $<desigilname>.text() )
+                :name( ~$<sigil> ~ ~$<twigil> ~ $<desigilname> )
             );
         }
         else {
