@@ -5,11 +5,12 @@ use 5.008;
 use strict;
 use warnings;
 use Getopt::Long;
+use Cwd;
 
 MAIN: {
     my %options;
     GetOptions(\%options, 'help!', 'parrot-config=s',
-               'gen-parrot!', 'gen-parrot-option=s@');
+               'gen-parrot!', 'gen-parrot-prefix=s', 'gen-parrot-option=s@');
 
     # Print help if it's requested
     if ($options{'help'}) {
@@ -27,7 +28,8 @@ MAIN: {
     # Update/generate parrot build if needed
     if ($options{'gen-parrot'}) {
         my @opts    = @{ $options{'gen-parrot-option'} || [] };
-        my @command = ($^X, "build/gen_parrot.pl", @opts);
+        my $prefix  = $options{'gen-parrot-prefix'} || cwd()."/parrot_install";
+        my @command = ($^X, "build/gen_parrot.pl", "--prefix=$prefix", @opts);
 
         print "Generating Parrot ...\n";
         print "@command\n\n";
@@ -36,7 +38,7 @@ MAIN: {
 
     # Get a list of parrot-configs to invoke.
     my @parrot_config_exe = qw(
-        parrot/parrot_config
+        parrot_install/bin/parrot_config
         ../../parrot_config
         parrot_config
     );
@@ -117,7 +119,7 @@ sub create_makefile {
 
     my $maketext = slurp( 'build/Makefile.in' );
 
-    $config{'win32_libparrot_copy'} = $^O eq 'MSWin32' ? 'copy $(BUILD_DIR)\libparrot.dll .' : '';
+    $config{'win32_libparrot_copy'} = $^O eq 'MSWin32' ? 'copy $(PARROT_BIN_DIR)\libparrot.dll .' : '';
     $maketext =~ s/@(\w+)@/$config{$1}/g;
     if ($^O eq 'MSWin32') {
         $maketext =~ s{/}{\\}g;

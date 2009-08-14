@@ -1,4 +1,6 @@
 class Any is also {
+    multi method end() is export { $.list.elems - 1; }
+
     multi method first(Code $test) {
         return $_ if $test($_) for @.list;
 
@@ -85,6 +87,10 @@ class Any is also {
         }
     }
 
+    our List multi method kv() {
+        @.keys Z @.values
+    }
+
     multi method reduce(Code $expression is rw) {
         my Int $arity = $expression.count;
         fail('Cannot reduce() using a unary or nullary function.')
@@ -131,6 +137,10 @@ our List multi grep($test, *@values) {
 
 our Str multi join(Str $separator = '', *@values) {
     @values.join($separator)
+}
+
+our List multi sub kv(*@values) is export {
+    @values.kv();
 }
 
 our List multi map(Code $expr, *@values) {

@@ -1,6 +1,6 @@
-=head1 Rakudo Perl 6
+=head1 Rakudo Perl 6
 
-This is Rakudo Perl, a Perl 6 compiler for the Parrot virtual machine.
+This is Rakudo Perl, a Perl 6 compiler for the Parrot virtual machine.
 
 Rakudo Perl is Copyright (C) 2008-2009, The Perl Foundation.
 Rakudo Perl is distributed under the terms of the Artistic License 2.0.
@@ -9,16 +9,18 @@ For more details, see the full text of the license in the file LICENSE.
 =head2 Build requirements
 
 For building Rakudo you need a C compiler, a C<make> utility, a Perl 5
-compiler, version 5.8 or newere,  the C<icu> library 
+compiler, version 5.8 or newer,  the C<icu> library 
 (L<http://site.icu-project.org/>) and the C<svn>
 command from Subversion.
 
 For example on Debian GNU/Linux you can install those with the command
 
-    aptitude install build-essential libicu36-dev subversion
+    aptitude install build-essential libicu-dev subversion
 
 (Perl is installed by default already). To enable parallel testing you
-also need the CPAN module L<Test::Harness> in version 3.16 or newer.
+also need the CPAN module L<Test::Harness> in version 3.16 or newer;
+you can control the number of parallel jobs with the C<TEST_JOBS>
+environment variable.
 
 =head2 Building and invoking Rakudo
 
@@ -38,26 +40,41 @@ Once you have a copy of Rakudo, build it as follows:
     $ make
 
 This will create a "perl6" or "perl6.exe" executable in the
-current directory.  Rakudo doesn't currently have a "make install"
-target.
+current (rakudo) directory.
 
 The C<--gen-parrot> option tells Configure.pl to automatically 
-download (via 'svn') and build the version of Parrot most 
-appropriate for the copy of Rakudo you currently have.  It's
-okay to use the C<--gen-parrot> option on later invocations of
-Configure.pl; the configure system will re-build Parrot only
-if a newer version is needed for whatever version of Rakudo 
-you're working with.
+download and build the most appropriate version of Parrot into 
+a local "parrot/" subdirectory, install that Parrot into
+the "parrot_install/" subdirectory, and use that for building
+Rakudo.  It's okay to use the C<--gen-parrot> option on later 
+invocations of Configure.pl; the configure system will re-build 
+Parrot only if a newer version is needed for whatever version 
+of Rakudo you're working with.
 
-To run a Perl 6 program with Rakudo, issue a command like:
+You can use C<--parrot-config=/path/to/parrot_config> instead
+of C<--gen-parrot> to point to an already installed Parrot that
+must include its development environment. You can build such a
+Parrot from source using Parrot's C<make install-dev> target, or
+install prebuilt C<parrot-devel> and/or C<libparrot-dev> packages.
+The version of this already installed Parrot must satisfy a
+minimum specified by the Rakudo being built. The latest version of
+Rakudo (called HEAD on github) often requires one newer than
+the preceding monthly Parrot release.
+
+Rakudo's C<make install> target will install Rakudo and its
+libraries into the Parrot installation that was used to create it.
+
+To run a Perl 6 program in the Rakudo build directory, issue a
+commands like:
 
     $ ./perl6 hello.pl
 
-This binary executable feature is still somewhat experimental,
-and may not work on all platforms.  Also, the binary has hardcoded
-paths to the Parrot build tree (especially the dynamic libraries
-and modules), so removing or moving the build tree will cause the 
-binary to stop working.
+To run Perl 6 programs in any directory, install Rakudo with the
+C<make install> command. You can then refer to
+C<parrot_install/bin/perl6> with a symbolic link, shell alias or
+search path and then use:
+
+    $ perl6 hello.pl
 
 If the Rakudo compiler is invoked without an explicit script to
 run, it enters a small interactive mode that allows Perl 6 statements 
@@ -125,7 +142,8 @@ bit, either on C<irc.freenode.net/#perl6> or C<irc.perl.org/#parrot>.
 Rakudo's official web site is L<http://rakudo.org/>, where you can
 find useful information for developers and users alike. There's also
 a Parrot blog at L<http://parrotblog.org/>, most Perl 6 related news is
-assembled at L<http://planetsix.perl.org/>.
+assembled at L<http://planetsix.perl.org/>. Links to many other
+resources can be found on L<http://perl6-projects.org/>.
 
 =head2 Reporting bugs
 
@@ -167,7 +185,7 @@ See F<docs/compiler_overview.pod>.
 =head1 AUTHOR
 
 Patrick Michaud C<pmichaud@pobox.com> is the primary author and
-maintainer for Rakudo Perl 6 on Parrot.
+maintainer for Rakudo Perl 6 on Parrot.
 
 =cut
 

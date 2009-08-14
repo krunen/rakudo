@@ -18,12 +18,6 @@ the size of that file down and to emphasize their generic,
 
 =cut
 
-.namespace ['Any']
-.sub 'onload' :anon :init :load
-    $P0 = get_hll_namespace ['Any']
-    '!EXPORT'('end', 'from'=>$P0)
-.end
-
 =item elems()
 
 =cut
@@ -42,18 +36,6 @@ the size of that file down and to emphasize their generic,
     .return ($I0)
 .end
 
-=item end
-
-=cut
-
-.namespace ['Any']
-.sub 'end' :method :multi(_)
-    .local pmc list
-    list = self.'list'()
-    $I0 = list.'elems'()
-    dec $I0
-    .return ($I0)
-.end
 
 =item keys()
 
@@ -93,46 +75,6 @@ Return a List with the keys of the invocant.
     $P0 = get_hll_global 'Any'
     signature."!add_implicit_self"($P0)
 .end
-
-
-=item kv
-
-=cut
-
-.namespace []
-.sub 'kv' :multi() :subid('_kv')
-    .param pmc values          :slurpy
-    values.'!flatten'()
-    .tailcall values.'kv'()
-.end
-.sub '' :init :load
-    .local pmc block, signature
-    .const 'Sub' $P0 = "_kv"
-    block = $P0
-    signature = new ["Signature"]
-    setprop block, "$!signature", signature
-    signature.'!add_param'('@values', 1 :named('slurpy'))
-    '!TOPERL6MULTISUB'(block)
-.end
-
-.namespace ['Any']
-.sub 'kv' :method
-    .local pmc result, it
-    result = new ['List']
-    it = self.'iterator'()
-    .local int i
-    i = 0
-  loop:
-    unless it goto done
-    $P0 = shift it
-    push result, i
-    push result, $P0
-    inc i
-    goto loop
-  done:
-    .return (result)
-.end
-
 
 =item pick($num, :$repl)
 

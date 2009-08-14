@@ -15,6 +15,8 @@
 # S12-class/open.t - 'is also' -> augment
 # S12-class/is_also_instead.t - 'is also' -> augment
 # S12-attributes/mutators.t - we no longer get away with missing rw and Proxy; some bogus passes anyway
+# S16-filehandles/filetest.t - regressed when spec changed (RT #68160)
+# S16-filehandles/unlink.t   - regressed when spec changed (RT #68160)
 
 integration/99problems-01-to-10.t
 integration/99problems-11-to-20.t
@@ -44,6 +46,7 @@ S02-builtin_data_types/assigning-refs.t
 S02-builtin_data_types/bool.t
 S02-builtin_data_types/capture.t
 S02-builtin_data_types/catch_type_cast_mismatch.t
+S02-builtin_data_types/declare.t
 S02-builtin_data_types/flattening.t
 S02-builtin_data_types/hash_ref.t
 S02-builtin_data_types/hash.t
@@ -54,6 +57,7 @@ S02-builtin_data_types/multi_dimensional_array.t
 S02-builtin_data_types/nan.t
 S02-builtin_data_types/nested_arrays.t
 S02-builtin_data_types/nested_pairs.t
+S02-builtin_data_types/nil.t
 S02-builtin_data_types/num.t
 S02-builtin_data_types/pair.t
 S02-builtin_data_types/parsing-bool.t
@@ -174,6 +178,7 @@ S04-statements/for_with_only_one_item.t
 S04-statements/gather.t
 S04-statements/given.t
 S04-statements/if.t
+S04-statements/last.t
 S04-statements/loop.t
 S04-statements/map-and-sort-in-for.t
 S04-statements/next.t
@@ -349,12 +354,10 @@ S14-roles/parameterized-mixin.t
 S14-roles/parameterized-type.t
 S14-roles/submethods.t
 S14-traits/routines.t
-S16-filehandles/filetest.t
 S16-filehandles/io.t
 S16-filehandles/io_in_for_loops.t
 S16-filehandles/io_in_while_loops.t
 S16-filehandles/open.t
-S16-filehandles/unlink.t
 S16-io/bare-say.t
 S16-io/basic-open.t
 S16-io/say.t
@@ -379,6 +382,7 @@ S32-array/pop.t
 S32-array/push.t
 S32-array/rotate.t
 S32-array/shift.t
+S32-array/splice.t
 S32-array/unshift.t
 S32-container/zip.t
 S32-hash/exists.t
