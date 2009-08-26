@@ -106,9 +106,12 @@ Does an indirect method dispatch.
     .param pmc pos_args  :slurpy
     .param pmc name_args :slurpy :named
 
+    $I0 = isa methodish, 'P6Invocation'
+    if $I0 goto ready_to_dispatch
     $P0 = get_hll_global 'Callable'
     $I0 = $P0.'ACCEPTS'(methodish)
     unless $I0 goto candidate_list
+  ready_to_dispatch:
     .tailcall methodish(obj, pos_args :flat, name_args :flat :named)
 
   candidate_list:
@@ -264,15 +267,18 @@ to find a real, non-subtype and stash that away for fast access later.
     real_type = refinee
   got_real_type:
 
-    # If it's an un-disambiguated role, dis-ambiguate.
-    $I0 = isa real_type, 'Perl6Role'
+    # Create subclass. If it's a role, pun it.
+    .local pmc parrot_class, type_obj, subset
+    type_obj = refinee
+    $I0 = isa type_obj, 'Perl6Role'
+    unless $I0 goto ambig_role_done
+    type_obj = type_obj.'!select'()
+  ambig_role_done:
+    $I0 = isa type_obj, 'P6role'
     unless $I0 goto role_done
-    real_type = real_type.'!select'()
+    type_obj = type_obj.'!pun'()
   role_done:
-
-    # Create subclass.
-    .local pmc parrot_class, subset
-    parrot_class = p6meta.'get_parrotclass'(refinee)
+    parrot_class = p6meta.'get_parrotclass'(type_obj)
     subset = subclass parrot_class
 
     # Override accepts.
@@ -291,6 +297,10 @@ to find a real, non-subtype and stash that away for fast access later.
     subset = p6meta.'register'(subset)
 
     # Mark it a subtype and stash away real type, refinee  and refinement.
+    $I0 = isa real_type, 'Perl6Role'
+    unless $I0 goto real_type_done
+    real_type = real_type.'!select'()
+  real_type_done:
     setprop subset, 'subtype_realtype', real_type
     setprop subset, 'subtype_refinement', refinement
     setprop subset, 'subtype_refinee', refinee
@@ -1533,6 +1543,21 @@ return the resume continuation so we can continue execution after the bind.
   success:
     $P0 = ex["resume"]
     .return ($P0)
+.end
+
+
+=item !deferal_fail
+
+Used by P6invocation to help us get soft-failure semantics when no deferal
+is possible.
+
+=cut
+
+.sub '!deferal_fail'
+    .param pmc pos_args    :slurpy
+    .param pmc named_args  :slurpy :named
+    .lex '__CANDIDATE_LIST__', $P0
+    .tailcall '!FAIL'('No method to defer to')
 .end
 
 =back

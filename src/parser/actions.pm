@@ -625,7 +625,7 @@ method statement_prefix($/) {
 
         ##  Add an 'else' node to the try op that clears $! if
         ##  no exception occurred.
-        my $elsepir  := "    new %r, ['Failure']\n    store_lex '$!', %r";
+        my $elsepir  := "    %r = '!FAIL'()\n    store_lex '$!', %r";
         $past.push( PAST::Op.new( :inline( $elsepir ) ) );
     }
     elsif $sym eq 'gather' {
@@ -675,6 +675,12 @@ method multi_declarator($/) {
         # If it's just a routine, need to mark it as a sub and make sure we
         # bind its signature.
         if $<routine_def> {
+            if (+@($past[1])) {
+                declare_implicit_routine_vars($past);
+            }
+            else {
+                $past[1].push( PAST::Op.new( :name('list') ) );
+            }
             set_block_type($past, 'Sub');
             $past[0].push(
                 PAST::Op.new( :pasttype('call'), :name('!SIGNATURE_BIND') )
@@ -977,6 +983,14 @@ method trait_mod($/) {
                 :named(~$<identifier>)
             ));
         }
+    }
+    elsif $sym eq 'hides' {
+        my @name := Perl6::Compiler.parse_name(~$<module_name>);
+        $trait.push(PAST::Var.new(
+            :name(@name.pop),
+            :namespace(@name),
+            :scope('package')
+        ));
     }
     else {
         $trait.push( $<fulltypename>.ast );
@@ -1318,63 +1332,74 @@ method post($/, $key) {
 method dotty($/, $key) {
     my $past;
 
-    if $key eq '.' {
-        # Just a normal method call.
-        $past := $<dottyop>.ast;
-    }
-    elsif $key eq '!' {
-        # Private method call. Need to put ! on the start of the name
-        # (unless it was call to a code object, in which case we don't do
-        # anything more).
-        $past := $<methodop>.ast;
-        my $methodop := $<methodop>;
-        if $methodop<name> {
-            $past.name('!' ~ $past.name());
-        }
-        elsif $methodop<quote> {
-            $past.name(
-                PAST::Op.new(
-                    :pasttype('call'),
-                    :name('infix:~'),
-                    '!',
-                    $past.name()
-                )
-            );
-        }
-    }
-    elsif $key eq '.*' {
+    if $key eq '.*' {
         $past := $<dottyop>.ast;
         if $/[0] eq '.?' || $/[0] eq '.+' || $/[0] eq '.*' || $/[0] eq '.^'  || $/[0] eq '.=' {
             my $name := $past.name();
-            unless $name {
-                $/.panic("Cannot use " ~ $/[0] ~ " when method is a code ref");
-            }
-            unless $name.isa(PAST::Node) {
+            if $name && !$name.isa(PAST::Node) {
                 $name := PAST::Val.new( :value($name) );
             }
-            $past.unshift($name);
+            if $name {
+                $past.unshift($name);
+                $past.unshift(PAST::Op.new(:inline('    null %r')));
+            }
+            else {
+                my $cands := $past.shift();
+                $past.unshift('');
+                $past.unshift(PAST::Op.new(
+                    :pasttype('callmethod'),
+                    :name('list'),
+                    $cands
+                ));
+            }
             $past.name('!' ~ $/[0]);
         }
         else {
             $/.panic($/[0] ~ ' method calls not yet implemented');
         }
     }
-    elsif $key eq 'VAR' {
-        $past := PAST::Op.new(
-            :pasttype('call'),
-            :name('!VAR'),
-            :node($/)
-        );
+    else {
+        if $key eq '.' {
+            # Just a normal method call.
+            $past := $<dottyop>.ast;
+        }
+        elsif $key eq '!' {
+            # Private method call. Need to put ! on the start of the name
+            # (unless it was call to a code object, in which case we don't do
+            # anything more).
+            $past := $<methodop>.ast;
+            my $methodop := $<methodop>;
+            if $methodop<name> {
+                $past.name('!' ~ $past.name());
+            }
+            elsif $methodop<quote> {
+                $past.name(
+                    PAST::Op.new(
+                        :pasttype('call'),
+                        :name('infix:~'),
+                        '!',
+                        $past.name()
+                    )
+                );
+            }
+        }
+        elsif $key eq 'VAR' {
+            $past := PAST::Op.new(
+                :pasttype('call'),
+                :name('!VAR'),
+                :node($/)
+            );
+        }
+
+        # We actually need to send dispatches for named method calls (other than .*)
+        # through the.dispatcher.
+        if $past<indirect_call> {
+            $past.name('!dispatch_method_indirect');
+            $past.pasttype('call');
+        }
     }
 
-    # We actually need to send dispatches for named method calls (other than .*)
-    # through the.dispatcher.
-    if $<dottyop><methodop><variable> {
-        $past.name('!dispatch_method_indirect');
-        $past.pasttype('call');
-    }
     $past<invocant_holder> := $past;
-
     make $past;
 }
 
@@ -1397,10 +1422,27 @@ method methodop($/, $key) {
     $past.node($/);
 
     if $<name> {
-        $past.name(~$<name>);
+        my @ns := Perl6::Compiler.parse_name(~$<name>);
+        my $short_name := ~@ns.pop();
+
+        if @ns {
+            $past.name('');
+            $past.unshift(PAST::Op.new(
+                :inline('    %r = find_method %0, "' ~ $short_name ~ '"'),
+                PAST::Var.new(
+                    :scope('package'),
+                    :name(@ns.pop),
+                    :namespace(@ns)
+                )));
+            $past<indirect_call> := 1;
+        }
+        else {
+            $past.name(~$<name>);
+        }
     }
     elsif $<variable> {
         $past.unshift( $<variable>.ast );
+        $past<indirect_call> := 1;
     }
     else {
         $past.name( $<quote>.ast );
@@ -1591,9 +1633,11 @@ method package_def($/, $key) {
     #  Set is also flag.
     $block<isalso> := has_compiler_trait_with_val($<trait>, 'trait_mod:is', 'also');
 
-    #  Emit traits; make sure rw and hidden, if given, were marked as handled first.
+    #  Emit traits; make sure rw always is marked as compiler handled and hidden is
+    #  always emitted even though we also have somewhat handled it in the compiler.
     has_compiler_trait_with_val($<trait>, 'trait_mod:is', 'rw');
-    has_compiler_trait_with_val($<trait>, 'trait_mod:is', 'hidden');
+    my $hidden := has_compiler_trait_with_val($<trait>, 'trait_mod:is', 'hidden');
+    if $hidden { $hidden<trait_is_compiler_handled> := 0 }
     emit_traits($<trait>, $init, $?METACLASS);
 
     #  If it's not an "is also", have a name and aren't a role (since they can
@@ -1751,7 +1795,11 @@ method scope_declarator($/) {
                     our $?METACLASS;
                     my $has := PAST::Op.new( :name('!meta_attribute'),
                                    $?METACLASS, $var.name(), $var<itype> );
-                    if $type { $type.named('type'); $has.push($type); }
+                    if $type {
+                        my $type_copy := $type.clone();
+                        $type_copy.named('type');
+                        $has.push($type_copy);
+                    }
                     if $init_value {
                         $init_value := make_attr_init_closure($init_value);
                         $init_value.named('init_value');
@@ -1763,7 +1811,7 @@ method scope_declarator($/) {
                     if $readtype eq 'rw' {
                         $has.push(PAST::Val.new( :value(1), :named('rw') ));
                     }
-                    if $var<traitlist> {
+                    if $var<traitlist> || $type {
                         # If we have a handles, then we pass that specially.
                         my $handles := has_compiler_trait($var<traitlist>, 'trait_mod:handles');
                         if $handles {
@@ -1774,11 +1822,27 @@ method scope_declarator($/) {
                         # We'll make a block for calling other handles, which'll be
                         # thunked.
                         my $trait_stmts := PAST::Stmts.new();
-                        emit_traits($var<traitlist>, $trait_stmts, PAST::Var.new( :name('$_'), :scope('lexical') ));
+                        my $declarand := PAST::Op.new(
+                            :pasttype('callmethod'), :name('new'),
+                            PAST::Var.new( :name('AttributeDeclarand'), :scope('package'), :namespace(list()) ),
+                            PAST::Var.new( :name('$_'), :scope('lexical'), :named('container') ),
+                            PAST::Val.new( :value($var.name()), :named('name') ),
+                            PAST::Var.new( :name('$how'), :scope('lexical'), :named('how') )
+                        );
+                        emit_traits($var<traitlist>, $trait_stmts, $declarand);
+                        if $type {
+                            $trait_stmts.push(PAST::Op.new(
+                                :pasttype('call'),
+                                :name('trait_mod:of'),
+                                $declarand,
+                                $type
+                            ));
+                        }
                         if +@($trait_stmts) > 0 {
                             my $trait_block := PAST::Block.new(
                                 :blocktype('declaration'),
                                 PAST::Var.new( :name('$_'), :scope('parameter') ),
+                                PAST::Var.new( :name('$how'), :scope('parameter') ),
                                 $trait_stmts
                             );
                             $trait_block.named('traits');
@@ -1800,7 +1864,16 @@ method scope_declarator($/) {
                             $viviself
                         )
                     ));
-                    emit_traits($var<traitlist>, $var.viviself(), $init_reg);
+
+                    # Trait and type handling.
+                    $init_reg.named('container');
+                    my $declarand := PAST::Op.new(
+                        :pasttype('callmethod'), :name('new'),
+                        PAST::Var.new( :name('ContainerDeclarand'), :scope('package'), :namespace(list()) ),
+                        $init_reg,
+                        PAST::Val.new( :value($var.name()), :named('name') )
+                    );
+                    emit_traits($var<traitlist>, $var.viviself(), $declarand);
                     if $type {
                         if $var<sigil> ne '$' && $var<sigil> ne '@' && $var<sigil> ne '%' && $var<sigil> ne '' {
                             $/.panic("Cannot handle typed variables with sigil " ~ $var<sigil>);
@@ -1808,7 +1881,7 @@ method scope_declarator($/) {
                         $var.viviself.push(PAST::Op.new(
                             :pasttype('call'),
                             :name('trait_mod:of'),
-                            $init_reg,
+                            $declarand,
                             $type
                         ));
                     }
@@ -2457,13 +2530,17 @@ method term($/, $key) {
         # Whatever.
         $past := make_whatever($/);
     }
+    elsif $key eq '**' {
+        $/.panic('** (HyperWhatever) is not yet implemented');
+    }
     elsif $key eq 'noarg' {
         if @ns {
             $past := PAST::Op.new(
                 PAST::Var.new(
                     :name($short_name),
                     :namespace(@ns),
-                    :scope('package')
+                    :scope('package'),
+                    :viviself('Failure'),
                 ),
                 :pasttype('call')
             );
@@ -2481,7 +2558,8 @@ method term($/, $key) {
             $past.unshift(PAST::Var.new(
                 :name($short_name),
                 :namespace(@ns),
-                :scope('package')
+                :scope('package'),
+                :viviself('Failure'),
             ));
         }
         else {
@@ -2497,7 +2575,8 @@ method term($/, $key) {
             $past.unshift(PAST::Var.new(
                 :name($short_name),
                 :namespace(@ns),
-                :scope('package')
+                :scope('package'),
+                :viviself('Failure'),
             ));
         }
         else {
@@ -2696,14 +2775,17 @@ method EXPR($/, $key) {
     elsif ~$type eq 'infix://=' || ~$type eq 'infix:||=' || ~$type eq 'infix:&&=' {
         my $lhs := $/[0].ast;
         my $rhs := $/[1].ast;
-        make PAST::Op.new(
-            :pasttype('call'),
-            :name('infix:='),
-            $lhs,
-            PAST::Op.new($lhs, $rhs, :pasttype(
-                ~$type eq 'infix://=' ?? 'def_or' !!
-                (~$type eq 'infix:||=' ?? 'unless' !!
-                 'if'))
+        make PAST::Stmts.new(
+            PAST::Op.new( :pasttype('bind'), PAST::Var.new( :name('$P0'), :scope('register') ), $lhs ),
+            PAST::Op.new(
+                :pasttype('call'),
+                :name('infix:='),
+                PAST::Var.new( :name('$P0'), :scope('register') ),
+                PAST::Op.new(PAST::Var.new( :name('$P0'), :scope('register') ), $rhs, :pasttype(
+                    ~$type eq 'infix://=' ?? 'def_or' !!
+                    (~$type eq 'infix:||=' ?? 'unless' !!
+                     'if'))
+                )
             )
         );
     }
@@ -3174,14 +3256,23 @@ sub return_handler_past() {
                 PAST::Var.new( :name('exception'), :scope('register') )
             ),
             PAST::Op.new(
-                :pasttype('call'),
-                :name('die'),
+                :pasttype('if'),
+                PAST::Op.new( :inline("    $I0 = isa exception, 'Failure'",
+                                      "    %r = box $I0") ),
+                PAST::Op.new(
+                    :inline('    .return (%0)'),
+                    PAST::Var.new( :name('exception'), :scope('register') )
+                ),
                 PAST::Op.new(
                     :pasttype('call'),
-                    :name('!make_type_fail_message'),
-                    'Return value',
-                    PAST::Var.new( :name('exception'), :scope('register') ),
-                    PAST::Var.new( :name('$P0'), :scope('register') )
+                    :name('die'),
+                    PAST::Op.new(
+                        :pasttype('call'),
+                        :name('!make_type_fail_message'),
+                        'Return value',
+                        PAST::Var.new( :name('exception'), :scope('register') ),
+                        PAST::Var.new( :name('$P0'), :scope('register') )
+                    )
                 )
             )
         )

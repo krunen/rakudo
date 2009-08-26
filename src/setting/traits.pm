@@ -29,6 +29,10 @@ multi trait_mod:<is>(Class $child, Object $parent) {
     };
 }
 
+multi trait_mod:<is>(Class $child, :$hidden!) {
+    $child.hidden = True;
+}
+
 multi trait_mod:<is>(Code $block, $arg?, :$export!) {
     # Maybe we can re-write some more of this out of PIR and into Perl 6.
     Q:PIR {
@@ -85,6 +89,10 @@ multi trait_mod:<is>(Code $block, :$default!) {
     };
 }
 
+multi trait_mod:<is>(ContainerDeclarand $c, :$rw!) {
+    # The default anyway, so nothing to do.
+}
+
 multi trait_mod:<does>(Class $class is rw, Object $role) {
     Q:PIR {
     .local pmc metaclass, role
@@ -110,29 +118,20 @@ multi trait_mod:<does>(Class $class is rw, Object $role) {
     };
 }
 
-multi trait_mod:<does>(Object $var, Object $role) {
-    $var does $role;
+multi trait_mod:<does>(ContainerDeclarand $c, Object $role) {
+    $c.container does $role;
 }
 
 multi trait_mod:<of>(Code $block is rw where { .defined }, Object $type is rw) {
     $block does Callable[$type];
 }
 
-multi trait_mod:<of>(Array $var is rw, Object $type is rw) {
-    $var does Positional[$type];
-}
-
-multi trait_mod:<of>(Hash $var is rw, Object $type is rw) {
-    $var does Associative[$type];
-}
-
-multi trait_mod:<of>(Object $var is rw, Object $type is rw) {
-    Q:PIR {
-    .local pmc var, type
-    var = find_lex '$var'
-    type = find_lex '$type'
-    setprop var, 'type', type
-    };
+multi trait_mod:<of>(ContainerDeclarand $c, Object $type is rw) {
+    given $c.container {
+        when Array { $_ does Positional[$type] }
+        when Hash { $_ does Associative[$type] }
+        default { VAR($_).of($type) }
+    }
 }
 
 multi trait_mod:<returns>(Code $block is rw, Object $type) {
@@ -141,4 +140,9 @@ multi trait_mod:<returns>(Code $block is rw, Object $type) {
 
 multi trait_mod:<will>($declarand, &arg, *%name) {
     &trait_mod:<is>($declarand, &arg, |%name);
+}
+
+multi trait_mod:<hides>(Class $child, Object $parent) {
+    &trait_mod:<is>($child, $parent);
+    $child.hides.push($parent)
 }

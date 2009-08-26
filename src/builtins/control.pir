@@ -373,6 +373,7 @@ on error.
     compiler = compreg 'perl6'
   got_lang:
     invokable = compiler.'compile'(code)
+    if have_lang goto invoke_direct
 
     # Clear lexical info we added.
     blocks.'shift'()
@@ -382,8 +383,9 @@ on error.
     $P1.'set_outer'(my_caller)
 
     # Invoke.
+  invoke_direct:
     res = invokable()
-    exception = new ['Failure']
+    exception = '!FAIL'()
     goto done
 
   catch:
@@ -391,7 +393,7 @@ on error.
 
   done:
     pop_eh
-    
+
     # Propagate exception to caller
     $P0 = getinterp
     $P0 = $P0['lexpad';1]
@@ -444,6 +446,7 @@ on error.
     .local pmc clist, lexpad, self, next
     get_next_candidate_info clist, $P0, lexpad
     next = clone clist
+    next.'set_failure_mode'()
     $P0 = deref next
     $I0 = isa $P0, 'Method'
     unless $I0 goto not_method
@@ -467,14 +470,26 @@ on error.
     .local pmc clist, lexpad, self, next, result
     get_next_candidate_info clist, $P0, lexpad
     next = clone clist
+    next.'set_failure_mode'()
     $P0 = deref next
     $I0 = isa $P0, 'Method'
     unless $I0 goto not_method
     self = lexpad['self']
     (result) = next(self, pos_args :flat, named_args :flat :named)
-    'return'(result)
+    goto process_result
   not_method:
     (result) = next(pos_args :flat, named_args :flat :named)
+
+  process_result:
+    $I0 = isa result, ['Failure']
+    unless $I0 goto did_defer
+    $P0 = getattribute result, '$!exception'
+    if null $P0 goto did_defer
+    $S0 = $P0['message']
+    if $S0 != 'No method to defer to' goto did_defer
+    .return (result)
+
+  did_defer:
     'return'(result)
 .end
 
@@ -488,11 +503,12 @@ on error.
     .local pmc clist, routine, lexpad, next
     get_next_candidate_info clist, routine, lexpad
     next = clone clist
-    
+
     # Build arguments based upon what the caller was originall invoked with,
     # and tailcall the next candidate.
     .local pmc pos_args, named_args
     (pos_args, named_args) = '!get_original_args'(routine, lexpad)
+    next.'set_failure_mode'()
     .tailcall next(pos_args :flat, named_args :flat :named)
 .end
 
@@ -506,14 +522,40 @@ on error.
     .local pmc clist, routine, lexpad, next
     get_next_candidate_info clist, routine, lexpad
     next = clone clist
-    
+
     # Build arguments based upon what the caller was originall invoked with,
     # get the result of the next candidate and use return to retrun from
-    # the caller.
+    # the caller, provided the defer did not fail.
     .local pmc pos_args, named_args, result
     (pos_args, named_args) = '!get_original_args'(routine, lexpad)
+    next.'set_failure_mode'()
     (result) = next(pos_args :flat, named_args :flat :named)
+
+    $I0 = isa result, ['Failure']
+    unless $I0 goto did_defer
+    $P0 = getattribute result, '$!exception'
+    if null $P0 goto did_defer
+    $S0 = $P0['message']
+    if $S0 != 'No method to defer to' goto did_defer
+    .return (result)
+
+  did_defer:
     'return'(result)
+.end
+
+
+=item lastcall
+
+Trims the candidate list so that nextsame/nextwith/callsame/callwith will
+find nothing more to call.
+
+=cut
+
+.sub 'lastcall'
+    # Find candidate list and trim it.
+    .local pmc clist
+    get_next_candidate_info clist, $P0, $P1
+    clist.'trim_candidate_list'()
 .end
 
 

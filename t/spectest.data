@@ -115,7 +115,7 @@ S03-junctions/misc.t
 S03-operators/arith.t
 S03-operators/assign-is-not-binding.t
 S03-operators/assign.t
-S03-operators/autoincrement-range.t
+S03-operators/autoincrement-range.t                        # icu
 S03-operators/autoincrement.t
 S03-operators/autovivification.t
 S03-operators/basic-types.t
@@ -329,6 +329,7 @@ S12-methods/defer-call.t
 S12-methods/defer-next.t
 S12-methods/indirect_notation.t
 S12-methods/instance.t
+S12-methods/lastcall.t
 S12-methods/multi.t
 S12-methods/parallel-dispatch.t
 S12-methods/private.t
@@ -339,6 +340,7 @@ S12-methods/what.t
 S12-subset/multi-dispatch.t
 S12-subset/subtypes.t
 S13-type-casting/methods.t
+S13-overloading/typecasting-long.t
 S13-overloading/metaoperators.t
 S13-overloading/operators.t
 S14-roles/attributes.t
@@ -353,7 +355,10 @@ S14-roles/parameterized-basic.t
 S14-roles/parameterized-mixin.t
 S14-roles/parameterized-type.t
 S14-roles/submethods.t
+S14-traits/attributes.t
+S14-traits/package.t
 S14-traits/routines.t
+S14-traits/variables.t
 S16-filehandles/io.t
 S16-filehandles/io_in_for_loops.t
 S16-filehandles/io_in_while_loops.t
@@ -370,7 +375,7 @@ S29-any/isa.t
 S29-context/die.t
 S29-context/eval.t
 S29-context/sleep.t
-S29-conversions/ord_and_chr.t
+S29-conversions/ord_and_chr.t                              #icu
 S32-array/delete.t
 S32-array/elems.t
 S32-array/end.t
