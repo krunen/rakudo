@@ -5,6 +5,9 @@ class Whatever is also {
     method ACCEPTS(Any $topic) {
         return Bool::True;
     }
+    method postcircumfix:<( )>(*@pos, *%named) {
+        return -> $x { $x(|@pos, |%named) };
+    }
 }
 
 
@@ -23,7 +26,7 @@ multi sub infix:<+>(WhateverCode $a, $b) is default
     { WhateverCodeX('infix:+', $a, $b) }
 multi sub infix:<+>($a, Whatever $b)
     { WhateverCodeX('infix:+', $a, $b) }
-multi sub infix:<+>($a, Whatever $b)
+multi sub infix:<+>($a, WhateverCode $b)
     { WhateverCodeX('infix:+', $a, $b) }
 
 multi sub infix:<->(Whatever $a, $b) is default 
@@ -32,7 +35,7 @@ multi sub infix:<->(WhateverCode $a, $b) is default
     { WhateverCodeX('infix:-', $a, $b) }
 multi sub infix:<->($a, Whatever $b)
     { WhateverCodeX('infix:-', $a, $b) }
-multi sub infix:<->($a, Whatever $b)
+multi sub infix:<->($a, WhateverCode $b)
     { WhateverCodeX('infix:-', $a, $b) }
 
 multi sub infix:<*>(Whatever $a, $b) is default 
@@ -41,7 +44,7 @@ multi sub infix:<*>(WhateverCode $a, $b) is default
     { WhateverCodeX('infix:*', $a, $b) }
 multi sub infix:<*>($a, Whatever $b)
     { WhateverCodeX('infix:*', $a, $b) }
-multi sub infix:<*>($a, Whatever $b)
+multi sub infix:<*>($a, WhateverCode $b)
     { WhateverCodeX('infix:*', $a, $b) }
 
 multi sub infix:</>(Whatever $a, $b) is default 
@@ -50,7 +53,7 @@ multi sub infix:</>(WhateverCode $a, $b) is default
     { WhateverCodeX('infix:/', $a, $b) }
 multi sub infix:</>($a, Whatever $b)
     { WhateverCodeX('infix:/', $a, $b) }
-multi sub infix:</>($a, Whatever $b)
+multi sub infix:</>($a, WhateverCode $b)
     { WhateverCodeX('infix:/', $a, $b) }
 
 multi sub infix:<%>(Whatever $a, $b) is default 
@@ -59,7 +62,7 @@ multi sub infix:<%>(WhateverCode $a, $b) is default
     { WhateverCodeX('infix:%', $a, $b) }
 multi sub infix:<%>($a, Whatever $b)
     { WhateverCodeX('infix:%', $a, $b) }
-multi sub infix:<%>($a, Whatever $b)
+multi sub infix:<%>($a, WhateverCode $b)
     { WhateverCodeX('infix:%', $a, $b) }
 
 multi sub infix:<div>(Whatever $a, $b) is default 
@@ -68,7 +71,7 @@ multi sub infix:<div>(WhateverCode $a, $b) is default
     { WhateverCodeX('infix:div', $a, $b) }
 multi sub infix:<div>($a, Whatever $b)
     { WhateverCodeX('infix:div', $a, $b) }
-multi sub infix:<div>($a, Whatever $b)
+multi sub infix:<div>($a, WhateverCode $b)
     { WhateverCodeX('infix:div', $a, $b) }
 
 multi sub infix:<mod>(Whatever $a, $b) is default 
@@ -77,7 +80,7 @@ multi sub infix:<mod>(WhateverCode $a, $b) is default
     { WhateverCodeX('infix:mod', $a, $b) }
 multi sub infix:<mod>($a, Whatever $b)
     { WhateverCodeX('infix:mod', $a, $b) }
-multi sub infix:<mod>($a, Whatever $b)
+multi sub infix:<mod>($a, WhateverCode $b)
     { WhateverCodeX('infix:mod', $a, $b) }
 
 multi sub infix:<**>(Whatever $a, $b) is default 
@@ -86,7 +89,7 @@ multi sub infix:<**>(WhateverCode $a, $b) is default
     { WhateverCodeX('infix:**', $a, $b) }
 multi sub infix:<**>($a, Whatever $b)
     { WhateverCodeX('infix:**', $a, $b) }
-multi sub infix:<**>($a, Whatever $b)
+multi sub infix:<**>($a, WhateverCode $b)
     { WhateverCodeX('infix:**', $a, $b) }
 
 multi sub prefix:<->(Whatever $a)
