@@ -64,15 +64,102 @@ class Any is also {
             default { die "Unable to convert to base: $base" }
         }
     }
-    
+
     our Num multi method sin($base = 'radians') is export {
-        self.Num!to-radians($base).sin; # seems awkward, but the obvious way of doing
-                                        # this is tripping up on some wierd Rakudo-bug
+        self.Num.sin($base);
+    }
+
+    our Num multi method cos($base = 'radians') is export {
+        self.Num.cos($base);
+    }
+
+    our Num multi method tan($base = 'radians') is export {
+        self.Num.tan($base);
+    }
+
+    # Having Any.sec breaks t/spec/S32-io/IO-Socket-INET.t ???
+    # our Num multi method sec($base = 'radians') is export {
+    #     self.Num.sec($base);
+    # }
+
+    our Num multi method cosec($base = 'radians') is export {
+        self.Num.cosec($base);
+    }
+
+    our Num multi method cotan($base = 'radians') is export {
+        self.Num.cotan($base);
     }
     
-    our Num multi method cos($base = 'radians') is export {
-        self.Num!to-radians($base).cos; # seems awkward, but the obvious way of doing
-                                        # this is tripping up on some wierd Rakudo-bug
+    our Num multi method sinh($base = 'radians') is export {
+        self.Num.sinh($base);
+    }
+    
+    our Num multi method cosh($base = 'radians') is export {
+        self.Num.cosh($base);
+    }
+    
+    our Num multi method tanh($base = 'radians') is export {
+        self.Num.tanh($base);
+    }
+
+    our Num multi method sech($base = 'radians') is export {
+        self.Num.sech($base);
+    }
+
+    our Num multi method cosech($base = 'radians') is export {
+        self.Num.cosech($base);
+    }
+
+    our Num multi method cotanh($base = 'radians') is export {
+        self.Num.cotanh($base);
+    }
+
+    our Num multi method asin($base = 'radians') is export {
+        self.Num.asin($base);
+    }
+
+    our Num multi method acos($base = 'radians') is export {
+        self.Num.acos($base);
+    }
+
+    our Num multi method atan($base = 'radians') is export {
+        self.Num.atan($base);
+    }
+
+    our Num multi method asec($base = 'radians') is export {
+        self.Num.asec($base);
+    }
+
+    our Num multi method acosec($base = 'radians') is export {
+        self.Num.acosec($base);
+    }
+
+    our Num multi method acotan($base = 'radians') is export {
+        self.Num.acotan($base);
+    }
+
+    our Num multi method asinh($base = 'radians') is export {
+        self.Num.asinh($base);
+    }
+
+    our Num multi method acosh($base = 'radians') is export {
+        self.Num.acosh($base);
+    }
+
+    our Num multi method atanh($base = 'radians') is export {
+        self.Num.atanh($base);
+    }
+
+    our Num multi method asech($base = 'radians') is export {
+        self.Num.asech($base);
+    }
+
+    our Num multi method acosech($base = 'radians') is export {
+        self.Num.acosech($base);
+    }
+
+    our Num multi method acotanh($base = 'radians') is export {
+        self.Num.acotanh($base);
     }
 }
 
