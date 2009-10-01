@@ -12,7 +12,6 @@ our %?CLASSMAP;
 %?CLASSMAP<Array>   := 'Perl6Array';
 %?CLASSMAP<Hash>    := 'Perl6Hash';
 %?CLASSMAP<Pair>    := 'Perl6Pair';
-%?CLASSMAP<Complex> := 'Perl6Complex';
 
 # $?RAKUDO_HLL identifies the .HLL to use for compilation --
 # it's ultimately set by the .RAKUDO_HLL macro in F<perl6.pir> .
@@ -2919,7 +2918,7 @@ method colonpair($/, $key) {
         if $<desigilname><longname> {
             $pair_key := PAST::Val.new( :value( ~$<desigilname> ) );
             $pair_val := PAST::Var.new(
-                :name( ~$<sigil> ~ ~$<twigil> ~ $<desigilname> )
+                :name( ~$<sigil> ~ ~$<twigil>[0] ~ $<desigilname> )
             );
         }
         else {
