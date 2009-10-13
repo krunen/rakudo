@@ -61,6 +61,7 @@ Creates the Perl 6 compiler by subclassing a C<PCT::HLLCompiler> object.
     .local pmc p6meta, perl6
     p6meta = get_hll_global ['Perl6Object'], '$!P6META'
     perl6 = p6meta.'new_class'('Perl6::Compiler', 'parent'=>'PCT::HLLCompiler')
+    p6meta.'new_class'('Perl6::Compiler::Signature', 'attr'=>'$!entries $!default_type')
 
     load_bytecode 'config.pbc'
 
@@ -168,6 +169,7 @@ USAGE
 .include 'src/parser/quote_expression.pir'
 .include 'src/gen_setting.pir'
 .include 'src/gen_actions.pir'
+.include 'src/gen_signature_pm.pir'
 .include 'src/gen_metaop.pir'
 .include 'src/gen_junction.pir'
 .include 'src/gen_whatever.pir'
@@ -324,20 +326,21 @@ and report exceptions.
 .sub 'format_location'
     .param pmc cur_block
     .local pmc anno
+    .local string file
+    .local string line
     anno = cur_block['annotations']
     if null anno goto unknown
-    $S1 = anno['file']
-    if $S1 != "" goto have_file
-    $S1 = "<unknown>"
+    file = anno['file']
+    if file != "" goto have_file
+    file = "<unknown>"
   have_file:
-    $S0 = concat "(", $S1
-    concat $S0, ":"
-    $S1 = anno['line']
-    if $S1 != "" goto have_line
-    if $S0 == "(<unknown>:" goto unknown
-    $S1 = "<unknown>"
+    line = anno['line']
+    if line != "" goto have_line
+    line = "<unknown>"
   have_line:
-    concat $S0, $S1
+    $S0 = concat "(file " , file
+    concat $S0, ", line "
+    concat $S0, line
     concat $S0, ")"
     .return ($S0)
   unknown:
@@ -475,6 +478,7 @@ Currently this does the equivalent of EXPORTALL on the core namespaces.
 .include 'src/parrot/P6role.pir'
 .include 'src/parrot/Protoobject.pir'
 .include 'src/parrot/misc.pir'
+.include 'src/parrot/signature.pir'
 .include 'src/parrot/state.pir'
 .include 'src/gen_uprop.pir'
 

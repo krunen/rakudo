@@ -6,6 +6,13 @@ class Complex {
         self.bless(*, :$re, :$im);
     }
 
+    multi method ACCEPTS(Complex $topic) {
+        ($topic.re ~~ $.re) && ($topic.im ~~ $.im);
+    }
+    multi method ACCEPTS($topic) {
+        ($topic.Num ~~ $.re) && ($.im == 0);
+    }
+
     multi method abs() {
         ($!re * $!re + $!im * $!im).sqrt
     }
@@ -27,9 +34,97 @@ class Complex {
     multi method sin($base = 'radians') {
         $.re.sin($base) * $.im.cosh($base) + ($.re.cos($base) * $.im.sinh($base))i;
     }
-    
+
+    multi method asin($base = 'radians') {
+        (-1i * log((self)i + sqrt(1 - self * self)))!from-radians($base);
+    }
+
     multi method cos($base = 'radians') {
         $.re.cos($base) * $.im.cosh($base) - ($.re.sin($base) * $.im.sinh($base))i;
+    }
+
+    multi method acos($base = 'radians') {
+       (pi / 2)!from-radians($base) - self.asin($base);
+    }
+
+    multi method tan($base = 'radians') {
+        self.sin($base) / self.cos($base);
+    }
+
+    multi method atan($base = 'radians') {
+        ((log(1 - (self)i) - log(1 + (self)i))i / 2)!from-radians($base);
+    }
+
+    multi method sec($base = 'radians') {
+        1 / self.cos($base);
+    }
+
+    multi method asec($base = 'radians') {
+        (1 / self).acos($base);
+    }
+
+    multi method cosec($base = 'radians') {
+        1 / self.sin($base);
+    }
+
+    multi method acosec($base = 'radians') {
+        (1 / self).asin($base);
+    }
+
+    multi method cotan($base = 'radians') {
+        self.cos($base) / self.sin($base);
+    }
+
+    multi method acotan($base = 'radians') {
+        (1 / self).atan($base);
+    }
+
+    multi method sinh($base = 'radians') {
+        -((1i * self).sin($base))i;
+    }
+
+    multi method asinh($base = 'radians') {
+        (self + sqrt(1 + self * self)).log!from-radians($base);
+    }
+
+    multi method cosh($base = 'radians') {
+        (1i * self).cos($base);
+    }
+
+    multi method acosh($base = 'radians') {
+        (self + sqrt(self * self - 1)).log!from-radians($base);
+    }
+
+    multi method tanh($base = 'radians') {
+        -((1i * self).tan($base))i;
+    }
+
+    multi method atanh($base = 'radians') {
+        (((1 + self) / (1 - self)).log / 2)!from-radians($base);
+    }
+
+    multi method sech($base = 'radians') {
+        1 / self.cosh($base);
+    }
+
+    multi method asech($base = 'radians') {
+        (1 / self).acosh($base);
+    }
+
+    multi method cosech($base = 'radians') {
+        1 / self.sinh($base);
+    }
+
+    multi method acosech($base = 'radians') {
+        (1 / self).asinh($base);
+    }
+
+    multi method cotanh($base = 'radians') {
+        1 / self.tanh($base);
+    }
+
+    multi method acotanh($base = 'radians') {
+        (1 / self).atanh($base);
     }
 
     multi method log() {
@@ -215,13 +310,6 @@ multi sub sqrt(Complex $x) {
 
 multi sub exp(Complex $x) {
     $x.exp()
-}
-
-multi sub sin(Complex $x) {
-    $x.sin();
-}
-multi sub sin(Complex $x, $base) {
-    $x.sin($base);
 }
 
 # vim: ft=perl6

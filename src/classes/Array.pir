@@ -14,63 +14,11 @@ src/classes/Array.pir - Perl 6 Array class and related functions
     arrayproto.'!MUTABLE'()
 
     $P0 = get_hll_namespace ['Perl6Array']
-    '!EXPORT'('delete,exists,pop,push,shift,unshift', 'from'=>$P0, 'to_p6_multi'=>1)
+    '!EXPORT'('exists,pop,push,shift,unshift', 'from'=>$P0, 'to_p6_multi'=>1)
 .end
 
 
 =head2 Methods
-
-=item delete
-
-Remove items from an array.
-
-=cut
-
-.namespace ['Perl6Array']
-.sub 'delete' :method :multi() :subid('array_delete')
-    .param pmc indices :slurpy
-    .local pmc result
-    result = new ['List']
-    null $P99
-
-    indices.'!flatten'()
-  indices_loop:
-    unless indices goto indices_end
-    $I0 = shift indices
-    $P0 = self[$I0]
-    push result, $P0
-    self[$I0] = $P99
-
-  shorten:
-    $I0 = self.'elems'()
-    dec $I0
-  shorten_loop:
-    if $I0 < 0 goto shorten_end
-    $P0 = self[$I0]
-    if null $P0 goto do_shorten
-    $I1 = $P0.'defined'()
-    if $I1 goto shorten_end
-  do_shorten:
-    delete self[$I0]
-    dec $I0
-    goto shorten_loop
-  shorten_end:
-    goto indices_loop
-
-  indices_end:
-    .return (result)
-.end
-.sub '' :init :load
-    .local pmc block, signature
-    .const 'Sub' $P0 = "array_delete"
-    block = $P0
-    signature = new ["Signature"]
-    setprop block, "$!signature", signature
-    signature."!add_param"("@indices", 1 :named("slurpy"))
-    $P0 = get_hll_global 'Array'
-    signature."!add_implicit_self"($P0)
-.end
-
 
 =item exists(indices :slurpy)
 
@@ -78,6 +26,7 @@ Return true if the elements at C<indices> have been assigned to.
 
 =cut
 
+.namespace ['Perl6Array']
 .sub 'exists' :method :multi() :subid('array_exists')
     .param pmc indices :slurpy
     .local int test
@@ -95,11 +44,12 @@ Return true if the elements at C<indices> have been assigned to.
     .local pmc block, signature
     .const 'Sub' $P0 = "array_exists"
     block = $P0
-    signature = new ["Signature"]
+    signature = allocate_signature 2
     setprop block, "$!signature", signature
-    signature."!add_param"("@indices", 1 :named("slurpy"))
+    null $P1
     $P0 = get_hll_global 'Array'
-    signature."!add_implicit_self"($P0)
+    set_signature_elem signature, 0, "self", SIG_ELEM_INVOCANT_AND_MULTI_INVOCANT, $P0, $P1, $P1, $P1, $P1, $P1
+    set_signature_elem signature, 1, "@indices", SIG_ELEM_SLURPY_POS, $P1, $P1, $P1, $P1, $P1, $P1
 .end
 
 
@@ -147,10 +97,11 @@ Remove the last item from the array and return it.
     .local pmc block, signature
     .const 'Sub' $P0 = "array_pop"
     block = $P0
-    signature = new ["Signature"]
+    signature = allocate_signature 1
     setprop block, "$!signature", signature
     $P0 = get_hll_global 'Array'
-    signature."!add_implicit_self"($P0)
+    null $P1
+    set_signature_elem signature, 0, "self", SIG_ELEM_INVOCANT_AND_MULTI_INVOCANT, $P0, $P1, $P1, $P1, $P1, $P1
 .end
 
 
@@ -183,11 +134,12 @@ Add C<args> to the end of the Array.
     .local pmc block, signature
     .const 'Sub' $P0 = "array_push"
     block = $P0
-    signature = new ["Signature"]
+    signature = allocate_signature 2
     setprop block, "$!signature", signature
-    signature."!add_param"("@items", 1 :named("slurpy"))
+    null $P1
     $P0 = get_hll_global 'Array'
-    signature."!add_implicit_self"($P0)
+    set_signature_elem signature, 0, "self", SIG_ELEM_INVOCANT_AND_MULTI_INVOCANT, $P0, $P1, $P1, $P1, $P1, $P1
+    set_signature_elem signature, 1, "@items", SIG_ELEM_SLURPY_POS, $P1, $P1, $P1, $P1, $P1, $P1
 .end
 
 
@@ -211,10 +163,11 @@ Shift the first item off the array and return it.
     .local pmc block, signature
     .const 'Sub' $P0 = "array_shift"
     block = $P0
-    signature = new ["Signature"]
+    signature = allocate_signature 1
     setprop block, "$!signature", signature
     $P0 = get_hll_global 'Array'
-    signature."!add_implicit_self"($P0)
+    null $P1
+    set_signature_elem signature, 0, "self", SIG_ELEM_INVOCANT_AND_MULTI_INVOCANT, $P0, $P1, $P1, $P1, $P1, $P1
 .end
 
 
@@ -246,11 +199,12 @@ Adds C<args> to the beginning of the Array.
     .local pmc block, signature
     .const 'Sub' $P0 = "array_unshift"
     block = $P0
-    signature = new ["Signature"]
+    signature = allocate_signature 2
     setprop block, "$!signature", signature
-    signature."!add_param"("@items", 1 :named("slurpy"))
+    null $P1
     $P0 = get_hll_global 'Array'
-    signature."!add_implicit_self"($P0)
+    set_signature_elem signature, 0, "self", SIG_ELEM_INVOCANT_AND_MULTI_INVOCANT, $P0, $P1, $P1, $P1, $P1, $P1
+    set_signature_elem signature, 1, "@items", SIG_ELEM_SLURPY_POS, $P1, $P1, $P1, $P1, $P1, $P1
 .end
 
 =item values()

@@ -25,7 +25,7 @@ class Num is also {
         };
     }
 
-    our Num multi method acos($base = 'radians') is export {
+    our Num multi method acos($base = 'radians') {
         my $r = Q:PIR {
             $N0 = self
             $N1 = acos $N0
@@ -34,7 +34,7 @@ class Num is also {
         $r!from-radians($base)
     }
 
-    our Num multi method acosh($base = 'radians') is export {
+    our Num multi method acosh($base = 'radians') {
         my $r = Q:PIR {
             $N0 = self
             $N1 = $N0 * $N0
@@ -47,7 +47,7 @@ class Num is also {
         $r!from-radians($base)
     }
 
-    our Num multi method acosec($base = 'radians') is export {
+    our Num multi method acosec($base = 'radians') {
         my $r = Q:PIR {
             $N0 = self
             $N1 = 1 / $N0
@@ -57,14 +57,14 @@ class Num is also {
         $r!from-radians($base)
    }
 
-    our Num multi method acosech($base = 'radians') is export {
+    our Num multi method acosech($base = 'radians') {
         # MUST: This is certainly wrong -- if nothing else,
         # asinh also calls from-radians on its result.
         # (Except it seems to be passing tests?)
         asinh(1/+self)!from-radians($base)
     }
 
-    our Num multi method acotan($base = 'radians') is export {
+    our Num multi method acotan($base = 'radians') {
         my $r = Q:PIR {
             $N0 = self
             $N1 = 1 / $N0
@@ -74,7 +74,7 @@ class Num is also {
         $r!from-radians($base)
    }
 
-    our Num multi method acotanh($base = 'radians') is export {
+    our Num multi method acotanh($base = 'radians') {
         my $r = Q:PIR {
             $N0 = self
             $N1 = 1 + $N0
@@ -87,7 +87,7 @@ class Num is also {
         $r!from-radians($base)
     }
 
-    our Num multi method asec($base = 'radians') is export {
+    our Num multi method asec($base = 'radians') {
         my $r = Q:PIR {
             $N0 = self
             $N1 = asec $N0
@@ -96,7 +96,7 @@ class Num is also {
         $r!from-radians($base)
    }
 
-    our Num multi method asech($base = 'radians') is export {
+    our Num multi method asech($base = 'radians') {
         my $r = Q:PIR {
             $N0 = self
             $N1 = neg $N0
@@ -111,7 +111,7 @@ class Num is also {
         $r!from-radians($base)
     }
 
-    our Num multi method asin($base = 'radians') is export {
+    our Num multi method asin($base = 'radians') {
         my $r = Q:PIR {
             $N0 = self
             $N1 = asin $N0
@@ -120,7 +120,7 @@ class Num is also {
         $r!from-radians($base)
     }
 
-    our Num multi method asinh($base = 'radians') is export {
+    our Num multi method asinh($base = 'radians') {
         my $r = Q:PIR {
             $N0 = self
             $N1 = $N0 * $N0
@@ -133,7 +133,7 @@ class Num is also {
         $r!from-radians($base)
     }
 
-    our Num multi method atan($base = 'radians') is export {
+    our Num multi method atan($base = 'radians') {
         my $r = Q:PIR {
             $N0 = self
             $N1 = atan $N0
@@ -153,7 +153,7 @@ class Num is also {
         $r!from-radians($base)
     }
 
-    our Num multi method atanh($base = 'radians') is export {
+    our Num multi method atanh($base = 'radians') {
         my $r = Q:PIR {
             $N0 = self
             $N1 = 1 - $N0
@@ -166,7 +166,7 @@ class Num is also {
         $r!from-radians($base)
     }
 
-    our Num multi method cos($base = 'radians') is export {
+    our Num multi method cos($base = 'radians') {
         my $x = self!to-radians($base);
         Q:PIR {
             $P0 = find_lex "$x"
@@ -176,7 +176,7 @@ class Num is also {
         };
     }
 
-    our Num multi method cosh($base = 'radians') is export {
+    our Num multi method cosh($base = 'radians') {
         my $x = self!to-radians($base);
         Q:PIR {
             $P0 = find_lex "$x"
@@ -186,7 +186,7 @@ class Num is also {
         };
     }
 
-    our Num multi method cosec($base = 'radians') is export {
+    our Num multi method cosec($base = 'radians') {
         my $x = self!to-radians($base);
         Q:PIR {
             $P0 = find_lex "$x"
@@ -197,7 +197,7 @@ class Num is also {
         };
     }
 
-    our Num multi method cosech($base = 'radians') is export {
+    our Num multi method cosech($base = 'radians') {
         my $x = self!to-radians($base);
         Q:PIR {
             $P0 = find_lex "$x"
@@ -208,7 +208,7 @@ class Num is also {
         };
    }
 
-    our Num multi method cotan($base = 'radians') is export {
+    our Num multi method cotan($base = 'radians') {
         my $x = self!to-radians($base);
         Q:PIR {
             $P0 = find_lex "$x"
@@ -219,7 +219,7 @@ class Num is also {
         }
     }
 
-    our Num multi method cotanh($base = 'radians') is export {
+    our Num multi method cotanh($base = 'radians') {
         my $x = self!to-radians($base);
         Q:PIR {
             $P0 = find_lex "$x"
@@ -250,7 +250,35 @@ class Num is also {
         ~self
     }
 
-    our Num multi method sec($base = 'radians') is export {
+    my sub _modf($num) { my $q = $num.Int; $num - $q, $q; }
+
+    multi method Rat($epsilon = 1.0e-6) {
+        my $num = +self;
+        my $signum = $num < 0 ?? -1 !! 1;
+        $num = -$num if $signum == -1;
+
+        # Find convergents of the continued fraction.
+
+        my ($r, $q) = _modf($num);
+        my ($a, $b) = 1, $q;
+        my ($c, $d) = 0, 1;
+
+        while $r != 0 && abs($num - ($b/$d)) > $epsilon {
+            ($r, $q) = _modf(1/$r);
+
+            ($a, $b) = ($b, $q*$b + $a);
+            ($c, $d) = ($d, $q*$d + $c);
+        }
+
+        # Note that this result has less error than any Rational with a
+        # smaller denominator but it is not (necessarily) the Rational
+        # with the smallest denominator that has less than $epsilon error.
+        # However, to find that Rational would take more processing.
+
+        Rat.new($signum * $b, $d);
+    }
+
+    our Num multi method sec($base = 'radians') {
         my $x = self!to-radians($base);
         Q:PIR {
             $P0 = find_lex "$x"
@@ -260,7 +288,7 @@ class Num is also {
         }
     }
 
-    our Num multi method sech($base = 'radians') is export {
+    our Num multi method sech($base = 'radians') {
         my $x = self!to-radians($base);
         Q:PIR {
             $P0 = find_lex "$x"
@@ -270,7 +298,7 @@ class Num is also {
         }
     }
 
-    our Num multi method sin($base = 'radians') is export {
+    our Num multi method sin($base = 'radians') {
         my $x = self!to-radians($base);
         Q:PIR {
             $P0 = find_lex "$x"
@@ -280,7 +308,7 @@ class Num is also {
         }
     }
 
-    our Num multi method sinh($base = 'radians') is export {
+    our Num multi method sinh($base = 'radians') {
         my $x = self!to-radians($base);
         Q:PIR {
             $P0 = find_lex "$x"
@@ -306,7 +334,7 @@ class Num is also {
         self;
     }
 
-    our Num multi method tan($base = 'radians') is export {
+    our Num multi method tan($base = 'radians') {
         my $x = self!to-radians($base);
         Q:PIR {
             $P0 = find_lex "$x"
@@ -316,7 +344,7 @@ class Num is also {
         }
     }
 
-    our Num multi method tanh($base = 'radians') is export {
+    our Num multi method tanh($base = 'radians') {
         my $x = self!to-radians($base);
         Q:PIR {
             $P0 = find_lex "$x"

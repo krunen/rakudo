@@ -53,9 +53,11 @@ Return a List with the keys of the invocant.
     .local pmc block, signature
     .const 'Sub' $P0 = "_keys"
     block = $P0
-    signature = new ["Signature"]
+    signature = allocate_signature 1
+    null $P1
+    $I0 = SIG_ELEM_MULTI_INVOCANT + SIG_ELEM_SLURPY_POS
+    set_signature_elem signature, 0, "@values", $I0, $P1, $P1, $P1, $P1, $P1, $P1
     setprop block, "$!signature", signature
-    signature.'!add_param'('@values', 1 :named('slurpy'))
     '!TOPERL6MULTISUB'(block)
 .end
 
@@ -70,10 +72,11 @@ Return a List with the keys of the invocant.
     .local pmc block, signature
     .const 'Sub' $P0 = "any_keys"
     block = $P0
-    signature = new ["Signature"]
+    signature = allocate_signature 1
     setprop block, "$!signature", signature
     $P0 = get_hll_global 'Any'
-    signature."!add_implicit_self"($P0)
+    null $P1
+    set_signature_elem signature, 0, "self", SIG_ELEM_INVOCANT_AND_MULTI_INVOCANT, $P0, $P1, $P1, $P1, $P1, $P1
 .end
 
 =item sort()
@@ -191,9 +194,11 @@ Return values of the list
     .local pmc block, signature
     .const 'Sub' $P0 = "_values"
     block = $P0
-    signature = new ["Signature"]
+    signature = allocate_signature 1
+    null $P1
+    $I0 = SIG_ELEM_MULTI_INVOCANT + SIG_ELEM_SLURPY_POS
+    set_signature_elem signature, 0, "@values", $I0, $P1, $P1, $P1, $P1, $P1, $P1
     setprop block, "$!signature", signature
-    signature.'!add_param'('@values', 1 :named('slurpy'))
     '!TOPERL6MULTISUB'(block)
 .end
 

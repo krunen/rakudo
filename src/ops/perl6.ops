@@ -7,6 +7,8 @@ BEGIN_OPS_PREAMBLE
 
 #include "parrot/dynext.h"
 #include "pmc_object.h"
+#include "../pmc/pmc_p6lowlevelsig.h"
+#include "../binder/sigguts.h"
 
 #if PARROT_HAS_ICU
 #  include <unicode/uchar.h>
@@ -14,7 +16,8 @@ BEGIN_OPS_PREAMBLE
 
 /* We cache a couple of type IDs for an op that we hit on every method call. */
 static INTVAL p6s_id = 0;
-static INTVAL or_id = 0;
+static INTVAL or_id  = 0;
+static INTVAL lls_id = 0;
 
 END_OPS_PREAMBLE
 
@@ -374,6 +377,227 @@ inline op descalarref(out PMC, in PMC) :base_core {
     while (ref->vtable->base_type == or_id || ref->vtable->base_type == p6s_id)
         ref = VTABLE_get_pmc(interp, ref);
     $1 = ref;
+    goto NEXT();
+}
+
+
+/*
+
+=item allocate_signature(out PMC, in INT)
+
+Sets $1 to be a P6LowLevelSig with $2 signature elements allocated.
+
+=cut
+
+*/
+inline op allocate_signature(out PMC, in INT) :base_core {
+    struct llsig_element **elements;
+    INTVAL i;
+
+    /* Create new low level signature PMC. */
+    if (!lls_id)
+        lls_id = pmc_type(interp, string_from_literal(interp, "P6LowLevelSig"));
+    $1 = pmc_new(interp, lls_id);
+
+    /* Allocate required amount of structs. */
+    elements = (struct llsig_element **)mem_sys_allocate(($2 + 1) * sizeof(llsig_element *));
+
+    for (i = 0; i < $2; i++)
+        elements[i] = (llsig_element *)mem_sys_allocate_zeroed(sizeof(llsig_element));
+    elements[$2] = NULL;
+    SETATTR_P6LowLevelSig_elements(interp, $1, elements);
+
+    /* Stash size. */
+    SETATTR_P6LowLevelSig_num_elements(interp, $1, $2);
+
+    goto NEXT();
+}
+
+
+/*
+
+=item get_signature_size(out INT, in PMC)
+
+Sets $1 to be the number of elements the P6LowLevelSig $2 has.
+
+=cut
+
+*/
+inline op get_signature_size(out INT, in PMC) :base_core {
+    if (!lls_id)
+        lls_id = pmc_type(interp, string_from_literal(interp, "P6LowLevelSig"));
+    if ($2->vtable->base_type == lls_id) {
+        INTVAL num_elements;
+        GETATTR_P6LowLevelSig_num_elements(interp, $2, num_elements);
+        $1 = num_elements;
+        goto NEXT();
+    }
+    else {
+        opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
+                EXCEPTION_INVALID_OPERATION, "get_signature_size only works on P6LowLevelSig PMCs");
+        goto ADDRESS(handler);
+    }
+}
+
+
+/*
+
+=item set_signature_elem(in PMC, in INT, in STR, in INT, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC)
+
+Takes $1 (a P6LowLevelSig) and sets the contents of the signature element with
+index $2 as follows:
+
+  $3  = lexical name to bind to
+  $4  = flags
+  $5  = main (nominal) type
+  $6  = constraint type or junction of constraint types; null if none
+  $7  = array of names for a named parameter
+  $8  = array of type captures
+  $9  = default value closure
+  $10 = nested signature
+
+=cut
+
+*/
+inline op set_signature_elem(in PMC, in INT, in STR, in INT, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC) :base_core {
+    if (!lls_id)
+        lls_id = pmc_type(interp, string_from_literal(interp, "P6LowLevelSig"));
+    if ($1->vtable->base_type == lls_id) {
+        struct llsig_element **elements;
+        INTVAL num_elements;
+
+        /* Check we're not out of range. */
+        GETATTR_P6LowLevelSig_elements(interp, $1, elements);
+        GETATTR_P6LowLevelSig_num_elements(interp, $1, num_elements);
+        if ($2 < num_elements) {
+            /* Set up sig. */
+            struct llsig_element *element = elements[$2];
+            element->variable_name    = $3;
+            element->flags            = $4;
+            element->post_constraints = $6;
+            element->named_names      = $7;
+            element->type_captures    = $8;
+            element->default_closure  = $9;
+            element->sub_signature    = $10;
+
+            /* Also need to do fixups on the nominal type. */
+            if (!PMC_IS_NULL($5)) {
+                PMC *refined = VTABLE_getprop(interp, $5, string_from_literal(interp, "subtype_realtype"));
+                if (PMC_IS_NULL(refined)) {
+                    /* It's not some subtype, we're fine. */
+                    element->nominal_type = $5;
+                }
+                else {
+                    /* Need to break up into type and constraint. */
+                    element->nominal_type = refined;
+                    element->post_constraints = $5;
+                }
+            }
+            else {
+                element->nominal_type = Parrot_find_global_n(interp, Parrot_get_ctx_HLL_namespace(interp),
+                        string_from_literal(interp, "Object"));
+            }
+
+            goto NEXT();
+        }
+        else {
+            opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
+                    EXCEPTION_INVALID_OPERATION, "signature element out of range in set_signature_elem");
+            goto ADDRESS(handler);
+        }
+    }
+    else {
+        opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
+                EXCEPTION_INVALID_OPERATION, "set_signature_elem only works on P6LowLevelSig PMCs");
+        goto ADDRESS(handler);
+    }
+}
+
+
+/*
+
+=item get_signature_elem(in PMC, in INT, out STR, out INT, out PMC, out PMC, out PMC, out PMC, out PMC, out PMC, out PMC)
+
+Takes $1 (a P6LowLevelSig) and sets the registers with the contents of the
+signature element with index $2 as follows:
+
+  $3  = lexical name to bind to
+  $4  = flags
+  $5  = main (nominal) type
+  $6  = constraint type or junction of constraint types; null if none
+  $7  = array of names for a named parameter
+  $8  = array of type captures
+  $9  = default value closure
+  $10 = nested signature
+
+=cut
+
+*/
+inline op get_signature_elem(in PMC, in INT, out STR, out INT, out PMC, out PMC, out PMC, out PMC, out PMC, out PMC) :base_core {
+    if (!lls_id)
+        lls_id = pmc_type(interp, string_from_literal(interp, "P6LowLevelSig"));
+    if ($1->vtable->base_type == lls_id) {
+        struct llsig_element **elements;
+        INTVAL num_elements;
+
+        /* Check we're not out of range. */
+        GETATTR_P6LowLevelSig_elements(interp, $1, elements);
+        GETATTR_P6LowLevelSig_num_elements(interp, $1, num_elements);
+        if ($2 < num_elements) {
+            struct llsig_element *element = elements[$2];
+            $3  = element->variable_name;
+            $4  = element->flags;
+            $5  = element->nominal_type;
+            $6  = element->post_constraints;
+            $7  = element->named_names;
+            $8  = element->type_captures;
+            $9  = element->default_closure;
+            $10 = element->sub_signature;
+            goto NEXT();
+        }
+        else {
+            opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
+                    EXCEPTION_INVALID_OPERATION, "signature element out of range in set_signature_elem");
+            goto ADDRESS(handler);
+        }
+    }
+    else {
+        opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
+                EXCEPTION_INVALID_OPERATION, "get_signature_elem only works on P6LowLevelSig PMCs");
+        goto ADDRESS(handler);
+    }
+}
+
+
+/*
+
+=item bind_signature(in PMC, in PMC)
+
+This is emitted into a sub to cause it's Perl 6 signature to be bound. $1 is
+an array of positional arguments (obtained by using :flat) and $2 is a hash of
+named arguments (obtained using :flat :slurpy). Eventually, after Parrot
+refactors are complete, it will take one argument - the CallSignature.
+
+=cut
+
+*/
+inline op bind_signature(in PMC, in PMC) :base_core {
+    PMC *ctx = CURRENT_CONTEXT(interp);
+
+    /* If we aren't already bound, enter the appropriate binder. */
+    if (!PObj_flag_TEST(P6S_ALREADY_BOUND, ctx)) {
+        PMC *lexpad         = Parrot_pcc_get_lex_pad(interp, ctx);
+        PMC *sub            = Parrot_pcc_get_sub(interp, ctx);
+        PMC *signature      = VTABLE_getprop(interp, sub, string_from_literal(interp, "$!signature"));
+        INTVAL noms_checked = PObj_flag_TEST(P6S_ALREADY_CHECKED, ctx);
+        STRING *error       = NULL;
+        if (!Rakudo_binding_bind_signature(interp, lexpad, signature, $1, $2, noms_checked, &error)) {
+            opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
+                    EXCEPTION_INVALID_OPERATION, Parrot_str_to_cstring(interp, error));
+            goto ADDRESS(handler);
+        }
+    }
+
     goto NEXT();
 }
 

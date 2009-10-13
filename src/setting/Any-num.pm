@@ -93,11 +93,11 @@ class Any is also {
         self.Num.sin($base);
     }
 
-    our Num multi method cos($base = 'radians') is export {
+    our Num multi method cos($base = 'radians') {
         self.Num.cos($base);
     }
 
-    our Num multi method tan($base = 'radians') is export {
+    our Num multi method tan($base = 'radians') {
         self.Num.tan($base);
     }
 
@@ -106,47 +106,47 @@ class Any is also {
     #     self.Num.sec($base);
     # }
 
-    our Num multi method cosec($base = 'radians') is export {
+    our Num multi method cosec($base = 'radians') {
         self.Num.cosec($base);
     }
 
-    our Num multi method cotan($base = 'radians') is export {
+    our Num multi method cotan($base = 'radians') {
         self.Num.cotan($base);
     }
 
-    our Num multi method sinh($base = 'radians') is export {
+    our Num multi method sinh($base = 'radians') {
         self.Num.sinh($base);
     }
 
-    our Num multi method cosh($base = 'radians') is export {
+    our Num multi method cosh($base = 'radians') {
         self.Num.cosh($base);
     }
 
-    our Num multi method tanh($base = 'radians') is export {
+    our Num multi method tanh($base = 'radians') {
         self.Num.tanh($base);
     }
 
-    our Num multi method sech($base = 'radians') is export {
+    our Num multi method sech($base = 'radians') {
         self.Num.sech($base);
     }
 
-    our Num multi method cosech($base = 'radians') is export {
+    our Num multi method cosech($base = 'radians') {
         self.Num.cosech($base);
     }
 
-    our Num multi method cotanh($base = 'radians') is export {
+    our Num multi method cotanh($base = 'radians') {
         self.Num.cotanh($base);
     }
 
-    our Num multi method asin($base = 'radians') is export {
+    our Num multi method asin($base = 'radians') {
         self.Num.asin($base);
     }
 
-    our Num multi method acos($base = 'radians') is export {
+    our Num multi method acos($base = 'radians') {
         self.Num.acos($base);
     }
 
-    our Num multi method atan($base = 'radians') is export {
+    our Num multi method atan($base = 'radians') {
         self.Num.atan($base);
     }
 
@@ -154,39 +154,39 @@ class Any is also {
         self.Num.atan2($x, $base);
     }
 
-    our Num multi method asec($base = 'radians') is export {
+    our Num multi method asec($base = 'radians') {
         self.Num.asec($base);
     }
 
-    our Num multi method acosec($base = 'radians') is export {
+    our Num multi method acosec($base = 'radians') {
         self.Num.acosec($base);
     }
 
-    our Num multi method acotan($base = 'radians') is export {
+    our Num multi method acotan($base = 'radians') {
         self.Num.acotan($base);
     }
 
-    our Num multi method asinh($base = 'radians') is export {
+    our Num multi method asinh($base = 'radians') {
         self.Num.asinh($base);
     }
 
-    our Num multi method acosh($base = 'radians') is export {
+    our Num multi method acosh($base = 'radians') {
         self.Num.acosh($base);
     }
 
-    our Num multi method atanh($base = 'radians') is export {
+    our Num multi method atanh($base = 'radians') {
         self.Num.atanh($base);
     }
 
-    our Num multi method asech($base = 'radians') is export {
+    our Num multi method asech($base = 'radians') {
         self.Num.asech($base);
     }
 
-    our Num multi method acosech($base = 'radians') is export {
+    our Num multi method acosech($base = 'radians') {
         self.Num.acosech($base);
     }
 
-    our Num multi method acotanh($base = 'radians') is export {
+    our Num multi method acotanh($base = 'radians') {
         self.Num.acotanh($base);
     }
 }
@@ -195,7 +195,102 @@ multi sub abs($x) { (+$x).abs() }
 multi sub exp($x) { $x.Num.exp() }
 multi sub log($x) { $x.Num.log() }
 multi sub log10($x) { $x.Num.log10 }
-multi sub sin($x, $base = 'radians') { $x.sin($base) }
+
+multi sub sin($x, $base = 'radians') {
+    $x.sin($base)
+}
+
+multi sub asin($x, $base = 'radians') {
+    $x.asin($base)
+}
+
+multi sub cos($x, $base = 'radians') {
+    $x.cos($base)
+}
+
+multi sub acos($x, $base = 'radians') {
+    $x.acos($base)
+}
+
+multi sub tan($x, $base = 'radians') {
+    $x.tan($base)
+}
+
+multi sub atan($x, $base = 'radians') {
+    $x.atan($base)
+}
+
+multi sub sec($x, $base = 'radians') {
+    $x.sec($base)
+}
+
+multi sub asec($x, $base = 'radians') {
+    $x.asec($base)
+}
+
+multi sub cosec($x, $base = 'radians') {
+    $x.cosec($base)
+}
+
+multi sub acosec($x, $base = 'radians') {
+    $x.acosec($base)
+}
+
+multi sub cotan($x, $base = 'radians') {
+    $x.cotan($base)
+}
+
+multi sub acotan($x, $base = 'radians') {
+    $x.acotan($base)
+}
+
+multi sub sinh($x, $base = 'radians') {
+    $x.sinh($base)
+}
+
+multi sub asinh($x, $base = 'radians') {
+    $x.asinh($base)
+}
+
+multi sub cosh($x, $base = 'radians') {
+    $x.cosh($base)
+}
+
+multi sub acosh($x, $base = 'radians') {
+    $x.acosh($base)
+}
+
+multi sub tanh($x, $base = 'radians') {
+    $x.tanh($base)
+}
+
+multi sub atanh($x, $base = 'radians') {
+    $x.atanh($base)
+}
+
+multi sub sech($x, $base = 'radians') {
+    $x.sech($base)
+}
+
+multi sub asech($x, $base = 'radians') {
+    $x.asech($base)
+}
+
+multi sub cosech($x, $base = 'radians') {
+    $x.cosech($base)
+}
+
+multi sub acosech($x, $base = 'radians') {
+    $x.acosech($base)
+}
+
+multi sub cotanh($x, $base = 'radians') {
+    $x.cotanh($base)
+}
+
+multi sub acotanh($x, $base = 'radians') {
+    $x.acotanh($base)
+}
 
 our Num sub rand (*@args) {
     die "too many arguments passed - 0 params expected" if @args;
