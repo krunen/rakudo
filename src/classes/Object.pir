@@ -41,6 +41,24 @@ like this.
 
 =cut
 
+.macro fixup_cloned_sub(orig, copy)
+    .local pmc tmp, tmp2
+    tmp = getprop '$!signature', .orig
+    if null tmp goto sub_fixup_done
+    setprop .copy, '$!signature', tmp
+    .local pmc oclass, sclass
+    oclass = typeof .orig
+    sclass = get_class ['Sub']
+    $I0 = issame oclass, sclass
+    if $I0 goto sub_fixup_done
+    tmp = getattribute .orig, ['Sub'], 'proxy'
+    tmp = getprop '$!real_self', tmp
+    if null tmp goto sub_fixup_done
+    tmp2 = getattribute .copy, ['Sub'], 'proxy'
+    setprop tmp2, '$!real_self', tmp
+  sub_fixup_done:
+.endm
+
 .namespace ['Perl6Object']
 .sub 'clone' :method
     .param pmc new_attrs :slurpy :named
@@ -70,26 +88,9 @@ like this.
     goto attrinit_loop
   attrinit_done:
 
+    .fixup_cloned_sub(self, result)
     .return (result)
 .end
-
-.macro fixup_cloned_sub(orig, copy)
-    .local pmc tmp, tmp2
-    tmp = getprop '$!signature', .orig
-    if null tmp goto sub_fixup_done
-    setprop .copy, '$!signature', tmp
-    .local pmc oclass, sclass
-    oclass = typeof .orig
-    sclass = get_class ['Sub']
-    $I0 = issame oclass, sclass
-    if $I0 goto sub_fixup_done
-    tmp = getattribute .orig, ['Sub'], 'proxy'
-    tmp = getprop '$!real_self', tmp
-    if null tmp goto sub_fixup_done
-    tmp2 = getattribute .copy, ['Sub'], 'proxy'
-    setprop tmp2, '$!real_self', tmp
-  sub_fixup_done:
-.endm
 
 
 =item defined()
@@ -560,6 +561,8 @@ in the future.)
 
 .sub '!STORE' :method :subid('Object::!STORE')
     .param pmc source
+    .param string typeerr      :optional
+    .param int has_typeerr     :opt_flag
     source = '!CALLMETHOD'('Scalar', source)
     $I0 = defined source
     unless $I0 goto do_store
@@ -579,7 +582,10 @@ in the future.)
     .return (self)
 
   err_type:
-    $S0 = '!make_type_fail_message'('Assignment', source, type)
+    if has_typeerr goto have_typeerr
+    typeerr = 'Assignment'
+  have_typeerr:
+    $S0 = '!make_type_fail_message'(typeerr, source, type)
     'die'($S0)
 .end
 
