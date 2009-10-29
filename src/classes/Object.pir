@@ -694,10 +694,17 @@ method, and returns undef if there are none.
 =cut
 
 .sub '!.?' :method
-    .param pmc methods
-    .param string method_name
-    .param pmc pos_args     :slurpy
-    .param pmc named_args   :slurpy :named
+    .param pmc call_sig :call_sig
+    .local pmc methods
+    .local string method_name
+    self = shift call_sig
+    methods = shift call_sig
+    method_name = shift call_sig
+    unshift call_sig, self
+
+    # Deconstruct call signature (no caller side :call_sig yet).
+    .local pmc pos_args, named_args
+    (pos_args, named_args) = '!deconstruct_call_sig'(call_sig)
 
     # If we were already given a list, just check it's non-empty and use that.
     if null methods goto no_list
@@ -707,13 +714,13 @@ method, and returns undef if there are none.
     $P0 = methods[0]
     $I0 = isa $P0, 'Perl6MultiSub'
     unless $I0 goto ready_to_call
-    $P0 = $P0.'find_possible_candidates'(self, pos_args :flat, named_args :named :flat)
+    $P0 = $P0.'find_possible_candidates'(call_sig)
     $P0 = $P0[0]
     unless null $P0 goto ready_to_call
     $P0 = shift methods
     goto retry
   ready_to_call:
-    .tailcall self.$P0(pos_args :flat, named_args :named :flat)
+    .tailcall $P0(pos_args :flat, named_args :named :flat)
 
     # If there's no list, use .can to try and get us one.
   no_list:
@@ -721,7 +728,7 @@ method, and returns undef if there are none.
     $P0 = $P0.'can'(self, method_name)
     unless $P0 goto error
     push_eh check_error
-    .tailcall $P0(self, pos_args :flat, named_args :named :flat)
+    .tailcall $P0(pos_args :flat, named_args :named :flat)
   check_error:
     .local pmc exception
     .get_results (exception)
@@ -742,10 +749,17 @@ methods.
 =cut
 
 .sub '!.*' :method
-    .param pmc methods
-    .param string method_name
-    .param pmc pos_args     :slurpy
-    .param pmc named_args   :slurpy :named
+    .param pmc call_sig :call_sig
+    .local pmc methods
+    .local string method_name
+    self = shift call_sig
+    methods = shift call_sig
+    method_name = shift call_sig
+    unshift call_sig, self
+
+    # Deconstruct call signature (no caller side :call_sig yet).
+    .local pmc pos_args, named_args
+    (pos_args, named_args) = '!deconstruct_call_sig'(call_sig)
 
     # Set up result list.
     .local pmc result_list
@@ -758,29 +772,33 @@ methods.
     methods = $P0.'can'(self, method_name)
     unless methods goto it_loop_end
   have_methods:
-
     # Call each method, expanding out any multis along the way.
     .local pmc pos_res, named_res, cap, it, multi_it, cur_meth
     it = iter methods
   it_loop:
     unless it goto it_loop_end
     cur_meth = shift it
-    $I0 = isa cur_meth, 'Perl6MultiSub'
+    $P0 = cur_meth
+    $I0 = isa $P0, 'P6Invocation'
+    unless $I0 goto did_deref
+    $P0 = deref cur_meth
+  did_deref:
+    $I0 = isa $P0, 'Perl6MultiSub'
     if $I0 goto is_multi
     push_eh check_error
-    (pos_res :slurpy, named_res :named :slurpy) = cur_meth(self, pos_args :flat, named_args :named :flat)
+    (pos_res :slurpy, named_res :named :slurpy) = cur_meth(pos_args :flat, named_args :named :flat)
     pop_eh
-    cap = 'prefix:\\'(pos_res :flat, named_res :flat :named)
+    cap = 'prefix:\'(pos_res :flat, named_res :flat :named)
     push result_list, cap
     goto it_loop
   is_multi:
-    $P0 = cur_meth.'find_possible_candidates'(self, pos_args :flat, named_args :named :flat)
+    $P0 = $P0.'find_possible_candidates'(call_sig)
     multi_it = iter $P0
   multi_it_loop:
     unless multi_it goto it_loop
     cur_meth = shift multi_it
-    (pos_res :slurpy, named_res :named :slurpy) = cur_meth(self, pos_args :flat, named_args :named :flat)
-    cap = 'prefix:\\'(pos_res :flat, named_res :flat :named)
+    (pos_res :slurpy, named_res :named :slurpy) = cur_meth(pos_args :flat, named_args :named :flat)
+    cap = 'prefix:\'(pos_res :flat, named_res :flat :named)
     push result_list, cap
     goto multi_it_loop
   check_error:

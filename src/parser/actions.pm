@@ -610,8 +610,14 @@ method statement_prefix($/) {
 
         ##  Add a catch node to the try op that captures the
         ##  exception object into $!.
-        my $catchpir := "    .get_results (%r)\n    store_lex '$!', %r";
-        $past.push( PAST::Op.new( :inline( $catchpir ) ) );
+        $past.push( PAST::Op.new(
+                        :inline( "    .get_results (%r)",
+                                 "    $P0 = new ['Perl6Exception']",
+                                 "    setattribute $P0, '$!exception', %r",
+                                 "    store_lex '$!', $P0"
+                        )
+                    )
+        );
 
         ##  Add an 'else' node to the try op that clears $! if
         ##  no exception occurred.
@@ -646,7 +652,7 @@ method multi_declarator($/) {
         # If we're declaring a multi or a proto, flag the sub as :multi,
         # and transform the sub's container to a Perl6MultiSub.
         if $sym eq 'multi' || $sym eq 'proto' {
-            transform_to_multi($past);
+            transform_to_multi($past, @?BLOCK[0].symbol($past.name())<is_multi>);
             our @?BLOCK;
             my $existing := @?BLOCK[0].symbol($past.name());
             @?BLOCK[0].symbol($past.name(), :does_callable(1),
@@ -765,7 +771,7 @@ method routine_declarator($/, $key) {
     if $past.name() ne "" {
         my $sym := outer_symbol($past.name());
         if $sym && $sym<does_callable> && $sym<is_proto> {
-            transform_to_multi($past);
+            transform_to_multi($past, 0);
         }
     }
     make $past;
@@ -844,11 +850,6 @@ method method_def($/) {
     # Ensure there's an invocant in the signature, and that it's in the
     # positional arguments.
     block_signature($block).add_invocant();
-    $block[0].push(PAST::Op.new(
-        :pirop('unshift vPP'),
-        PAST::Var.new( :name('pos_args'), :scope('lexical') ),
-        PAST::Var.new( :name('self'), :scope('register') )
-    ));
 
     # Handle traits.
     if $<trait> {
@@ -3148,8 +3149,7 @@ sub block_signature($block) {
         $block.loadinit().push(
             PAST::Op.new( :inline('    setprop block, "$!signature", signature') )
         );
-        $block[0].push(PAST::Var.new( :name('pos_args'), :scope('parameter'), :slurpy(1) ));
-        $block[0].push(PAST::Var.new( :name('named_args'), :scope('parameter'), :slurpy(1), :named(1) ));
+        $block[0].push(PAST::Var.new( :name('call_sig'), :scope('parameter'), :call_sig(1) ));
     }
     return $block<signature>;
 }
@@ -3157,9 +3157,8 @@ sub block_signature($block) {
 
 sub bind_signature_op() {
     PAST::Op.new(
-        :pirop('bind_signature vPP'),
-        PAST::Var.new( :name('pos_args'), :scope('lexical') ),
-        PAST::Var.new( :name('named_args'), :scope('lexical') )
+        :pirop('bind_signature vP'),
+        PAST::Var.new( :name('call_sig'), :scope('lexical') )
     )
 }
 
@@ -3183,15 +3182,17 @@ sub set_block_type($block, $type) {
 
 
 # Makes a routine into a multi, if it isn't already one.
-sub transform_to_multi($past) {
+sub transform_to_multi($past, $already_p6multi) {
     unless $past<multi_flag> {
         my $pirflags := ~$past.pirflags();
         $past.pirflags( $pirflags ~ ' :multi()' );
-        $past.loadinit().unshift(
-            PAST::Op.new( :name('!TOPERL6MULTISUB'), :pasttype('call'),
-                PAST::Var.new( :name('block'), :scope('register') )
-            )
-        );
+        unless ($already_p6multi) {
+            $past.loadinit().unshift(
+                PAST::Op.new( :name('!TOPERL6MULTISUB'), :pasttype('call'),
+                    PAST::Var.new( :name('block'), :scope('register') )
+                )
+            );
+        }
         $past<multi_flag> := 1;
     }
 }
