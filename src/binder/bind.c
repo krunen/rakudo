@@ -1,27 +1,89 @@
 /*
 $Id$
-Copyright (C) 2009, The Perl Foundation.
+Copyright (C) 2009-2010, The Perl Foundation.
 */
 
 #define PARROT_IN_EXTENSION
 #include "parrot/parrot.h"
 #include "parrot/extend.h"
+#include "pmc_callcontext.h"
 #include "bind.h"
 #include "../pmc/pmc_p6lowlevelsig.h"
 
 
-/* Cache of the type ID for low level signatures. */
-static INTVAL lls_id = 0;
+/* Cache of the type ID for low level signatures and some strings. */
+static INTVAL lls_id      = 0;
+static INTVAL or_id       = 0;
+static INTVAL p6s_id      = 0;
+static STRING *ACCEPTS    = NULL;
+static STRING *HOW        = NULL;
+static STRING *flatten    = NULL;
+static PMC    *HashPunned = NULL;
+
+/* Initializes our cached versions of some strings and type IDs that we
+ * use very commonly. For strings, this should mean we only compute their
+ * hash value once, rather than every time we create and consume them. */
+static void setup_binder_statics(PARROT_INTERP) {
+    lls_id  = pmc_type(interp, string_from_literal(interp, "P6LowLevelSig"));
+    or_id   = pmc_type(interp, string_from_literal(interp, "ObjectRef"));
+    p6s_id  = pmc_type(interp, string_from_literal(interp, "Perl6Scalar"));
+    ACCEPTS = Parrot_str_new_constant(interp, "ACCEPTS");
+    HOW     = Parrot_str_new_constant(interp, "HOW");
+    flatten = Parrot_str_new_constant(interp, "flatten");
+}
 
 
 /* Unwraps things inside a scalar reference. */
 static PMC *
 descalarref(PARROT_INTERP, PMC *ref) {
-    INTVAL p6s_id = pmc_type(interp, string_from_literal(interp, "Perl6Scalar"));
-    INTVAL or_id  = pmc_type(interp, string_from_literal(interp, "ObjectRef"));
     while (ref->vtable->base_type == or_id || ref->vtable->base_type == p6s_id)
         ref = VTABLE_get_pmc(interp, ref);
     return ref;
+}
+
+
+/* Creates a Perl 6 Array. */
+static PMC *
+Rakudo_binding_create_array(PARROT_INTERP) {
+    PMC *ns        = Parrot_get_ctx_HLL_namespace(interp);
+    PMC *arr_ns    = Parrot_get_namespace_keyed_str(interp, ns, string_from_literal(interp, "Array"));
+    PMC *arr_class = VTABLE_get_class(interp, arr_ns);
+    PMC *result    = VTABLE_instantiate(interp, arr_class, PMCNULL);
+    VTABLE_setprop(interp, result, flatten, result);
+    return result;
+}
+
+
+/* Creates a Perl 6 Hash. */
+static PMC *
+Rakudo_binding_create_hash(PARROT_INTERP, PMC *storage) {
+    PMC *result = PMCNULL;
+    PMC *create = PMCNULL;
+    if (!HashPunned) {
+        /* We cache the punned Hash role class so we can very quickly call
+         * CREATE - critical as we have slurpy hashes for all methods. */
+        PMC *root_ns   = Parrot_get_ctx_HLL_namespace(interp);
+        PMC *hash_role = VTABLE_get_pmc_keyed_str(interp, root_ns, string_from_literal(interp, "Hash"));
+        PMC *meth      = VTABLE_find_method(interp, hash_role, string_from_literal(interp, "!select"));
+        Parrot_ext_call(interp, meth, "P->P", hash_role, &hash_role);
+        meth = VTABLE_find_method(interp, hash_role, string_from_literal(interp, "!pun"));
+        Parrot_ext_call(interp, meth, "P->P", hash_role, &HashPunned);
+    }
+    create = VTABLE_find_method(interp, HashPunned, string_from_literal(interp, "CREATE"));
+    Parrot_ext_call(interp, create, "P->P", HashPunned, &result);
+    VTABLE_set_attr_str(interp, result, string_from_literal(interp, "$!storage"), storage);
+    return result;
+}
+
+
+/* Creates a Perl 6 object of the type given by C<classname> */
+static PMC *
+Rakudo_binding_create(PARROT_INTERP, STRING *classname) {
+    PMC *ns        = Parrot_get_ctx_HLL_namespace(interp);
+    PMC *class_ns  = Parrot_get_namespace_keyed_str(interp, ns, classname);
+    PMC *class_obj = VTABLE_get_class(interp, class_ns);
+    PMC *result    = VTABLE_instantiate(interp, class_obj, PMCNULL);
+    return result;
 }
 
 
@@ -32,7 +94,7 @@ Rakudo_binding_arity_fail(PARROT_INTERP, llsig_element **elements, INTVAL num_el
     INTVAL arity = 0;
     INTVAL count = 0;
     INTVAL i;
-    char *whoz_up = too_many ? "Too many" : "Not enough";
+    const char *whoz_up = too_many ? "Too many" : "Not enough";
 
     /* Work out how many we could have been passed. */
     for (i = 0; i < num_elements; i++) {
@@ -125,7 +187,7 @@ Rakudo_binding_assign_attributive(PARROT_INTERP, PMC *lexpad, llsig_element *sig
     }
 
     /* Now look up infix:<=> and do the assignment. */
-    assigner = Parrot_find_global_n(interp, Parrot_get_ctx_HLL_namespace(interp),
+    assigner = VTABLE_get_pmc_keyed_str(interp, Parrot_get_ctx_HLL_namespace(interp),
             string_from_literal(interp, "!only_infix:="));
     Parrot_ext_call(interp, assigner, "PP", assignee, value);
 
@@ -141,7 +203,6 @@ Rakudo_binding_bind_one_param(PARROT_INTERP, PMC *lexpad, llsig_element *sig_inf
                               PMC *value, INTVAL no_nom_type_check, STRING **error) {
     /* If we need to do a type check, do one. */
     if (!no_nom_type_check) {
-        STRING * const ACCEPTS = string_from_literal(interp, "ACCEPTS");
         PMC * const type_obj   = sig_info->nominal_type;
         PMC * accepts_meth     = VTABLE_find_method(interp, type_obj, ACCEPTS);
         PMC * result           = PMCNULL;
@@ -153,7 +214,6 @@ Rakudo_binding_bind_one_param(PARROT_INTERP, PMC *lexpad, llsig_element *sig_inf
             /* XXX TODO: Implement language interop checks. */
             if (error) {
                 STRING * const perl = string_from_literal(interp, "perl");
-                STRING * const HOW  = string_from_literal(interp, "HOW");
                 PMC    * perl_meth  = VTABLE_find_method(interp, type_obj, perl);
                 PMC    * how_meth   = VTABLE_find_method(interp, value, HOW);
                 STRING * expected, * got;
@@ -171,31 +231,56 @@ Rakudo_binding_bind_one_param(PARROT_INTERP, PMC *lexpad, llsig_element *sig_inf
                 return BIND_RESULT_FAIL;
         }
     }
-    
+
     /* Do we have any type captures to bind? */
     if (!PMC_IS_NULL(sig_info->type_captures))
         Rakudo_binding_bind_type_captures(interp, lexpad, sig_info, value);
 
-    /* Apply context. */
-    if (sig_info->flags & SIG_ELEM_ARRAY_SIGIL) {
-        STRING *Array   = string_from_literal(interp, "Array");
-        PMC *array_meth = VTABLE_find_method(interp, value, Array);
-        value = descalarref(interp, value);
-        if (!PMC_IS_NULL(array_meth))
-            Parrot_ext_call(interp, array_meth, "Pi->P", value, &value);
+    /* Apply context, unless it's rw or parcel. */
+    if (!(sig_info->flags & (SIG_ELEM_IS_RW | SIG_ELEM_IS_PARCEL))) {
+        if (sig_info->flags & SIG_ELEM_ARRAY_SIGIL) {
+            STRING *Array   = string_from_literal(interp, "Array");
+            PMC *array_meth = VTABLE_find_method(interp, value, Array);
+            value = descalarref(interp, value);
+            if (!PMC_IS_NULL(array_meth))
+                Parrot_ext_call(interp, array_meth, "Pi->P", value, &value);
+        }
+        else if (sig_info->flags & SIG_ELEM_HASH_SIGIL) {
+            STRING *Hash   = string_from_literal(interp, "Hash");
+            PMC *hash_meth = VTABLE_find_method(interp, value, Hash);
+            value = descalarref(interp, value);
+            if (!PMC_IS_NULL(hash_meth))
+                Parrot_ext_call(interp, hash_meth, "Pi->P", value, &value);
+        }
+        else {
+            STRING *Scalar   = string_from_literal(interp, "Scalar");
+            PMC *scalar_meth = VTABLE_find_method(interp, value, Scalar);
+            if (!PMC_IS_NULL(scalar_meth))
+                Parrot_ext_call(interp, scalar_meth, "Pi->P", value, &value);
+        }
     }
-    else if (sig_info->flags & SIG_ELEM_HASH_SIGIL) {
-        STRING *Hash   = string_from_literal(interp, "Hash");
-        PMC *hash_meth = VTABLE_find_method(interp, value, Hash);
-        value = descalarref(interp, value);
-        if (!PMC_IS_NULL(hash_meth))
-            Parrot_ext_call(interp, hash_meth, "Pi->P", value, &value);
-    }
-    else {
-        STRING *Scalar   = string_from_literal(interp, "Scalar");
-        PMC *scalar_meth = VTABLE_find_method(interp, value, Scalar);
-        if (!PMC_IS_NULL(scalar_meth))
-            Parrot_ext_call(interp, scalar_meth, "Pi->P", value, &value);
+
+    /* Do a coercion, if one is needed. */
+    if (sig_info->coerce_to) {
+        PMC *coerce_meth = VTABLE_find_method(interp, value, sig_info->coerce_to);
+        if (!PMC_IS_NULL(coerce_meth)) {
+            Parrot_ext_call(interp, coerce_meth, "Pi->P", value, &value);
+        }
+        else {
+            /* No coercion method availale; whine and fail to bind. */
+            if (error) {
+                PMC    * how_meth   = VTABLE_find_method(interp, value, HOW);
+                PMC    * value_how, * value_type;
+                STRING * got;
+                Parrot_ext_call(interp, how_meth, "Pi->P", value, &value_how);
+                value_type = VTABLE_get_attr_str(interp, value_how, string_from_literal(interp, "shortname"));
+                got        = VTABLE_get_string(interp, value_type);
+                *error = Parrot_sprintf_c(interp,
+                        "Unable to coerce value for '%S' from %S to %S; no coercion method defined",
+                        sig_info->variable_name, got, sig_info->coerce_to);
+            }
+            return BIND_RESULT_FAIL;
+        }
     }
 
     /* If it's not got attributive binding, we'll go about binding it into the
@@ -203,16 +288,14 @@ Rakudo_binding_bind_one_param(PARROT_INTERP, PMC *lexpad, llsig_element *sig_inf
     if (!(sig_info->flags & SIG_ELEM_BIND_ATTRIBUTIVE)) {
         /* Is it "is rw"? */
         if (sig_info->flags & SIG_ELEM_IS_RW) {
-            /* XXX TODO Check if rw flag is set, after rw refactor is done. */
-            /* If it has a name, bind it into the lexpad. */
+            /* XXX TODO Check if rw flag is set. */
             if (sig_info->variable_name)
                 VTABLE_set_pmc_keyed_str(interp, lexpad, sig_info->variable_name, value);
         }
-        else if (sig_info->flags & SIG_ELEM_IS_REF) {
-            /* XXX TODO Implement is ref. */
-            if (error)
-                *error = string_from_literal(interp, "is ref not yet implemented");
-            return BIND_RESULT_FAIL;
+        else if (sig_info->flags & SIG_ELEM_IS_PARCEL) {
+            /* Just bind the thing as is into the lexpad. */
+            if (sig_info->variable_name)
+                VTABLE_set_pmc_keyed_str(interp, lexpad, sig_info->variable_name, value);
         }
         else if (sig_info->flags & SIG_ELEM_IS_COPY) {
             /* Clone the value appropriately, wrap it into an ObjectRef, and bind it. */
@@ -220,39 +303,44 @@ Rakudo_binding_bind_one_param(PARROT_INTERP, PMC *lexpad, llsig_element *sig_inf
                 PMC *copy, *ref, *store_meth;
                 if (sig_info->flags & SIG_ELEM_ARRAY_SIGIL) {
                     STRING *STORE = string_from_literal(interp, "!STORE");
-                    copy          = pmc_new(interp, pmc_type(interp, string_from_literal(interp, "Perl6Array")));
+                    copy          = Rakudo_binding_create_array(interp);
                     store_meth    = VTABLE_find_method(interp, copy, STORE);
                     Parrot_ext_call(interp, store_meth, "PiP", copy, value);
+                    VTABLE_setprop(interp, copy, flatten, copy);
                 }
                 else if (sig_info->flags & SIG_ELEM_HASH_SIGIL) {
                     STRING *STORE = string_from_literal(interp, "!STORE");
-                    copy          = pmc_new(interp, pmc_type(interp, string_from_literal(interp, "Perl6Hash")));
+                    copy          = Rakudo_binding_create_hash(interp, pmc_new(interp, enum_class_Hash));
                     store_meth    = VTABLE_find_method(interp, copy, STORE);
                     Parrot_ext_call(interp, store_meth, "PiP", copy, value);
+                    VTABLE_setprop(interp, copy, flatten, copy);
                 }
                 else {
                     copy = VTABLE_clone(interp, value);
                 }
-                ref = pmc_new_init(interp, pmc_type(interp,
-                        string_from_literal(interp, "ObjectRef")), copy);
+                ref = pmc_new_init(interp, or_id, copy);
+                VTABLE_setprop(interp, ref, string_from_literal(interp, "rw"), ref);
                 VTABLE_set_pmc_keyed_str(interp, lexpad, sig_info->variable_name, ref);
             }
         }
         else {
             /* Read only. Wrap it into a ObjectRef, mark readonly and bind it. */
             if (sig_info->variable_name) {
-                PMC *ref  = pmc_new_init(interp, pmc_type(interp,
-                        string_from_literal(interp, "ObjectRef")), value);
-                VTABLE_setprop(interp, ref, string_from_literal(interp, "readonly"), ref);
+                PMC *ref  = pmc_new_init(interp, or_id, value);
+                if (!(sig_info->flags & (SIG_ELEM_ARRAY_SIGIL | SIG_ELEM_HASH_SIGIL)))
+                    VTABLE_setprop(interp, ref, string_from_literal(interp, "scalar"), ref);
                 VTABLE_set_pmc_keyed_str(interp, lexpad, sig_info->variable_name, ref);
             }
         }
     }
 
+    /* Is it the invocant? If so, also have to bind to self lexical. */
+    if (sig_info->flags & SIG_ELEM_INVOCANT)
+        VTABLE_set_pmc_keyed_str(interp, lexpad, string_from_literal(interp, "self"), value);
+
     /* Handle any constraint types (note that they may refer to the parameter by
      * name, so we need to have bound it already). */
     if (!PMC_IS_NULL(sig_info->post_constraints)) {
-        STRING * const ACCEPTS  = string_from_literal(interp, "ACCEPTS");
         PMC * const constraints = sig_info->post_constraints;
         INTVAL num_constraints  = VTABLE_elements(interp, constraints);
         PMC * result            = PMCNULL;
@@ -260,8 +348,9 @@ Rakudo_binding_bind_one_param(PARROT_INTERP, PMC *lexpad, llsig_element *sig_inf
         for (i = 0; i < num_constraints; i++) {
             PMC *cons_type    = VTABLE_get_pmc_keyed_int(interp, constraints, i);
             PMC *accepts_meth = VTABLE_find_method(interp, cons_type, ACCEPTS);
-            if (VTABLE_isa(interp, cons_type, string_from_literal(interp, "Sub")))
-                Parrot_capture_lex(interp, cons_type);
+            if (VTABLE_isa(interp, cons_type, string_from_literal(interp, "Block")))
+                Parrot_capture_lex(interp, VTABLE_get_attr_str(interp, cons_type,
+                    string_from_literal(interp, "$!do")));
             Parrot_ext_call(interp, accepts_meth, "PiP->P", cons_type, value, &result);
             if (!VTABLE_get_bool(interp, result)) {
                 if (error)
@@ -281,17 +370,22 @@ Rakudo_binding_bind_one_param(PARROT_INTERP, PMC *lexpad, llsig_element *sig_inf
 
     /* If it has a sub-signature, bind that. */
     if (!PMC_IS_NULL(sig_info->sub_signature)) {
-        /* Turn value into a capture. */
+        /* Turn value into a capture, unless we already have one. */
         PMC *capture = PMCNULL;
-        PMC *meth    = VTABLE_find_method(interp, value, string_from_literal(interp, "Capture"));
         INTVAL result;
-        if (PMC_IS_NULL(meth)) {
-            if (error)
-                *error = Parrot_sprintf_c(interp, "Could not turn argument into capture");
-            return BIND_RESULT_FAIL;
+        if (sig_info->flags & SIG_ELEM_IS_CAPTURE) {
+            capture = value;
         }
-        Parrot_ext_call(interp, meth, "Pi->P", value, &capture);
-        
+        else {
+            PMC *meth    = VTABLE_find_method(interp, value, string_from_literal(interp, "Capture"));
+            if (PMC_IS_NULL(meth)) {
+                if (error)
+                    *error = Parrot_sprintf_c(interp, "Could not turn argument into capture");
+                return BIND_RESULT_FAIL;
+            }
+            Parrot_ext_call(interp, meth, "Pi->P", value, &capture);
+        }
+
         /* Recurse into signature binder. */
         result = Rakudo_binding_bind_signature(interp, lexpad, sig_info->sub_signature,
                 capture, no_nom_type_check, error);
@@ -309,9 +403,16 @@ Rakudo_binding_bind_one_param(PARROT_INTERP, PMC *lexpad, llsig_element *sig_inf
 static PMC *
 Rakudo_binding_handle_optional(PARROT_INTERP, llsig_element *sig_info, PMC *lexpad) {
     PMC *cur_lex;
-    
+
+    /* Is the "get default from outer" flag set? */
+    if (sig_info->flags & SIG_ELEM_DEFAULT_FROM_OUTER) {
+        PMC *outer_ctx    = Parrot_pcc_get_outer_ctx(interp, CURRENT_CONTEXT(interp));
+        PMC *outer_lexpad = Parrot_pcc_get_lex_pad(interp, outer_ctx);
+        return VTABLE_get_pmc_keyed_str(interp, outer_lexpad, sig_info->variable_name);
+    }
+
     /* Do we have a default value closure? */
-    if (!PMC_IS_NULL(sig_info->default_closure)) {
+    else if (!PMC_IS_NULL(sig_info->default_closure)) {
         /* Run it to get a value. */
         PMC *result = PMCNULL;
         Parrot_capture_lex(interp, sig_info->default_closure);
@@ -328,10 +429,10 @@ Rakudo_binding_handle_optional(PARROT_INTERP, llsig_element *sig_info, PMC *lexp
     /* Otherwise, go by sigil to pick the correct default type of value. */
     else {
         if (sig_info->flags & SIG_ELEM_ARRAY_SIGIL) {
-            return pmc_new(interp, pmc_type(interp, string_from_literal(interp, "Perl6Array")));
+            return Rakudo_binding_create_array(interp);
         }
         else if (sig_info->flags & SIG_ELEM_HASH_SIGIL) {
-            return pmc_new(interp, pmc_type(interp, string_from_literal(interp, "Perl6Hash")));
+            return Rakudo_binding_create_hash(interp, pmc_new(interp, enum_class_Hash));
         }
         else {
             return pmc_new(interp, pmc_type(interp, string_from_literal(interp, "Perl6Scalar")));
@@ -369,7 +470,7 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
 
     /* Check that we have a valid signature and pull the bits out of it. */
     if (!lls_id)
-        lls_id = pmc_type(interp, string_from_literal(interp, "P6LowLevelSig"));
+        setup_binder_statics(interp);
     if (signature->vtable->base_type != lls_id)
         Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
                 "Internal Error: Rakudo_binding_bind_signature passed invalid signature");
@@ -410,11 +511,11 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
         }
     }
 
-    /* If we've got a CallSignature, just has an attribute with list of named
+    /* If we've got a CallContext, just has an attribute with list of named
      * parameter names. Otherwise, it's a Capture and we need to do .hash and
      * grab out the keys. */
-    if (capture->vtable->base_type == enum_class_CallSignature ||
-            VTABLE_isa(interp, capture, string_from_literal(interp, "CallSignature"))) {
+    if (capture->vtable->base_type == enum_class_CallContext ||
+            VTABLE_isa(interp, capture, string_from_literal(interp, "CallContext"))) {
         named_names = VTABLE_get_attr_str(interp, capture, string_from_literal(interp, "named"));
     }
     else if (VTABLE_isa(interp, capture, string_from_literal(interp, "Capture"))) {
@@ -438,7 +539,7 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
      * be wanting to bind positionally. */
     if (!PMC_IS_NULL(named_names)) {
         PMC *iter = VTABLE_get_iter(interp, named_names);
-        named_args_copy = pmc_new(interp, pmc_type(interp, string_from_literal(interp, "Perl6Hash")));
+        named_args_copy = pmc_new(interp, enum_class_Hash);
         while (VTABLE_get_bool(interp, iter)) {
             STRING *name = VTABLE_shift_string(interp, iter);
             if (VTABLE_exists_keyed_str(interp, named_to_pos_cache, name)) {
@@ -446,7 +547,7 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
                  * later. */
                 INTVAL pos = VTABLE_get_integer_keyed_str(interp, named_to_pos_cache, name);
                 if (!pos_from_named)
-                    pos_from_named = mem_sys_allocate_zeroed(sizeof(PMC *) * num_elements);
+                    pos_from_named = mem_allocate_n_zeroed_typed(num_elements, PMC *);
                 pos_from_named[pos] = VTABLE_get_pmc_keyed_str(interp, capture, name);
             }
             else {
@@ -460,8 +561,34 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
 
     /* Now we'll walk through the signature and go about binding things. */
     for (i = 0; i < num_elements; i++) {
+        /* Is it looking for us to bind a capture here? */
+        if (elements[i]->flags & SIG_ELEM_IS_CAPTURE) {
+            /* XXX In the long run, we need to snapshot any current CaptureCursor.
+             * For now, we don't have that, so we just build off the current
+             * capture. */
+            PMC *ns       = Parrot_get_ctx_HLL_namespace(interp);
+            PMC *snapper  = Parrot_get_global(interp, ns, string_from_literal(interp, "!snapshot_capture"));
+            PMC *snapshot = PMCNULL;
+            Parrot_ext_call(interp, snapper, "PiIP->P", capture, cur_pos_arg, named_args_copy, &snapshot);
+            bind_fail = Rakudo_binding_bind_one_param(interp, lexpad, elements[i], snapshot,
+                    no_nom_type_check, error);
+            if (bind_fail) {
+                if (pos_from_named)
+                    mem_sys_free(pos_from_named);
+                return bind_fail;
+            }
+            else if (i + 1 == num_elements) {
+                /* Since a capture acts as "the ultimate slurpy" in a sense, if
+                 * this is the last parameter in the signature we can return
+                 * success right off the bat. */
+                if (pos_from_named)
+                    mem_sys_free(pos_from_named);
+                return BIND_RESULT_OK;
+            }
+        }
+
         /* Is it a positional sourced from a named? */
-        if (pos_from_named && pos_from_named[i]) {
+        else if (pos_from_named && pos_from_named[i]) {
             /* We have the value - try bind this parameter. */
             bind_fail = Rakudo_binding_bind_one_param(interp, lexpad, elements[i],
                     pos_from_named[i], no_nom_type_check, error);
@@ -478,10 +605,10 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
              * will by definition contain all unbound named parameters and use
              * that, or just create an empty one. */
             PMC *slurpy = PMC_IS_NULL(named_args_copy) ?
-                    pmc_new(interp, pmc_type(interp, string_from_literal(interp, "Perl6Hash"))) :
+                    pmc_new(interp, enum_class_Hash) :
                     named_args_copy;
             bind_fail = Rakudo_binding_bind_one_param(interp, lexpad, elements[i],
-                    slurpy, no_nom_type_check, error);
+                    Rakudo_binding_create_hash(interp, slurpy), no_nom_type_check, error);
             if (bind_fail) {
                 if (pos_from_named)
                     mem_sys_free(pos_from_named);
@@ -499,14 +626,15 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
             if (elements[i]->flags & SIG_ELEM_SLURPY_POS) {
                 /* Create Perl 6 array, create RPA of all remaining things, then
                  * store it. */
-                PMC *slurpy     = pmc_new(interp, pmc_type(interp, string_from_literal(interp, "Perl6Array")));
-                PMC *temp       = pmc_new(interp, enum_class_ResizablePMCArray);
+                PMC *slurpy     = Rakudo_binding_create_array(interp);
+                PMC *temp       = Rakudo_binding_create(interp, string_from_literal(interp, "Parcel"));
                 STRING *STORE   = string_from_literal(interp, "!STORE");
                 PMC *store_meth = VTABLE_find_method(interp, slurpy, STORE);
                 while (cur_pos_arg < num_pos_args) {
                     VTABLE_push_pmc(interp, temp, VTABLE_get_pmc_keyed_int(interp, capture, cur_pos_arg));
                     cur_pos_arg++;
                 }
+                VTABLE_setprop(interp, temp, flatten, temp);
                 Parrot_ext_call(interp, store_meth, "PiP", slurpy, temp);
                 bind_fail = Rakudo_binding_bind_one_param(interp, lexpad, elements[i],
                         slurpy, no_nom_type_check, error);
@@ -519,17 +647,8 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
 
             /* Otherwise, a positional. */
             else {
-                /* Is it the invocant? If so, binding already handled out of band, so
-                 * just handle type captures. */
-                if (elements[i]->flags & SIG_ELEM_INVOCANT) {
-                    PMC *value = VTABLE_get_pmc_keyed_str(interp, lexpad, string_from_literal(interp, "self"));
-                    if (!PMC_IS_NULL(elements[i]->type_captures))
-                        Rakudo_binding_bind_type_captures(interp, lexpad, elements[i], value);
-                    cur_pos_arg++;
-                }
-
                 /* Do we have a value?. */
-                else if (cur_pos_arg < num_pos_args) {
+                if (cur_pos_arg < num_pos_args) {
                     /* Easy - just bind that. */
                     PMC *arg = VTABLE_get_pmc_keyed_int(interp, capture, cur_pos_arg);
                     bind_fail = Rakudo_binding_bind_one_param(interp, lexpad, elements[i],
@@ -583,7 +702,7 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
                     }
                 }
             }
-            
+
             /* Did we get one? */
             if (PMC_IS_NULL(value)) {
                 /* Nope. We'd better hope this param was optional... */

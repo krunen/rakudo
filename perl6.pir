@@ -41,6 +41,10 @@ This is the base file for the Rakudo Perl 6 compiler.
     exports = split ' ', '!DISPATCH_JUNCTION_MULTI'
     parrotns.'export_to'(hllns, imports)
     hllns.'export_to'(parrotns, exports)
+
+    # to ease transition, make Mu and alias to Object for now
+    $P2 = get_hll_global 'Object'
+    set_hll_global 'Mu', $P2
 .end
 
 
@@ -119,7 +123,7 @@ USAGE
     $P0 .= $S0
   _handler:
     pop_eh
-    $P0 .= ".\n\nCopyright 2006-2009, The Perl Foundation.\n"
+    $P0 .= ".\n\nCopyright 2006-2010, The Perl Foundation.\n"
     setattribute perl6, '$version', $P0
 
     $P0 = box .RAKUDO_HLL
@@ -438,7 +442,7 @@ to the Perl 6 compiler.
     if null retval goto fail
     library = new 'Hash'
     library['name'] = name
-    inc_hash = get_hll_global '%INC'
+    inc_hash = get_hll_global ['PROCESS'], '%INC'
     $S0 = inc_hash[$S0]
     library['filename'] = $S0
     $P0 = get_hll_namespace name

@@ -1,6 +1,6 @@
 /*
 $Id$
-Copyright (C) 2009, The Perl Foundation.
+Copyright (C) 2009-2010, The Perl Foundation.
 
 =head1 NAME
 
@@ -40,6 +40,9 @@ PMC *look_for_method(PARROT_INTERP, PMC *search_list, INTVAL *start_pos, STRING 
 /* Another declaration; this one is defined in perl6multisub.pmc. */
 PMC *get_all_candidates_with_cur_args(PARROT_INTERP, PMC *self);
 
+static STRING *perl6_str;
+static STRING *deferral_fail_str;
+static STRING *CANDIDATE_LIST_str;
 
 /* This does the grunt work of working out what the next candidate is. Takes
  * account of us maybe needing to look into multi variants and all that lot. */
@@ -105,6 +108,23 @@ static PMC *get_next_candidate(PARROT_INTERP, PMC *SELF, int check_only, INTVAL 
                 *is_multi_dispatch = 1;
             VTABLE_splice(interp, candidates, possibles, position, 1);
             current = VTABLE_get_pmc_keyed_int(interp, candidates, position);
+        }
+    }
+    else if (VTABLE_isa(interp, current, CONST_STRING(interp, "MultiSub"))) {
+        /* Parrot MultiSub. Any possible candidates? (Note: Poking at
+         * guts a little here.) */
+        PMC * const sig_obj = CONTEXT(interp)->current_sig;
+        PMC * const func = Parrot_mmd_sort_manhattan_by_sig_pmc(interp, current, sig_obj);
+        if (PMC_IS_NULL(func)) {
+            position++;
+            SETATTR_P6Invocation_position(interp, SELF, position);
+            goto check_and_continue_search;
+        }
+        else {
+            if (is_multi_dispatch)
+                *is_multi_dispatch = 1;
+            VTABLE_set_pmc_keyed_int(interp, candidates, position, func);
+            current = func;
         }
     }
 
@@ -302,5 +322,11 @@ pmclass P6Invocation need_ext dynpmc group perl6_group {
 
     METHOD void set_failure_mode() {
         PObj_flag_SET(P6I_FAILURE_MODE, SELF);
+    }
+
+    void class_init() {
+        perl6_str          = CONST_STRING(interp, "perl6");
+        deferral_fail_str  = CONST_STRING(interp, "!deferal_fail");
+        CANDIDATE_LIST_str = CONST_STRING(interp, "__CANDIDATE_LIST__");
     }
 }

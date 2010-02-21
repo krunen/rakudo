@@ -1,6 +1,5 @@
 #! perl
 # Copyright (C) 2008, The Perl Foundation.
-# $Id$
 
 =head1 DESCRIPTION
 
@@ -15,8 +14,7 @@ F<t/spectest.data>, and those that are worth a closer look. But
 please don't add them blindly just because they all pass - chances are that
 there's a good reason for them not already being included.
 
-This script should be called from the main Rakudo directory (ie
-C<languages/rakudo/> relative to parrot).
+This script should be called from the main Rakudo directory.
 
 =cut
 
@@ -30,13 +28,9 @@ use Data::Dumper;
 
 my $parrot = -d 'parrot' ? 'parrot/parrot' : '../../parrot';
 
-my %not_process;
-{
-    my @not_process = read_specfile('t/spectest.data');
-    @not_process{@not_process}  = (1) x  @not_process;
-}
+my %not_process = map { $_ => 1 } read_specfile('t/spectest.data');
 
-print <<KEY;
+print <<'KEY';
 Key:
 [S  ]   = some tests passed
 [ P ]   = plan ok (ran all tests)
@@ -45,15 +39,56 @@ Key:
 ==================================
 KEY
 
-find({ wanted => \&go, no_chdir => 1 }, 't/spec/');
+my @wanted;
 
-sub go {
+find({ wanted => \&queue, no_chdir => 1 }, 't/spec/');
+
+sub queue {
     return if -d $_;
     return if m/\.sv[nk]/;
     return unless m/\.t$/;
     return if $not_process{$_};
-    my $fudged = qx{t/spec/fudge --keep-exit-code rakudo $_};
+
+    push @wanted, $_;
+}
+
+if ( ! defined $ENV{TEST_JOBS} || int $ENV{TEST_JOBS} <= 1 ) {
+    go( $_ ) for @wanted;
+}
+else {
+    my $jobs_wanted = int $ENV{TEST_JOBS};
+    my %running;
+
+    while( @wanted || %running ) {
+        if ( @wanted && $jobs_wanted > keys %running ) {
+            my $file = shift @wanted;
+            my $pid = fork;
+            if ( $pid ) {                # parent
+                $running{ $pid } = $file;
+            }
+            elsif ( defined $pid ) {     # child
+                go( $file );
+                exit;
+            }
+            else {
+                die "Can't fork: $!";
+            }
+        }
+        else {
+            my $pid = wait;
+            if ( ! defined delete $running{ $pid } ) {
+                die "reaped unknown child PID '$pid'";
+            }
+        }
+    }
+}
+
+sub go {
+    my $orig = shift @_;
+
+    my $fudged = qx{t/spec/fudge --keep-exit-code rakudo $orig};
     chomp $fudged;
+
     my $H = get_harness();
     my $agg = TAP::Parser::Aggregator->new();
     $agg->start();
@@ -72,7 +107,7 @@ sub go {
     $plan_ok     = 'P' if !scalar($agg->parse_errors);
     $all_passed  = 'A' if !       $agg->has_errors;
     printf "[%s%s%s] (% 3d/%-3d) %s\n", $some_passed, $plan_ok, $all_passed,
-           $actually_passed, $planned, $_
+           $actually_passed, $planned, $orig
                 if $actually_passed;
 }
 
@@ -81,8 +116,7 @@ sub read_specfile {
     my @res;
     open (my $f, '<', $fn) or die "Can't open file '$fn' for reading: $!";
     while (<$f>){
-        next if m/#/;
-        next unless m/\S/;
+        s/\s*\#.*//;   # strip out comments and any spaces before them
         m/(\S+)/ && push @res, "t/spec/$1";
     }
     close $f or die $!;
