@@ -24,31 +24,31 @@ our multi prefix:<!>(Mu $a) {
 }
 
 our multi sub prefix:<->($a) {
-    pir::box__PN(pir::neg__NN($a))
+    pir::neg__NN($a)
 }
 
 our multi sub infix:<+>($a, $b) {
-    pir::box__PN(pir::add__NNN($a, $b))
+    pir::add__NNN($a, $b)
 }
 
 our multi sub infix:<->($a, $b) {
-    pir::box__PN(pir::sub__NNN($a, $b))
+    pir::sub__NNN($a, $b)
 }
 
 our multi sub infix:<*>($a, $b) {
-    pir::box__PN(pir::mul__NNN($a, $b))
+    pir::mul__NNN($a, $b)
 }
 
 our multi sub infix:</>($a, $b) {
-    pir::box__PN(pir::div__NNN($a, $b))
+    pir::div__NNN($a, $b)
 }
 
 our multi sub infix:<%>($a, $b) {
-    pir::box__PN(pir::mod__NNN($a, $b))
+    pir::mod__NNN($a, $b)
 }
 
 our multi sub infix:<**>($a, $b) {
-    pir::box__PN(pir::pow__NNN($a, $b))
+    pir::pow__NNN($a, $b)
 }
 
 our multi sub infix:<&>(*@items) {
@@ -87,14 +87,17 @@ our multi prefix:sym<+^>($x) {
     pir::bnot__PP($x)
 }
 
-our sub undefine(\$x) {
+our sub undefine(Mu \$x) {
     my $undefined;
     $x = $undefined;
 }
 
 our multi infix:<does>(Mu \$do-it-to-me, Role $r) {
-    my $specific_role = $r!select;
-    my $applicator    = $specific_role.^applier_for($do-it-to-me);
+    &infix:<does>($do-it-to-me, $r!select)
+}
+
+our multi infix:<does>(Mu \$do-it-to-me, ConcreteRole $r) {
+    my $applicator = $r.^applier_for($do-it-to-me);
     $applicator.apply($do-it-to-me, [$r]);
     $do-it-to-me
 }
@@ -161,6 +164,14 @@ our multi infix:<==>($a, $b) {
 
 our multi infix:<!=>($a, $b) {
     pir::isne__INN(+$a, +$b) ?? True !! False
+}
+
+our multi infix:<eq>($a, $b) {
+    pir::iseq__ISS(~$a, ~$b) ?? True !! False
+}
+
+our multi infix:<ne>($a, $b) {
+    pir::isne__ISS(~$a, ~$b) ?? True !! False
 }
 
 # XXX Lazy version would be nice in the future too.
@@ -268,5 +279,52 @@ our multi sub infix:<...>(@lhs, Whatever) {
             }
         }
         default { fail "Unable to figure out pattern of series"; }
+    }
+}
+
+our multi sub infix:<eqv>(Mu $a, Mu $b) {
+    $a.WHAT === $b.WHAT && $a === $b;
+}
+
+our multi sub infix:<eqv>(@a, @b) {
+    unless @a.WHAT === @b.WHAT && @a.elems == @b.elems {
+        return Bool::False
+    }
+    for @a.keys -> $i {
+        unless @a[$i] eqv @b[$i] {
+            return Bool::False;
+        }
+    }
+    Bool::True
+}
+
+our multi sub infix:<eqv>(Pair $a, Pair $b) {
+    $a.key eqv $b.key && $a.value eqv $b.value;
+}
+
+our multi sub infix:<eqv>(Capture $a, Capture $b) {
+    @($a) eqv @($b) && %($a) eqv %($b)
+}
+
+class EnumMap { ... }
+our multi sub infix:<eqv>(EnumMap $a, EnumMap $b) {
+    if +$a != +$b { return Bool::False }
+    for $a.kv -> $k, $v {
+        unless $b.exists($k) && $b{$k} eqv $v {
+            return Bool::False;
+        }
+    }
+    Bool::True;
+}
+
+our multi sub infix:<Z>(Iterable $a-iterable, Iterable $b-iterable) {
+    my $ai = $a-iterable.iterator;
+    my $bi = $b-iterable.iterator;
+    gather loop {
+        my $a = $ai.get;
+        my $b = $bi.get;
+        last if ($a ~~ EMPTY) || ($b ~~ EMPTY);
+        take $a;
+        take $b;
     }
 }

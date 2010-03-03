@@ -31,13 +31,15 @@ src/classes/Junction.pir - Perl 6 Junction and related functions
 .namespace ['Junction']
 .sub 'new' :method
     .param pmc eigenstates
-    .param pmc any   :named('any')  :optional
-    .param pmc all   :named('all')  :optional
-    .param pmc one   :named('one')  :optional
-    .param pmc none  :named('none') :optional
+    .param pmc any            :named('any')  :optional
+    .param pmc all            :named('all')  :optional
+    .param pmc one            :named('one')  :optional
+    .param pmc none           :named('none') :optional
+    .param int type           :named('type') :optional
+    .param int explicit_type  :opt_flag
 
-    # Work out type.
-    .local int type
+    # Work out type, if not not explicitly given.
+    if explicit_type goto type_done
     if null any goto not_any
     unless any goto not_any
     type = JUNCTION_TYPE_ANY
@@ -64,6 +66,7 @@ src/classes/Junction.pir - Perl 6 Junction and related functions
     # Create junction.
     .local pmc junc
     junc = new ['Junction']
+    transform_to_p6opaque junc
     $P0 = box type
     setattribute junc, '$!type', $P0
 
@@ -74,6 +77,15 @@ src/classes/Junction.pir - Perl 6 Junction and related functions
   set_eigenstates:
     setattribute junc, '$!eigenstates', eigenstates
     .return (junc)
+.end
+
+
+=item item()
+
+=cut
+
+.sub 'item' :method
+    .return (self)
 .end
 
 
@@ -285,7 +297,7 @@ Return the components of the Junction.
     .param pmc comparer
 
     .local pmc ulist
-    ulist = root_new ['parrot';'ResizablePMCArray']
+    ulist = new ['Parcel']
 
     .local pmc it_inner, it_outer, val
     it_outer = iter self

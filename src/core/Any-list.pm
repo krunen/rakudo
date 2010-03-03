@@ -162,6 +162,29 @@ augment class Any {
              }
         }
     }
+
+    multi method kv() {
+        my $i = 0;
+        gather for $.list -> $value {
+            my $key = $i++;
+            take $key;
+            take $value;
+        }
+    }
+
+    multi method keys() {
+        my $i = 0;
+        gather for $.list -> $value {
+            my $key = $i++;
+            take $key;
+        }
+    }
+
+    multi method values() {
+        gather for $.list -> $value {
+            take $value;
+        }
+    }
 }
 
 our proto sub join (Str $separator = '', *@values) { @values.join($separator); }
@@ -175,5 +198,8 @@ our proto sub max($by, *@values) { @values.max($by); }
 our proto sub uniq(@values) { @values.uniq; }
 our proto sub pick ($num, :$replace, *@values) { @values.pick($num, :$replace); }
 our proto sub map(&mapper, @values) { @values.map(&mapper); }
+our proto sub kv(@array) { @array.kv; }
+our proto sub keys(@array) { @array.keys; }
+our proto sub values(@array) { @array.values; }
 
 # vim: ft=perl6

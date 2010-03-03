@@ -3,6 +3,12 @@ augment class Any {
         pir::box__PI(pir::bytelength__IS(self))
     }
 
+    # The spec has a more elegant approach for this,
+    # but this one works now.
+    our Str multi method capitalize() {
+        self.lc.split(/\w+/, :all).map({ .Str.ucfirst }).join('');
+    }
+
     our Int multi method chars() is export {
         pir::length__IS(self);
     }
@@ -80,6 +86,10 @@ augment class Any {
             $len -= $start;
         }
 
+        if ($start > self.chars || $start < -self.chars) {
+            return Mu;
+        }
+
         pir::substr(self, $start, $len);
     }
 
@@ -123,11 +133,11 @@ augment class Any {
         sprintf($format, self)
     }
 
-    our Str multi method lc() is export {
+    our Str multi method lc() {
         ~(pir::downcase__SS(self))
     }
 
-    our Str multi method lcfirst() is export {
+    our Str multi method lcfirst() {
         self gt '' ?? self.substr(0,1).lc ~ self.substr(1) !! ""
     }
 
@@ -211,12 +221,24 @@ augment class Any {
         self.comb( / \S+ /, $limit );
     }
 
-    our Str multi method uc() is export {
+    our Str multi method uc() {
         ~(pir::upcase__SS(self))
     }
 
-    our Str multi method ucfirst() is export {
+    our Str multi method ucfirst() {
         self gt '' ?? self.substr(0,1).uc ~ self.substr(1) !! ""
+    }
+
+    our Str multi method sprintf(*@args) {
+        my $result;
+        try {
+            $result = pir::sprintf__SSP(~self, (|@args)!PARROT_POSITIONALS);
+        }
+        $! ?? fail( "Insufficient arguments supplied to sprintf") !! $result
+    }
+
+    method Str() {
+        self
     }
 }
 
@@ -252,5 +274,14 @@ our multi split ( Regex $delimiter, Str $input, Int $limit = * ) {
     $input.split($delimiter, $limit);
 }
 
+our multi sub sprintf($str as Str, *@args) {
+    $str.sprintf(|@args)
+}
+
+our proto sub uc($string) { $string.uc; }
+our proto sub ucfirst($string) { $string.ucfirst; }
+our proto sub lc($string) { $string.lc; }
+our proto sub lcfirst($string) { $string.lcfirst; }
+our proto sub capitalize($string) { $string.capitalize; }
 
 # vim: ft=perl6

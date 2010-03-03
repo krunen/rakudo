@@ -205,6 +205,9 @@ method newpad($/) {
     my $new_block := PAST::Block.new( PAST::Stmts.new(
         PAST::Op.new(
             :inline("    .local pmc true\n    true = get_hll_global 'True'")
+        ),
+        PAST::Var.new(
+            :name('__CANDIDATE_LIST__'), :scope('lexical'), :isdecl(1)
         )
     ));
     @BLOCK.unshift($new_block);
@@ -333,7 +336,7 @@ method statement_control:sym<use>($/) {
             );
         }
         else {
-            @BLOCK[0][0].unshift(
+            @BLOCK[0].loadinit.unshift(
                 PAST::Op.new( :name('!use'), ~$<module_name>, :node($/) )
             );
         }
@@ -387,14 +390,14 @@ method statement_control:sym<default>($/) {
 
 method statement_control:sym<CATCH>($/) {
     my $block := $<block>.ast;
-    push_block_handler($/, $block);
+    push_block_handler($/, @BLOCK[0], $block);
     @BLOCK[0].handlers()[0].handle_types_except('CONTROL');
     make PAST::Stmts.new(:node($/));
 }
 
 method statement_control:sym<CONTROL>($/) {
     my $block := $<block>.ast;
-    push_block_handler($/, $block);
+    push_block_handler($/, @BLOCK[0], $block);
     @BLOCK[0].handlers()[0].handle_types('CONTROL');
     make PAST::Stmts.new(:node($/));
 }
@@ -419,24 +422,35 @@ method statement_prefix:sym<gather>($/) {
 }
 
 method statement_prefix:sym<try>($/) {
-    my $block := $<blorst>.ast;
-    $block.blocktype('immediate');
-    my $past := PAST::Op.new( :pasttype('try'), $block );
-
-    # On failure, capture the exception object into $!.
-    $past.push(PAST::Op.new(
-        :inline( '    .get_results (%r)',
-                 '    $P0 = new ["Perl6Exception"]',
-                 '    setattribute $P0, "$!exception", %r',
-                 '    store_lex "$!", $P0' )
-    ));
-
-    # Otherwise, put a failure into $!.
-    $past.push(PAST::Op.new( :pasttype('bind'),
-        PAST::Var.new( :name('$!'), :scope('lexical') ),
-        PAST::Op.new( :pasttype('call'), :name('!FAIL') )
-    ));
-
+    my $past := $<blorst>.ast;
+    $past.blocktype('immediate');
+    unless $past.handlers() {
+        $past := PAST::Stmts.new(
+            $past,
+            PAST::Op.new( :pasttype('bind'),
+                    PAST::Var.new( :name('$!'), :scope('lexical') ),
+                    PAST::Op.new( :pasttype('call'), :name('!FAIL') )
+            ),
+            :handlers([
+                PAST::Control.new(
+                    :handle_types_except('CONTROL'),
+                    PAST::Op.new(
+                        :pasttype('bind'),
+                        PAST::Var.new( :name('$!'), :scope('lexical') ),
+                        PAST::Op.new(
+                            :pasttype('callmethod'),
+                            :name('new'),
+                            PAST::Var.new(:scope('package'),
+                                          :namespace([]),
+                                          :name('Exception')),
+                            PAST::Var.new(:scope('register'),
+                                           :name('exception')),
+                        )
+                    )
+                )
+            ])
+        );
+    }
     make $past;
 }
 
@@ -594,6 +608,9 @@ sub make_variable($/, $name) {
             $past.scope('attribute');
             $past.viviself( sigiltype( $<sigil> ) );
             $past.unshift(PAST::Var.new( :name('self'), :scope('lexical') ));
+        }
+        elsif $<sigil> eq '&' && !@name {
+            $past := PAST::Op.new(:pirop('find_sub_not_null__Ps'), $past.name);
         }
     }
     $past
@@ -763,7 +780,7 @@ sub declare_variable($/, $past, $sigil, $twigil, $desigilname, $trait_list) {
         my $vivipast := PAST::Op.new( $cont, 'rw', $true, :pirop('setprop'));
 
         # If it's a scalar, mark it as scalar (non-flattening)
-        if $sigil eq '$' {
+        if $sigil eq '$' || $sigil eq '&' {
             $vivipast := PAST::Op.new($vivipast,'scalar',$true,:pirop('setprop'));
         }
 
@@ -842,7 +859,7 @@ method routine_def($/) {
     $signature.set_default_parameter_type('Any');
     my $sig_setup_block := add_signature($past, $signature, 1);
     if $<trait> {
-        emit_routine_traits($past, $<trait>, 'Sub');
+        emit_routine_traits($past, $<trait>, 'Sub', $sig_setup_block);
     }
     if $<deflongname> {
         # Set name.
@@ -931,9 +948,6 @@ method method_def($/) {
     my $past := $<blockoid>.ast;
     $past.blocktype('declaration');
     $past.control('return_pir');
-    if $<trait> {
-        emit_routine_traits($past, $<trait>, $*METHODTYPE);
-    }
     
     # Get signature - or create - and sort out invocant handling.
     if pir::defined__IP($past<placeholder_sig>) {
@@ -957,6 +971,11 @@ method method_def($/) {
     $past[0].unshift(PAST::Var.new( :name('self'), :scope('lexical'), :isdecl(1), :viviself(sigiltype('$')) ));
     $past.symbol('self', :scope('lexical'));
 
+    # Emit traits.
+    if $<trait> {
+        emit_routine_traits($past, $<trait>, $*METHODTYPE, $sig_setup_block);
+    }
+
     # Method container.
     if $<longname> {
         # Set up us the name.
@@ -965,7 +984,8 @@ method method_def($/) {
         $past.name($name);
         $past.nsentry('');
         my $multi_flag := PAST::Val.new( :value(0) );
-        $past := create_code_object($past, $*METHODTYPE, $multi_flag, $sig_setup_block);
+        # create code object using a reference to $past
+        my $code := create_code_object(PAST::Val.new(:value($past)), $*METHODTYPE, $multi_flag, $sig_setup_block);
 
         # Get hold of methods table.
         our @PACKAGE;
@@ -991,30 +1011,30 @@ method method_def($/) {
             }
 
             # If it's a proto, stash it away in the symbol entry.
-            if $*MULTINESS eq 'proto' { %table{$name}<proto> := $past; }
+            if $*MULTINESS eq 'proto' { %table{$name}<proto> := $code; }
 
             # Otherwise, create multi container if we don't have one; otherwise,
             # just push this candidate onto it.
             if %table{$name}<multis> {
-                %table{$name}<multis>.push($past);
+                %table{$name}<multis>.push($code);
             }
             else {
-                $past := PAST::Op.new(
+                $code := PAST::Op.new(
                     :pasttype('callmethod'),
                     :name('set_candidates'),
                     PAST::Op.new( :inline('    %r = new ["Perl6MultiSub"]') ),
-                    $past
+                    $code
                 );
-                %table{$name}<code_ref> := %table{$name}<multis> := $past;
+                %table{$name}<code_ref> := %table{$name}<multis> := $code;
             }
             $multi_flag.value($*MULTINESS eq 'proto' ?? 2 !! 1);
         }
         else {
-            %table{$name}<code_ref> := $past;
+            %table{$name}<code_ref> := $code;
         }
 
         # Added via meta-class; needn't add anything.
-        $past := PAST::Stmts.new();
+        # $past := PAST::Stmts.new();
     }
     elsif $*MULTINESS {
         $/.CURSOR.panic('Can not put ' ~ $*MULTINESS ~ ' on anonymous routine');
@@ -1242,7 +1262,7 @@ method trait($/) {
         $past := $<trait_mod>.ast;
     }
     elsif $<colonpair> {
-        $/.panic('traits specified as colon pairs not yet understood');
+        $/.CURSOR.panic('traits specified as colon pairs not yet understood');
     }
     make $past;
 }
@@ -1881,6 +1901,10 @@ method quote_EXPR($/) {
             if +@words > 1 {
                 $past := PAST::Op.new( :name('&infix:<,>'), :node($/) );
                 for @words { $past.push($_); }
+                $past := PAST::Stmts.new($past);
+            }
+            else {
+                $past := PAST::Val.new(:value(~@words[0]), :returns<Perl6Str>);
             }
         }
     }
@@ -1978,13 +2002,10 @@ sub add_signature($block, $sig_obj, $lazy) {
 
     # If lazy, make and push signature setup block.
     if $lazy {
-        my $sig_setup_block_name := $block.unique('!sig_setup_' ~ pir::time__N() ~ '_');
-        $block[0].push(PAST::Block.new(
-            :name($sig_setup_block_name),
-            :blocktype('declaration'),
-            $sig_obj.ast(1)
-        ));
-        $sig_setup_block_name
+        my $sig_setup_block := 
+            PAST::Block.new( :blocktype<declaration>, $sig_obj.ast(1) );
+        $block[0].push($sig_setup_block);
+        PAST::Val.new(:value($sig_setup_block));
     }
     else {
         $block.loadinit.push($sig_obj.ast(1));
@@ -2065,11 +2086,11 @@ sub has_compiler_trait_with_val($trait_list, $name, $value) {
 
 
 # Emits routine traits into the loadinit for the routine.
-sub emit_routine_traits($routine, @trait_list, $type) {
+sub emit_routine_traits($routine, @trait_list, $type,  $sig_setup_block) {
     $routine.loadinit.push(PAST::Op.new(
         :pasttype('bind'),
         PAST::Var.new( :name('trait_subject'), :scope('register'), :isdecl(1) ),
-        create_code_object(PAST::Var.new( :name('block'), :scope('register') ), $type, 0, '')
+        create_code_object(PAST::Var.new( :name('block'), :scope('register') ), $type, 0,  $sig_setup_block)
     ));
     for @trait_list {
         my $ast := $_.ast;
@@ -2205,12 +2226,12 @@ sub make_dot_equals($thingy, $call) {
 }
 
 # XXX This isn't quite right yet... need to evaluate these semantics
-sub push_block_handler($/, $block) {
-    unless @BLOCK[0].handlers() {
-        @BLOCK[0].handlers([]);
+sub push_block_handler($/, $block, $handler) {
+    unless $block.handlers() {
+        $block.handlers([]);
     }
-    $block.blocktype('declaration');
-    $block := PAST::Block.new(
+    $handler.blocktype('declaration');
+    $handler := PAST::Block.new(
         :blocktype('declaration'),
         PAST::Var.new( :scope('parameter'), :name('$_') ),
         PAST::Op.new( :pasttype('bind'),
@@ -2231,14 +2252,14 @@ sub push_block_handler($/, $block) {
             PAST::Var.new( :scope('lexical'), :name('$_') ),
         ),
         PAST::Op.new( :pasttype('call'),
-            $block,
+            $handler,
         ),
     );
-    $block.symbol('$_', :scope('lexical'));
-    $block.symbol('$!', :scope('lexical'));
-    $block := PAST::Stmts.new(
+    $handler.symbol('$_', :scope('lexical'));
+    $handler.symbol('$!', :scope('lexical'));
+    $handler := PAST::Stmts.new(
         PAST::Op.new( :pasttype('call'),
-            $block,
+            $handler,
             PAST::Var.new( :scope('register'), :name('exception') ),
         ),
         # XXX Rakudo needs to set this when $! is inspected
@@ -2252,10 +2273,10 @@ sub push_block_handler($/, $block) {
         )
     );
 
-    @BLOCK[0].handlers.unshift(
+    $block.handlers.unshift(
         PAST::Control.new(
             :node($/),
-            $block,
+            $handler,
         )
     );
 }

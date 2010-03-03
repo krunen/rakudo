@@ -91,14 +91,15 @@ BUILTINS_PIR = \
   src/metamodel/GrammarHOW.pir \
   src/builtins/Any.pir \
   src/builtins/Role.pir \
+  src/builtins/ConcreteRole.pir \
   src/builtins/Abstraction.pir \
+  src/builtins/Positional.pir \
   src/builtins/Iterable.pir \
   src/builtins/Iterator.pir \
   src/builtins/EMPTY.pir \
   src/builtins/ParrotIter.pir \
   src/builtins/List.pir \
   src/builtins/Grammar.pir \
-  src/builtins/Positional.pir \
   src/builtins/Parcel.pir \
   src/builtins/Bool.pir \
   src/builtins/Int.pir \
@@ -188,6 +189,8 @@ CORE_SOURCES = \
   src/core/Parameter.pm \
   src/core/Signature.pm \
   src/core/Block.pm \
+  src/core/Regex.pm \
+  src/core/Junction.pm \
   src/core/system.pm \
   src/cheats/match-bool.pm \
   src/cheats/setup-io.pm \
@@ -427,7 +430,7 @@ sometests: all
 	@$(HARNESS_WITH_FUDGE_JOBS) $(TESTFILES)
 
 # Run a single test
-t/*.t t/*/*.t t/*/*/*.t: all
+t/*.t t/*/*.t t/*/*/*.t: all Test.pir spectest_checkout
 	@$(HARNESS_WITH_FUDGE) --verbosity=1 $@
 
 ##  cleaning

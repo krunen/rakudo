@@ -8,19 +8,23 @@ augment class Any {
     }
 
     our Int multi method ceiling() is export {
-        pir::box__PN(pir::ceil__IN(self))
+        pir::box__PI(pir::ceil__IN(self))
     }
 
     our Str multi method chr() {
         ~(pir::chr__SI(self))
     }
 
-    multi method cis() is export {
+    multi method cis() {
         1.unpolar(self)
     }
 
     our Int multi method floor() is export {
         pir::box__PI(pir::floor__IN(self))
+    }
+
+    our Int multi method truncate() is export {
+        self == 0 ?? 0 !! self < 0  ?? self.ceiling !! self.floor
     }
 
     our Num method rand() {
@@ -32,7 +36,7 @@ augment class Any {
     }
 
     our Int multi method round() is export {
-#        pir::box__PI(pir::floor__IN(pir::add__NNN(self, 0.5)))
+        (self + 0.5).Num.floor;
     }
 
     multi method sqrt() {
@@ -164,7 +168,7 @@ augment class Any {
         self.Num.acotanh($base);
     }
 
-    our ::Complex multi method unpolar($angle) is export {
+    our ::Complex multi method unpolar($angle) {
         Complex.new(self.Num * $angle.cos("radians"), self.Num * $angle.sin("radians"));
     }
 }
@@ -175,6 +179,8 @@ our proto sub exp($exponent) { $exponent.exp }
 our proto sub log($x) { $x.log }
 our multi sub log($x, $base) { $x.log($base) }
 our proto sub log10($x) { $x.log10 }
+our proto sub cis($angle) { $angle.cis; }
+our proto sub unpolar($mag, $angle) { $mag.unpolar($angle); }
 
 # jnthn says that we should have both the multi sub declaration and the proto.
 
@@ -379,7 +385,7 @@ our proto atan2($y, $x = 1, $base = Radians) {
 }
 
 our Num sub rand (*@args) {
-    die "too many arguments passed - 0 params expected" if +@args;
+    die "too many arguments passed - 0 params expected" if ?@args;
     1.rand
 }
 

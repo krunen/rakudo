@@ -22,6 +22,21 @@ elements and can be flattened into Captures or Lists.
     parcelproto = p6meta.'new_class'('Parcel', 'parent'=>'parrot;ResizablePMCArray Iterable', 'does_role'=>pos_role)
 .end
 
+
+=item defined()
+
+=cut
+
+.sub 'defined' :method
+    $I0 = elements self
+    .tailcall '&prefix:<?>'($I0)
+.end
+.sub '' :vtable('defined')
+    $I0 = elements self
+    .return ($I0)
+.end
+
+
 =item item()
 
 A Parcel in item context becomes a Seq.
@@ -164,7 +179,6 @@ in a list.
     .local pmc eager, true
     eager = new ['Parcel']
     true = get_hll_global ['Bool'], 'True'
-    setprop eager, 'flatten', true
     setprop eager, 'rw', true
 
     .local pmc listiter
@@ -219,7 +233,6 @@ The canonical operator for creating a Parcel.
     # treat parcel itself as rw (for list assignment)
     $P0 = get_hll_global ['Bool'], 'True'
     setprop parcel, 'rw', $P0
-    setprop parcel, 'flatten', $P0
     .return (parcel)
 .end
 

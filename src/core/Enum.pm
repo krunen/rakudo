@@ -38,7 +38,7 @@ Return key and value as a 2-element List.
 
 =end item
     method kv() {
-        return list($.key, $.value);
+        ($.key, $.value);
     }
 
 =begin item pairs
@@ -63,5 +63,11 @@ Return key and value as a 2-element List.
     # seem to have Pair.Str.
     multi method Str() {
         "$.key\t$.value";
+    }
+
+    multi method hash() {
+        my %h;
+        %h{self.key} = self.value;
+        %h;
     }
 }

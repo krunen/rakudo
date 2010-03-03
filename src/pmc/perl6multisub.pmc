@@ -864,7 +864,10 @@ Allocates the PMC's underlying storage.
 
         /* Need custom mark and destroy. */
         PObj_custom_mark_SET(SELF);
-        PObj_active_destroy_SET(SELF);
+        PObj_custom_destroy_SET(SELF);
+
+        /* Set scalar property to avoid. */
+        VTABLE_setprop(interp, SELF, CONST_STRING(interp, "scalar"), SELF);
     }
 
 /*
@@ -1160,6 +1163,21 @@ Makes a copy of this Perl6MultiSub PMC.
         unsorted = VTABLE_clone(interp, unsorted);
         SETATTR_Perl6MultiSub_candidates(interp, copy, unsorted);
         return copy;
+    }
+
+
+/*
+
+=item METHOD PMC * clone()
+
+Makes a copy of this Perl6MultiSub PMC.
+
+=cut
+
+*/
+    METHOD PMC * clone() {
+        PMC *copy = VTABLE_clone(interp, SELF);
+        RETURN (PMC *copy);
     }
 
 /*

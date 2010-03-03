@@ -261,8 +261,9 @@ token statement {
     | <statement_control>
     | <EXPR> <.ws>
         [
-        | <statement_mod_cond> <statement_mod_loop>?
-        | <statement_mod_loop>
+        || <?MARKED('endstmt')>
+        || <statement_mod_cond> <statement_mod_loop>?
+        || <statement_mod_loop>
         ]?
     ]
     | <?before ';'>
@@ -1006,7 +1007,7 @@ proto token infix_postfix_meta_operator { <...> }
 
 proto token postfix_prefix_meta_operator { <...> }
 
-token postfix_prefix_meta_operator:sym< » > {
+token postfix_prefix_meta_operator:sym<»> {
     [ <sym> | '>>' ] <!before '('>
 }
 
@@ -1132,6 +1133,7 @@ token infix:sym«ge»   { <sym>  <O('%chaining')> }
 token infix:sym«lt»   { <sym>  <O('%chaining')> }
 token infix:sym«gt»   { <sym>  <O('%chaining')> }
 token infix:sym«=:=»  { <sym>  <O('%chaining')> }
+token infix:sym<===>  { <sym>  <O('%chaining')> }
 token infix:sym<eqv>  { <sym>  <O('%chaining')> }
 token infix:sym<before>  { <sym>  <O('%chaining')> }
 token infix:sym<after>  { <sym>  <O('%chaining')> }
