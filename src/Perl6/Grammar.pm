@@ -552,7 +552,7 @@ token declarator {
     | '(' ~ ')' <signature> <trait>*
     | <routine_declarator>
     | <regex_declarator>
-#    | <type_declarator>
+    | <type_declarator>
     ]
 }
 
@@ -589,6 +589,7 @@ rule scoped($*SCOPE) {
     | <DECL=variable_declarator>
     | <DECL=routine_declarator>
     | <DECL=package_declarator>
+    | <DECL=type_declarator>
     | <typename>+ 
       {
         if +$<typename> > 1 {
@@ -759,18 +760,28 @@ rule post_constraint {
     ]
 }
 
-rule regex_declarator {
+proto token regex_declarator { <...> }
+token regex_declarator:sym<rule> { 
+    <sym> {*} #= open
+    <regex_def> 
+}
+token regex_declarator:sym<token> { 
+    <sym> {*} #= open
+    <regex_def> 
+}
+token regex_declarator:sym<regex> { 
+    <sym> {*} #= open
+    <regex_def> 
+}
+
+rule regex_def {
     [
-    | $<proto>=[proto] [regex|token|rule] 
-      <deflongname> 
-      '{' '<...>' '}'<?ENDSTMT>
-    | $<sym>=[regex|token|rule]
-      <deflongname>
+      <deflongname>?
       <.newpad>
-      [ '(' <signature> ')' ]?
+      [ [ ':'?'(' <signature> ')'] | <trait> ]*
       {*} #= open
-      '{'<p6regex=.LANG('Regex','nibbler')>'}'<?ENDSTMT>
-    ]
+      '{'[ '<...>' |<p6regex=.LANG('Regex','nibbler')>]'}'<?ENDSTMT>
+    ] || <.panic: "Malformed regex">
 }
 
 proto token type_declarator { <...> }
@@ -779,6 +790,19 @@ token type_declarator:sym<enum> {
     <sym> <.ws>
     <name>? <.ws>
     <?before '(' | '<' | '<<' | '«' > <circumfix>
+}
+
+token type_declarator:sym<subset> {
+    :my $*IN_DECL := 'subset';
+    <sym> :s
+    [
+        [
+            [ <longname> { $/.CURSOR.add_name($<longname>[0].Str); } ]?
+            <trait>*
+            [ where <EXPR('e=')> ]?
+        ]
+        || <.panic: 'Malformed subset'>
+    ]
 }
 
 rule trait {
@@ -981,6 +1005,7 @@ INIT {
 token infixish {
     | <OPER=infix> <![=]>
     | <infix> <OPER=infix_postfix_meta_operator>
+    | <OPER=infix_prefix_meta_operator> <infix>
 }
 
 token postfixish {
@@ -1004,6 +1029,8 @@ token postop {
 }
 
 proto token infix_postfix_meta_operator { <...> }
+
+proto token infix_prefix_meta_operator { <...> }
 
 proto token postfix_prefix_meta_operator { <...> }
 
@@ -1134,6 +1161,7 @@ token infix:sym«lt»   { <sym>  <O('%chaining')> }
 token infix:sym«gt»   { <sym>  <O('%chaining')> }
 token infix:sym«=:=»  { <sym>  <O('%chaining')> }
 token infix:sym<===>  { <sym>  <O('%chaining')> }
+token infix:sym<!===> { <sym>  <O('%chaining')> }
 token infix:sym<eqv>  { <sym>  <O('%chaining')> }
 token infix:sym<before>  { <sym>  <O('%chaining')> }
 token infix:sym<after>  { <sym>  <O('%chaining')> }
@@ -1155,6 +1183,9 @@ token infix:sym<?? !!> {
     '!!'
     <O('%conditional, :reducecheck<ternary>, :pasttype<if>')> 
 }
+
+# item_assignment is probably wrong, but I don't know how to do what is right...
+token infix_prefix_meta_operator:sym<!> { <sym> <O('%item_assignment')> }
 
 token infix:sym<:=> {
     <sym>  <O('%item_assignment, :reducecheck<bindish_check>')>
@@ -1235,6 +1266,21 @@ grammar Perl6::Regex is Regex::P6Regex::Grammar {
     token codeblock {
         <block=.LANG('MAIN','block')>
     }
+
+    token assertion:sym<name> {
+        $<longname>=[\w+]
+            [
+            | <?before '>'>
+            | '=' <assertion>
+            | ':' <arglist>
+            | '(' <arglist=p6arglist> ')'
+            | <.normspace> <nibbler>
+            ]?
+    } 
+
+    token p6arglist {
+        <arglist=.LANG('MAIN','arglist')> 
+    }
 }
 
 
@@ -1285,4 +1331,3 @@ sub parse_name($name) {
         .return (list)
     }
 }
-
