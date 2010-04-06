@@ -1,8 +1,8 @@
-class Rat {
+class Rat does Real {
     has $.numerator;
     has $.denominator;
 
-    sub gcd(Int $a is copy, Int $b is copy) {
+    our sub gcd(Int $a is copy, Int $b is copy) {
         $a = -$a if ($a < 0);
         $b = -$b if ($b < 0);
         while $a > 0 && $b > 0 {
@@ -10,6 +10,11 @@ class Rat {
             $a %= $b;
         }
         return $a + $b;
+    }
+
+    multi method new() {
+        self.bless(*, :numerator(0), :denominator(1));
+
     }
 
     multi method new(Int $numerator is copy, Int $denominator is copy) {
@@ -23,7 +28,16 @@ class Rat {
         self.bless(*, :numerator($numerator), :denominator($denominator));
     }
 
+    multi method ACCEPTS($other) {
+        self.Num.ACCEPTS($other);
+    }
+
     multi method perl() { "$!numerator/$!denominator"; }
+
+    method Bridge() {
+        $!denominator == 0 ?? Inf * $!numerator.sign
+                           !! $!numerator.Bridge / $!denominator.Bridge;
+    }
 
     our Bool multi method Bool() { $!numerator != 0 ?? Bool::True !! Bool::False }
 
@@ -51,15 +65,6 @@ class Rat {
     }
     multi method pred {
         Rat.new($!numerator - $!denominator, $!denominator);
-    }
-
-    multi method abs() {
-        self < 0 ?? -self !! self;
-    }
-
-    our Int multi method sign {
-        # self ~~ NaN ?? NaN !! self <=> 0;
-        self < 0 ?? -1 !! ( self == 0 ?? 0 !! 1);
     }
 }
 
@@ -122,6 +127,10 @@ multi sub infix:</>(Int $a, Rat $b) {
 multi sub infix:</>(Int $a, Int $b) {
     Rat.new($a, $b);
 }
+
+multi sub infix:<cmp>(Rat $a, Rat $b) { $a.Num <=> $b.Num; }
+multi sub infix:<cmp>(Rat $a, $b)     { $a.Num <=> $b.Num; }
+multi sub infix:<cmp>($a, Rat $b)     { $a.Num <=> $b.Num; }
 
 augment class Int {
     # CHEAT: Comes from Int.pm, moved here for the moment.

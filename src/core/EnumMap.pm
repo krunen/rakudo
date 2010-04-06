@@ -21,7 +21,12 @@ class EnumMap does Associative {
     }
 
     multi method ACCEPTS(Regex $topic) {
-        any(@.keys) ~~ $topic;
+        for @.keys -> $k {
+            if $topic.ACCEPTS($k) {
+                return True;
+            }
+        }
+        False
     }
 
     multi method ACCEPTS(%topic) {
@@ -38,6 +43,10 @@ class EnumMap does Associative {
 
     method contains($key) {
         self.exists($key)
+    }
+
+    method elems() {
+        pir::elements__IP($!storage)
     }
 
     method exists($key) {

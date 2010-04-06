@@ -1,4 +1,4 @@
-class Complex {
+class Complex does Numeric {
     has $.re;
     has $.im;
 
@@ -13,7 +13,7 @@ class Complex {
         ($topic.Num ~~ $.re) && ($.im == 0);
     }
 
-    multi method abs() {
+    method abs() {
         ($!re * $!re + $!im * $!im).sqrt
     }
 

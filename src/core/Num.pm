@@ -1,4 +1,26 @@
-augment class Num {
+class Complex { ... }
+
+augment class Num does Real {
+    multi method ACCEPTS($other) {
+        if self eq 'NaN' {
+            $other eq 'NaN';
+        } else {
+            $other == self;
+        }
+    }
+
+    multi method ACCEPTS(Complex $other) {
+        if self eq 'NaN' {
+            $other.re eq 'NaN' || $other.im eq 'NaN';
+        } else {
+            $other.im == 0 && $other.re == self;
+        }
+    }
+
+    method Bridge() {
+        self;
+    }
+
     multi method Bool() {
         self != 0.0e0
     }
@@ -45,10 +67,6 @@ augment class Num {
         ($signum * $b) / $d;
     }
 
-    multi method abs() {
-        pir::abs__Nn(self);
-    }
-
     multi method exp() {
         pir::exp__Nn(self);
     }
@@ -71,11 +89,6 @@ augment class Num {
 
     multi method sqrt() {
         pir::sqrt__Nn(self);
-    }
-
-    our Int multi method sign {
-        # self ~~ NaN ?? NaN !! self <=> 0;
-        self eq NaN ?? NaN !! (self < 0 ?? -1 !! ( self == 0 ?? 0 !! 1));
     }
 
     multi method sin($base = Radians) {

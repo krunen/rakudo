@@ -13,9 +13,17 @@ our sub upgrade_to_num_if_needed($test) {
     }
 }
 
-augment class Int {
-    multi method abs() {
-        self < 0 ?? -self !! self;
+augment class Int does Real {
+    multi method ACCEPTS(Int $other) {
+        self == $other;
+    }
+
+    multi method ACCEPTS($other) {
+        self.Num.ACCEPTS($other);
+    }
+
+    method Bridge() {
+        self.Num;
     }
 
     our Bool multi method Bool() { self != 0 ?? Bool::True !! Bool::False }
@@ -25,25 +33,16 @@ augment class Int {
     our Num multi method Num() {
         pir::box__PN(pir::set__NP(self))
     }
- 
+
     # Next has been moved to Rat.pm for the moment.
     # our Rat multi method Rat() { Rat.new(self, 1); }
 
     our ::Complex multi method Complex() { Complex.new(self, 0); }
 
-    our Str multi method Str() {
-        ~self;
-    }
-
     # Most of the trig functions for Int are in Any-num.pm, but
     # sec is a special case.
     our Num multi method sec($base = Radians) {
         self.Num.sec($base);
-    }
-
-    our Int multi method sign {
-        # self ~~ NaN ?? NaN !! self <=> 0;
-        self < 0 ?? -1 !! ( self == 0 ?? 0 !! 1);
     }
 }
 

@@ -7,7 +7,7 @@ has $!block;
 has $!how;
 
 # The name of the package.
-has $!name; 
+has $!name;
 
 # The scope of the package.
 has $!scope;
@@ -18,11 +18,14 @@ has $!methods;
 # Table of methods we're adding to the meta model
 has $!meta_methods;
 
-# Table of attributes meta-data hashes. Maps name to hash.
+# List attributes meta-data hashes. Should be Attribute class instances one day.
 has $!attributes;
 
 # List of traits.
 has $!traits;
+
+# List of colonpair adverbs.
+has $!name_adverbs;
 
 # Accessor for block.
 method block($block?) {
@@ -60,16 +63,34 @@ method meta_methods() {
     $!meta_methods
 }
 
-# Accessor for attributes hash.
+# Accessor for attributes list.
 method attributes() {
-    unless $!attributes { $!attributes := Q:PIR { %r = root_new ['parrot';'Hash'] } }
+    unless $!attributes { $!attributes := PAST::Node.new() }
     $!attributes
+}
+
+# Checks if there is already an attribute with the given name.
+method has_attribute($name) {
+    if $!attributes {
+        for @($!attributes) {
+            if $_<name> eq $name {
+                return 1;
+            }
+        }
+    }
+    0
 }
 
 # Accessor for traits list.
 method traits() {
     unless $!traits { $!traits := PAST::Node.new() }
     $!traits
+}
+
+# Accessor for traits list.
+method name_adverbs() {
+    unless $!name_adverbs { $!name_adverbs := PAST::Node.new() }
+    $!name_adverbs
 }
 
 # This method drives the code generation and fixes up the block.
@@ -85,15 +106,19 @@ method finish($block) {
     my $meta_reg := PAST::Var.new( :name('meta'), :scope('register') );
     my $name := $!name ?? ~$!name !! '';
     if $!scope ne 'augment' {
+        my $new_call :=  PAST::Op.new(
+            :pasttype('callmethod'), :name('new'),
+            $metaclass, $name
+        );
+        for @(self.name_adverbs) {
+            my $param := $_[2];
+            $param.named(~$_[1].value());
+            $new_call.push($param);
+        }
         $decl.push(PAST::Op.new(
             :pasttype('bind'),
             PAST::Var.new( :name('obj'), :scope('register'), :isdecl(1) ),
-            PAST::Op.new(
-                :pasttype('callmethod'),
-                :name('new'),
-                $metaclass,
-                $name
-            )
+            $new_call
         ));
     }
     else {
@@ -133,19 +158,19 @@ method finish($block) {
     }
 
     # Attributes.
-    my %attrs := $!attributes;
-    for %attrs {
+    my $attr_list := self.attributes();
+    for @($attr_list) {
         my $attr := PAST::Op.new(
             :pasttype('callmethod'),
             :name('new'),
-            PAST::Var.new( :name('Attribute'), :namespace(''), :scope('package') ),
-            PAST::Val.new( :value(~$_),                  :named('name') ),
-            PAST::Val.new( :value(%attrs{$_}<accessor>), :named('has_accessor') ),
-            PAST::Val.new( :value(%attrs{$_}<rw>),       :named('rw') )
+            PAST::Var.new( :name('Attribute'),   :namespace(''), :scope('package') ),
+            PAST::Val.new( :value($_<name>),     :named('name') ),
+            PAST::Val.new( :value($_<accessor>), :named('has_accessor') ),
+            PAST::Val.new( :value($_<rw>),       :named('rw') )
         );
-        if %attrs{$_}<build> {
-            %attrs{$_}<build>.named('build');
-            $attr.push(%attrs{$_}<build>);
+        if $_<build> {
+            $_<build>.named('build');
+            $attr.push($_<build>);
         }
         $decl.push(PAST::Op.new(
             :pasttype('callmethod'),

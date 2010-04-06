@@ -1,4 +1,30 @@
 augment class Signature {
+    method ACCEPTS(Signature) {
+        die("Sorry, smart-matching a Signature against a Signature is not yet implemented.");
+    }
+    
+    method ACCEPTS(Callable) {
+        die("Sorry, smart-matching a Callable against a Signature is not yet implemented.");
+    }
+    
+    method ACCEPTS(Capture $c) {
+        my $result = Bool::False;
+        try {
+            self!BIND($c);
+            $result = Bool::True;
+        }
+        $result
+    }
+    
+    method ACCEPTS($any) {
+        my $result = Bool::False;
+        try {
+            self!BIND((|$any).Capture);
+            $result = Bool::True;
+        }
+        $result
+    }
+
     method perl() {
         my @parts = gather {
             take ':(';
@@ -29,7 +55,6 @@ augment class Signature {
                         }
                     }
                     elsif substr($perl, 0, 8) eq 'Callable' {
-                        $name = '&' ~ $name;
                         if $perl ne 'Callable' {
                             take substr($perl, 9, $perl.chars - 10) ~ ' ';
                         }
@@ -46,11 +71,12 @@ augment class Signature {
 
                 # Slurpiness, namedness, then the name.
                 if $param.slurpy { take '*' }
-                for @($param.named_names) -> $name {
+                my @names = @($param.named_names);
+                for @names -> $name {
                     take ':' ~ $name ~ '(';
                 }
                 take $name;
-                take ')' x $param.named_names.elems;
+                take ')' x +@names;
 
                 # Optionality.
                 if $param.optional && !$param.named && !$param.default   { take '?' }
@@ -60,6 +86,11 @@ augment class Signature {
                 my $cons_perl = $param.constraints.perl;
                 if $cons_perl ne 'Bool::True' {
                     take ' where ' ~ $cons_perl;
+                }
+                
+                # Any sub-signature?
+                if $param.signature {
+                    take ' ' ~ substr($param.signature.perl, 1);
                 }
 
                 # Default.

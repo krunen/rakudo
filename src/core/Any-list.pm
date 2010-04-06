@@ -28,7 +28,7 @@ augment class Any {
         fail('No values matched');
     }
 
-    our multi method grep($test) {
+    our multi method grep(Mu $test) {
         gather {
             for @.list {
                 take $_ if $_ ~~ $test;
@@ -120,7 +120,7 @@ augment class Any {
     }
 
     multi method reduce(Code $expression is rw) {
-        my $arity = $expression.count;
+        my $arity = $expression.?count || 2; # second half is a CHEAT
         fail('Cannot reduce() using a unary or nullary function.')
             if $arity < 2;
         fail('Can only reduce() using a binary function for now.')
@@ -185,21 +185,26 @@ augment class Any {
             take $value;
         }
     }
+
+    multi method pairs() {
+        self.kv.map(-> $key, $value { $key => $value; });
+    }
 }
 
-our proto sub join (Str $separator = '', *@values) { @values.join($separator); }
-our proto sub reverse(@values) { @values.reverse; }
-our multi sub reverse(*@v) { @v.reverse; }
-our proto sub end(@array) { @array.end; }
-our proto sub grep($test, @values) { @values.grep($test); }
-our proto sub first($test, @values) { @values.first($test); }
-our proto sub min($by, *@values) { @values.min($by); }
-our proto sub max($by, *@values) { @values.max($by); }
-our proto sub uniq(@values) { @values.uniq; }
-our proto sub pick ($num, :$replace, *@values) { @values.pick($num, :$replace); }
-our proto sub map(&mapper, @values) { @values.map(&mapper); }
-our proto sub kv(@array) { @array.kv; }
-our proto sub keys(@array) { @array.keys; }
-our proto sub values(@array) { @array.values; }
+proto sub join (Str $separator = '', *@values) { @values.join($separator); }
+proto sub reverse(@values) { @values.reverse; }
+multi sub reverse(*@v) { @v.reverse; }
+proto sub end(@array) { @array.end; }
+proto sub grep(Mu $test, @values) { @values.grep($test); }
+proto sub first($test, @values) { @values.first($test); }
+proto sub min($by, *@values) { @values.min($by); }
+proto sub max($by, *@values) { @values.max($by); }
+proto sub uniq(@values) { @values.uniq; }
+proto sub pick ($num, :$replace, *@values) { @values.pick($num, :$replace); }
+proto sub map(&mapper, @values) { @values.map(&mapper); }
+proto sub kv(@array) { @array.kv; }
+proto sub keys(@array) { @array.keys; }
+proto sub values(@array) { @array.values; }
+proto sub pairs(@array) { @array.pairs; }
 
 # vim: ft=perl6

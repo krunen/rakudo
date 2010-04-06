@@ -1,0 +1,68 @@
+Announce: Rakudo Perl 6 development release #27 ("Copenhagen")
+
+On behalf of the Rakudo development team, I'm pleased to announce the
+March 2010 development release of Rakudo Perl #27 "Copenhagen".
+Rakudo is an implementation of Perl 6 on the Parrot Virtual Machine
+(see http://www.parrot.org).  The tarball for the March 2010 release
+is available from http://github.com/rakudo/rakudo/downloads .
+
+Rakudo Perl follows a monthly release cycle, with each release named
+after a Perl Mongers group.  The March 2010 release is code named
+"Copenhagen" for Copenhagen.pm, hosts of the Perl 6 Copenhagen 
+Hackathon [1], which took place in connection with the Open Source Days
+Conference. The main goal of the hackathon was to raise some awareness
+around Perl 6, and to give everyone a chance to get their hands-on with
+Perl 6.
+
+The Copenhagen hackathon helped nail down a number of issues regarding
+module loading. During these days we also saw a heightened activity on
+the channel, in the Perl 6 and Rakudo repositories, and in the number of
+passing tests. All this was contributed by people both on location and
+elsewhere. The RT queue peaked at 725 new/open tickets, and then started
+on a downward trend. Apart from the great steps forward in productivity,
+it was the first time some of the core Perl 6 contributors had a chance
+to meet.
+
+Some of the specific changes and improvements occuring with this
+release include:
+
+*  Numerous updates to trigonometric functions and the Rat class
+
+*  Basic s/// and s[...] = '...' implemented
+
+*  use improved and need/import implemented, with some basic support
+   for versioned modules and lexical importation
+
+*  Grammars work again and now include support for regexes taking
+   parameters and proto-regexes
+
+*  Series operator now has basic support for the current Spec.
+
+*  User defined operators working again
+
+*  Support, though with caveats, for !, R, X and Z meta-operators
+
+*  Performance improvements for invocation and hash creation
+
+*  Various parsing bugs fixed
+
+*  Variables initialized to Any by default now, not Mu
+
+*  ROADMAP updates
+
+For a more detailed list of changes see "docs/ChangeLog".
+
+The development team thanks all of our contributors and sponsors for
+making Rakudo Perl possible.  If you would like to contribute,
+see http://rakudo.org/how-to-help , ask on the perl6-compiler@perl.org
+mailing list, or ask on IRC #perl6 on freenode.
+
+The next release of Rakudo (#28) is scheduled for April 22, 2010.
+A list of the other planned release dates and codenames for 2010 is
+available in the "docs/release_guide.pod" file.  In general, Rakudo
+development releases are scheduled to occur two days after each
+Parrot monthly release.  Parrot releases the third Tuesday of each month.
+
+Have fun!
+
+[1] http://conferences.yapceurope.org/hack2010dk/

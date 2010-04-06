@@ -1,13 +1,48 @@
 augment class Array {
-   method perl() {
+    method perl() {
         # XXX: $_.perl and .perl don't work, but this does...
         '[' ~ self.map({ $^a.perl }).join(', ') ~ ']';
     }
- 
+
+    our Bool multi method exists(Int *@indices) {
+        if !@indices.elems || (any(@indices) < 0 || any(@indices) > self.end) {
+            return False;
+        }
+        [?&] map { self.values[$^a] !~~ Proxy }, @indices;
+    }
+
+    our multi method postcircumfix:<[ ]> (Int $i) {
+        if $i < 0 { die "Cannot use negative index on arrays" }
+        #XXX: .exists calls postcircumfix<[ ]>, so can't perl6ify this for now...
+        return Q:PIR{
+            .local pmc self, i, values
+            self = find_lex 'self'
+            i = find_lex '$i'
+            $I0 = i
+            inc $I0
+            values = self.'!fill'($I0)
+            %r = values[i]
+            unless null %r goto have_elem
+            %r = new ['Proxy']
+            setattribute %r, '$!base', values
+            setattribute %r, '$!key', i
+          have_elem:
+            $P0 = get_hll_global ['Bool'], 'True'
+            setprop %r, 'rw', $P0
+        }
+    }
+
+    our multi method postcircumfix:<[ ]>(Block $b) {
+        return self.[$b.(self.elems)]
+    }
+
+    our multi method postcircumfix:<[ ]>(Whatever) {
+        return self.values
+    }
 
     our method push(*@values) is export {
         self!fill;
-        pir::splice__0PPii( @!items, [@values].iterator.eager, 
+        pir::splice__0PPii( @!items, [@values].iterator.eager,
                             pir::elements(@!items), 0);
         self;
     }
@@ -62,5 +97,5 @@ augment class Array {
     }
 }
 
-our proto sub pop(@array) { @array.pop; }
-our proto sub shift(@array) { @array.shift; }
+proto sub pop(@array) { @array.pop; }
+proto sub shift(@array) { @array.shift; }

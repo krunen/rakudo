@@ -55,6 +55,8 @@ calls on it.
     addattribute $P0, '$!hidden'
     addattribute $P0, '$!composees'
     addattribute $P0, '$!done'
+    addattribute $P0, '$!ver'
+    addattribute $P0, '$!auth'
 
     # Create proto-object for it.
     classhowproto = p6meta.'register'($P0)
@@ -122,6 +124,18 @@ Creates a new instance of the meta-class and returns it in an associated
     setattribute how, 'shortname', $P0
     setattribute how, 'longname', $P0
   no_alt_name:
+  
+    # If we have ver and auth, store them.
+    $P0 = options['ver']
+    unless null $P0 goto have_ver
+    $P0 = get_hll_global 'Any'
+  have_ver:
+    setattribute how, '$!ver', $P0
+    $P0 = options['auth']
+    unless null $P0 goto have_auth
+    $P0 = get_hll_global 'Any'
+  have_auth:
+    setattribute how, '$!auth', $P0
 
     # Finally, wrap it up in a ClassToBe instance.
     $P0 = new ['ClassToBe']
@@ -273,15 +287,15 @@ Completes the creation of the metaclass and return a proto-object.
     .local pmc parrotclass
     parrotclass = getattribute self, 'parrotclass'
 
+    # Compose any composables.
+    'compose_composables'(self, obj)
+
     # Haz we already a proto-object? If so, we're done, so just hand
     # it back.
     $P0 = getattribute self, 'protoobject'
     if null $P0 goto no_its_new
     .return ($P0)
   no_its_new:
-
-    # Compose any composables.
-    'compose_composables'(self, obj)
 
     # Iterate over the attributes and compose them.
     .local pmc attr_it, attributes
@@ -319,6 +333,28 @@ Completes the creation of the metaclass and return a proto-object.
     transform_to_p6opaque proto
     setprop proto, 'scalar', proto
     .return (proto)
+.end
+
+
+=item ver(object)
+
+=cut
+
+.sub 'ver' :method
+    .param pmc obj
+    $P0 = getattribute self, '$!ver'
+    .return ($P0)
+.end
+
+
+=item auth(object)
+
+=cut
+
+.sub 'auth' :method
+    .param pmc obj
+    $P0 = getattribute self, '$!auth'
+    .return ($P0)
 .end
 
 
@@ -802,6 +838,7 @@ correct protocol.
     # all want the same composer.
     .local pmc composees, chosen_applier, composee_it, done
     composees = getattribute meta, '$!composees'
+    if null composees goto composition_done
     $I0 = elements composees
     if $I0 == 0 goto composition_done
     if $I0 == 1 goto one_composee

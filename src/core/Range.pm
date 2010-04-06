@@ -8,7 +8,7 @@ class Range is Iterable {
                      $max,
                      Bool :$excludes_min = Bool::False,
                      Bool :$excludes_max = Bool::False) {
-        self.bless(*, :min($min), 
+        self.bless(*, :min($min),
                       :max($max),
                       :excludes_min($excludes_min),
                       :excludes_max($excludes_max));
@@ -61,6 +61,10 @@ class Range is Iterable {
         my $max = $.max ~~ ::Whatever ?? "*" !! $.max.perl;
         my $emax = $.excludes_max ?? "^" !! "";
         $min ~ $emin ~ ".." ~ $emax ~ $max;
+    }
+
+    multi method fmt($format = '%s', $seperator = ' ') {
+        self.map({ .fmt($format)}).join($seperator);
     }
 }
 

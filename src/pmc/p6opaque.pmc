@@ -46,6 +46,7 @@ static STRING *hides_str;
 static STRING *HOW_str;
 static STRING *invoke_str;
 static STRING *isa_str;
+static STRING *item_str;
 static STRING *Junction_str;
 static STRING *MAKE_WHATEVER_CLOSURE_str;
 static STRING *match_against_str;
@@ -85,7 +86,6 @@ static PMC *do_handles(PARROT_INTERP, PMC *cur_class, PMC *handlers, STRING *nam
     PMC      * ctx               = CURRENT_CONTEXT(interp);
     PMC      * const saved_ccont = interp->current_cont;
     PMC      * const saved_sig   = Parrot_pcc_get_signature(interp, ctx);
-    PMC      * const saved_rs    = Parrot_pcc_get_results_signature(interp, ctx);
 
     /* Iterate over the handlers. */
     PMC    *iter       = VTABLE_get_iter(interp, handlers);
@@ -139,7 +139,6 @@ static PMC *do_handles(PARROT_INTERP, PMC *cur_class, PMC *handlers, STRING *nam
     CURRENT_CONTEXT(interp) = ctx;
     interp->current_cont = saved_ccont;
     Parrot_pcc_set_signature(interp, ctx, saved_sig);
-    Parrot_pcc_set_results_signature(interp, ctx, saved_rs);
 
     /* Did we find anything? */
     if (attr) {
@@ -287,6 +286,7 @@ pmclass P6opaque extends Object need_ext dynpmc group perl6_group {
         HOW_str                      = CONST_STRING(interp, "HOW");
         invoke_str                   = CONST_STRING(interp, "invoke");
         isa_str                      = CONST_STRING(interp, "isa");
+        item_str                     = CONST_STRING(interp, "item");
         Junction_str                 = CONST_STRING(interp, "Junction");
         MAKE_WHATEVER_CLOSURE_str    = CONST_STRING(interp, "!MAKE_WHATEVER_CLOSURE");
         match_against_str            = CONST_STRING(interp, "match_against");
@@ -399,6 +399,7 @@ back some kind of iterator to let us get all of the possible candidates.
                 !Parrot_str_equal(interp, name, HOW_str) &&
                 !Parrot_str_equal(interp, name, ACCEPTS_str) &&
                 !Parrot_str_equal(interp, name, isa_str) &&
+                !Parrot_str_equal(interp, name, item_str) &&
                 !Parrot_str_equal(interp, name, Scalar_str) &&
                 !Parrot_str_equal(interp, name, defined_str) &&
                 !Parrot_str_equal(interp, name, FETCH_str)) {
@@ -500,7 +501,7 @@ Gets an attribute from the instance storage.
          * never be accessing state. */
         if (VTABLE_isa(interp, SELF, P6protoobject_str))
             Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
-                    "Type objects do not have state, but you tried to access attribute %Ss",
+                    "Type objects are abstract and have no attributes, but you tried to access %s",
                     name);
 
         /* Otherwise, for now we'll just allow the Null PMC Access to happen (yes sucks

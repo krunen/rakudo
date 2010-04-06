@@ -11,6 +11,12 @@ our multi infix:<~~>(Mu $topic, Regex $matcher) {
     };
 }
 
+class Substitution { ... }
+our multi infix:<~~>(Mu $topic is rw, Substitution $matcher) {
+    $matcher.ACCEPTS($topic)
+}
+
+
 our multi infix:<!~~>(Mu $topic, Mu $matcher) {
     $matcher.REJECTS($topic)
 }
@@ -163,7 +169,23 @@ our multi infix:<==>($a, $b) {
 }
 
 our multi infix:<!=>($a, $b) {
-    pir::isne__INN(+$a, +$b) ?? True !! False
+    $a !== $b
+}
+
+our multi infix:«<»($a, $b) {
+    pir::islt__INN(+$a, +$b) ?? True !! False
+}
+
+our multi infix:«<=»($a, $b) {
+    pir::isle__INN(+$a, +$b) ?? True !! False
+}
+
+our multi infix:«>»($a, $b) {
+    pir::isgt__INN(+$a, +$b) ?? True !! False
+}
+
+our multi infix:«>=»($a, $b) {
+    pir::isge__INN(+$a, +$b) ?? True !! False
 }
 
 our multi infix:<eq>($a, $b) {
@@ -171,7 +193,23 @@ our multi infix:<eq>($a, $b) {
 }
 
 our multi infix:<ne>($a, $b) {
-    pir::isne__ISS(~$a, ~$b) ?? True !! False
+    $a !eq $b
+}
+
+our multi infix:<lt>($a, $b) {
+    pir::islt__ISS(~$a, ~$b) ?? True !! False
+}
+
+our multi infix:<le>($a, $b) {
+    pir::isle__ISS(~$a, ~$b) ?? True !! False
+}
+
+our multi infix:<gt>($a, $b) {
+    pir::isgt__ISS(~$a, ~$b) ?? True !! False
+}
+
+our multi infix:<ge>($a, $b) {
+    pir::isge__ISS(~$a, ~$b) ?? True !! False
 }
 
 # XXX Lazy version would be nice in the future too.
@@ -186,7 +224,7 @@ our multi infix:<xx>(Mu \$item, $n) {
 our multi prefix:<|>(@a) { @a.Capture }
 our multi prefix:<|>(%h) { %h.Capture }
 our multi prefix:<|>(Capture $c) { $c }
-our multi prefix:<|>(Mu $fail) { die 'Cannot use prefix:<|> with a ' ~ $fail.WHAT; }
+our multi prefix:<|>(Mu $anything) { Capture.new($anything) }
 
 our multi infix:<:=>(Mu $a, Mu $b) {
     die ":= binding of variables not yet implemented";
@@ -203,6 +241,16 @@ our multi infix:<:=>(Signature $s, Mu \$val) {
 # XXX Wants to be a macro when we have them.
 our sub WHAT(\$x) {
     $x.WHAT
+}
+
+our multi sub item(*@values) {
+    @values.Seq
+}
+our multi sub item(@values) {
+    @values.Seq
+}
+our multi sub item($item) {
+    $item
 }
 
 class Whatever { ... }
@@ -245,40 +293,123 @@ our multi sub infix:<...>($lhs, $rhs) {
     }
 }
 
-our multi sub infix:<...>($lhs, Code $rhs) {
-    if $rhs.count != 1 {
-        die "Series operator currently cannot handle blocks with count != 1";
-    }
+# our multi sub infix:<...>($lhs, Code $rhs) {
+#     if $rhs.count != 1 {
+#         die "Series operator currently cannot handle blocks with count != 1";
+#     }
+#
+#     my $i = $lhs;
+#     gather {
+#         my $j = $i;
+#         take $j;
+#         my $last = $i;
+#         loop {
+#             $i = $rhs.($last);
+#             my $j = $i;
+#             take $j;
+#             $last = $i;
+#         }
+#     }
+# }
+#
+# our multi sub infix:<...>(@lhs, Whatever) {
+#     given @lhs.elems {
+#         when 2 {
+#             @lhs[0] ... { $_ + (@lhs[1] - @lhs[0]) };
+#         }
+#         when 3 {
+#             if @lhs[1] - @lhs[0] == @lhs[2] - @lhs[1] {
+#                 @lhs[0] ... { $_ + (@lhs[1] - @lhs[0]) };
+#             } elsif @lhs[1] / @lhs[0] == @lhs[2] / @lhs[1] {
+#                 @lhs[0] ... { $_ * (@lhs[1] / @lhs[0]) };
+#             } else {
+#                 fail "Unable to figure out pattern of series";
+#             }
+#         }
+#         default { fail "Unable to figure out pattern of series"; }
+#     }
+# }
 
-    my $i = $lhs;
+our multi sub infix:<...>(Code $lhs, $rhs) {
+    my $limit;
+    $limit = $rhs if !($rhs ~~ Whatever);
+    my $last;
     gather {
-        my $j = $i;
-        take $j;
-        my $last = $i;
         loop {
-            $i = $rhs.($last);
+            my $i = $lhs.();
             my $j = $i;
+            last if $limit.defined && $last.defined && !($j eqv $limit)
+                 && ($last before $limit before $j || $j before $limit before $last);
             take $j;
-            $last = $i;
+            last if $limit.defined && $j eqv $limit;
+            $last = $j;
         }
     }
 }
 
-our multi sub infix:<...>(@lhs, Whatever) {
-    given @lhs.elems {
-        when 2 {
-            @lhs[0] ... { $_ + (@lhs[1] - @lhs[0]) };
+our multi sub infix:<...>(@lhs is copy, $rhs) {
+    my $limit;
+    $limit = $rhs if !($rhs ~~ Whatever);
+
+    my $next;
+    if @lhs[@lhs.elems - 1] ~~ Code {
+        $next = @lhs.pop;
+    } else {
+        given @lhs.elems {
+            when 1 {
+                if @lhs[0] cmp $rhs == 1 {
+                    $next = { .prec };
+                } else {
+                    $next = { .succ };
+                }
+            }
+            when 2 {
+                $next = { $_ + (@lhs[1] - @lhs[0]) };
+            }
+            when 3 {
+                if @lhs[1] - @lhs[0] == @lhs[2] - @lhs[1] {
+                    $next = { $_ + (@lhs[1] - @lhs[0]) };
+                } elsif @lhs[1] / @lhs[0] == @lhs[2] / @lhs[1] {
+                    $next = { $_ * (@lhs[1] / @lhs[0]) };
+                } else {
+                    fail "Unable to figure out pattern of series";
+                }
+            }
+            default { fail "Unable to figure out pattern of series"; }
         }
-        when 3 {
-            if @lhs[1] - @lhs[0] == @lhs[2] - @lhs[1] {
-                @lhs[0] ... { $_ + (@lhs[1] - @lhs[0]) };
-            } elsif @lhs[1] / @lhs[0] == @lhs[2] / @lhs[1] {
-                @lhs[0] ... { $_ * (@lhs[1] / @lhs[0]) };
-            } else {
-                fail "Unable to figure out pattern of series";
+    }
+
+    my $arity = any( $next.signature.params>>.slurpy ) ?? Inf !! $next.count;
+
+    gather {
+        my @args;
+        my $j;
+        my $top = $arity min @lhs.elems;
+        for 0..^$top -> $i {
+            $j = @lhs[$i];
+            take $j;
+            @args.push($j);
+        }
+
+        if !$limit.defined || $limit cmp $j != 0 {
+            loop {
+                my $i = $next.(|@args);
+                my $j = $i;
+
+                my $cur_cmp = 1;
+                if $limit.defined {
+                    $cur_cmp = $limit cmp $j;
+                    last if (@args[@args.elems - 1] cmp $limit) == $cur_cmp;
+                }
+                take $j;
+                last if $cur_cmp == 0;
+
+                @args.push($j);
+                while @args.elems > $arity {
+                    @args.shift;
+                }
             }
         }
-        default { fail "Unable to figure out pattern of series"; }
     }
 }
 
@@ -329,6 +460,52 @@ our multi sub infix:<Z>(Iterable $a-iterable, Iterable $b-iterable) {
     }
 }
 
-multi sub infix_prefix_meta_operator:<!>($a, $b, $c) {
-    !(pir::get_hll_global__CS($a)($b, $c));
+our multi sub infix:<Z>($a, $b) { &infix:<Z>($a.list, $b.list) }
+
+our multi sub infix:<X>(Iterable $a-iterable, Iterable $b-iterable) {
+    my $ai = $a-iterable.iterator;
+    my @b = $b-iterable.Seq;
+    gather loop {
+        my $a = $ai.get;
+        last if ($a ~~ EMPTY);
+        for @b -> $b {
+            take ($a, $b);
+        }
+    }
+}
+
+our multi sub infix:<X>($a, $b) { &infix:<X>($a.list, $b.list) }
+
+# if we want &infix:<||> accessible (for example for meta operators), we need
+# to define it, because the normal || is short-circuit and special cased by
+# the grammar. Same goes for 'or'
+
+our multi sub infix:<||>(Mu $a, Mu $b) { $a || $b }
+our multi sub infix:<or>(Mu $a, Mu $b) { $a or $b }
+
+# Eliminate use of this one, but keep the pir around for
+# the moment, as it may come in handy elsewhere.
+#
+# multi sub infix_prefix_meta_operator:<!>($a, $b, $c) {
+#     !(pir::get_hll_global__CS($a)($b, $c));
+# }
+
+# CHEAT: These should be automatically generated by the grammar,
+# I think.  But this is a quick fix to get some basic functionality
+# working.
+
+our multi sub infix:<+>(Whatever, $rhs) {
+    -> $a { $a + $rhs; };
+}
+
+our multi sub infix:<+>($lhs, Whatever) {
+    -> $a { $lhs + $a; };
+}
+
+our multi sub infix:<+>(Whatever, Whatever) {
+    -> $a, $b { $a + $b; };
+}
+
+our multi sub infix:<->(Whatever, $rhs) {
+    -> $a { $a - $rhs; };
 }

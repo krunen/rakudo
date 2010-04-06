@@ -18,15 +18,6 @@ Int - Perl 6 integers
     intproto = p6meta.'new_class'('Int', 'parent'=>'parrot;Integer Any')
 .end
 
-=item ACCEPTS()
-
-=cut
-
-.sub 'ACCEPTS' :method
-    .param num topic
-    .tailcall '&infix:<==>'(topic, self)
-.end
-
 =item perl()
 
 Returns a Perl representation of the Int.
@@ -69,7 +60,20 @@ Returns the identify value.
     .return ($I0)
 .end
 
+=item Str()
+
+Coercion to Str
+
+=cut
+
+.sub 'Str' :method
+    $S0 = self
+    $P0 = box $S0
+    .return ($P0)
+.end
+
 =back
+
 
 =head2 Operators
 
