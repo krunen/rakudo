@@ -12,23 +12,32 @@ augment class Any {
     }
 
     our Int multi method ceiling() is export {
-        pir::box__PI(pir::ceil__IN(self))
+        self.Num.ceiling;
+    }
+
+    our Int multi method floor() is export {
+        self.Num.floor;
+    }
+
+    our Int multi method truncate() is export {
+        self.Num.truncate;
+    }
+
+    our Int multi method round() is export {
+        self.Num.round;
     }
 
     our Str multi method chr() {
         ~(pir::chr__SI(self))
     }
 
+    # TODO: Probably should be little or no mention of .Num in Any
+    our ::Complex multi method unpolar($angle) {
+        self.Num.unpolar($angle);
+    }
+
     multi method cis() {
-        1.unpolar(self)
-    }
-
-    our Int multi method floor() is export {
-        pir::box__PI(pir::floor__IN(self))
-    }
-
-    our Int multi method truncate() is export {
-        self == 0 ?? 0 !! self < 0  ?? self.ceiling !! self.floor
+        self.Num.cis
     }
 
     our Num method rand() {
@@ -39,25 +48,8 @@ augment class Any {
         $.Complex.roots($n);
     }
 
-    our Int multi method round() is export {
-        (self + 0.5).Num.floor;
-    }
-
     multi method sqrt() {
         self.Num.sqrt;
-    }
-
-    INIT {
-        our @trig-base-conversions = (1.0, pi / 180.0, pi / 200.0, 2.0 * pi);
-    }
-
-    # Used by the :Trig subs and methods in the Int and Num classes.
-    our multi method !to-radians($base) {
-        self * pir::get_global__Ps('@trig-base-conversions')[$base];
-    }
-
-    our multi method !from-radians($base) {
-        self / pir::get_global__Ps('@trig-base-conversions')[$base];
     }
 
     multi method log($base = e) {
@@ -167,10 +159,6 @@ augment class Any {
     our Num multi method acotanh($base = Radians) {
         self.Num.acotanh($base);
     }
-
-    our ::Complex multi method unpolar($angle) {
-        Complex.new(self.Num * $angle.cos("radians"), self.Num * $angle.sin("radians"));
-    }
 }
 
 proto sub abs($x) { $x.abs }
@@ -181,6 +169,10 @@ proto sub log($x, $base = e) { $x.log($base) }
 proto sub log10($x) { $x.log10 }
 proto sub cis($angle) { $angle.cis; }
 proto sub unpolar($mag, $angle) { $mag.unpolar($angle); }
+proto sub ceiling($x) { $x.ceiling; }
+proto sub floor($x) { $x.floor; }
+proto sub truncate($x) { $x.truncate; }
+proto sub round($x, $scale = 1) { $x.round($scale); }
 
 # jnthn says that we should have both the multi sub declaration and the proto.
 
