@@ -45,6 +45,7 @@ method comp_unit($/, $key?) {
     # If this is the start of the unit, add an outer module.
     if $key eq 'open' {
         @PACKAGE.unshift(Perl6::Compiler::Module.new());
+        @PACKAGE[0].block(@BLOCK[0]);
         return 1;
     }
     
@@ -241,9 +242,6 @@ method newpad($/) {
         )
     ));
     @BLOCK.unshift($new_block);
-    unless @PACKAGE[0].block {
-        @PACKAGE[0].block($new_block);
-    }
 }
 
 method outerlex($/) {
@@ -499,7 +497,11 @@ method statement_prefix:sym<BEGIN>($/) {
     our %BEGINDONE;
     our $?RAKUDO_HLL;
     my $past := $<blorst>.ast;
-    $past.hll($?RAKUDO_HLL);
+    $past.blocktype('declaration');
+    $past := PAST::Block.new(
+        :hll($?RAKUDO_HLL),
+        PAST::Op.new( :pasttype('call'), :name('!YOU_ARE_HERE'), $past )
+    );
     my $compiled := PAST::Compiler.compile($past);
     my $begin_id := $past.unique('BEGINDONE_');
     %BEGINDONE{$begin_id} := $compiled();
@@ -618,7 +620,7 @@ method module_name($/) {
     my $var := PAST::Var.new(
         :name(@name.pop),
         :namespace(@name),
-        :scope('package')
+        :scope(is_lexical(~$<longname>) ?? 'lexical' !! 'package')
     );
     if $<arglist> {
         my $past := $<arglist>[0].ast;
@@ -681,6 +683,9 @@ method variable($/) {
     elsif $<postcircumfix> {
         $past := $<postcircumfix>.ast;
         $past.unshift( PAST::Var.new( :name('$/') ) );
+    }
+    elsif $<infixish> {
+        $past := PAST::Op.new( :pirop('find_sub_not_null__Ps'), '&infix:<' ~ $<infixish>.Str ~ '>' );
     }
     else {
         $past := make_variable($/, ~$/);
@@ -773,7 +778,7 @@ method package_def($/, $key?) {
         if $<def_module_name> {
             my $name := ~$<def_module_name>[0]<longname><name>;
             if $name ne '::' {
-                $/.CURSOR.add_name($name);
+                $/.CURSOR.add_name($name, 1);
                 $package.name($name);
             }
             if $<def_module_name>[0]<signature> {
@@ -792,6 +797,9 @@ method package_def($/, $key?) {
             $package.traits.push($_.ast);
         }
 
+        # Claim currently open block as the package's block.
+        $package.block(@BLOCK[0]);
+
         # Put on front of packages list. Note - nesting a package in a role is
         # not supported (gets really tricky in the parametric case - needs more
         # thought and consideration).
@@ -803,7 +811,7 @@ method package_def($/, $key?) {
     else {
         # We just need to finish up the current package.
         my $package := @PACKAGE.shift;
-        if pir::substr__SSII($<block><blockoid><statementlist><statement>[0], 0, 3) eq '...' {
+        if pir::substr__SSII($<blockoid><statementlist><statement>[0], 0, 3) eq '...' {
             # Just a stub, so don't do any more work.
             if $*SCOPE eq 'our' || $*SCOPE eq '' {
                 %Perl6::Grammar::STUBCOMPILINGPACKAGES{~$<def_module_name>[0]<longname>} := 1;
@@ -813,8 +821,8 @@ method package_def($/, $key?) {
         }
         else {
             my $block;
-            if $<block> {
-                $block := $<block>.ast;
+            if $<blockoid> {
+                $block := $<blockoid>.ast;
             }
             else {
                 $block := @BLOCK.shift;
@@ -829,6 +837,7 @@ method package_def($/, $key?) {
 method scope_declarator:sym<my>($/)      { make $<scoped>.ast; }
 method scope_declarator:sym<our>($/)     { make $<scoped>.ast; }
 method scope_declarator:sym<has>($/)     { make $<scoped>.ast; }
+method scope_declarator:sym<anon>($/)    { make $<scoped>.ast; }
 method scope_declarator:sym<augment>($/) { make $<scoped>.ast; }
 
 method declarator($/) {
@@ -1033,10 +1042,12 @@ method routine_def($/) {
                     $past
                 );
                 $symbol_holder.symbol($name, :multis($past));
-                $past := PAST::Op.new(
-                    :pasttype('callmethod'), :name('incorporate_candidates'),
-                    $past, PAST::Op.new( :pirop('find_lex_skip_current PS'), $name )
-                );
+                if $*SCOPE ne 'our' {
+                    $past := PAST::Op.new(
+                        :pasttype('callmethod'), :name('incorporate_candidates'),
+                        $past, PAST::Op.new( :pirop('find_lex_skip_current PS'), $name )
+                    );
+                }
             }
             $multi_flag.value($*MULTINESS eq 'proto' ?? 2 !! 1);
         }
@@ -1337,13 +1348,44 @@ method regex_def($/, $key?) {
 }
 
 method type_declarator:sym<enum>($/) {
-    my $values := $<circumfix>.ast;
-
-    make PAST::Op.new(
+    my $value_ast := PAST::Op.new(
         :pasttype('call'),
         :name('!create_anon_enum'),
-        $values
+        $<circumfix>.ast
     );
+    if $<name> {
+        # Named; need to compile and run the AST right away.
+        our $?RAKUDO_HLL;
+        my $compiled := PAST::Compiler.compile(PAST::Block.new(
+            :hll($?RAKUDO_HLL), $value_ast
+        ));
+        my $result := (pir::find_sub_not_null__ps('!YOU_ARE_HERE'))($compiled);
+        
+        # Only support our-scoped so far.
+        unless $*SCOPE eq '' || $*SCOPE eq 'our' {
+            $/.CURSOR.panic("Do not yet support $*SCOPE scoped enums");
+        }
+        
+        # Install names.
+        $/.CURSOR.add_name(~$<name>[0]);
+        for $result {
+            $/.CURSOR.add_name(~$_.key);
+        }
+        
+        # Emit code to set up named enum.
+        @PACKAGE[0].block.loadinit.push(PAST::Op.new(
+            :pasttype('call'),
+            :name('!setup_named_enum'),
+            ~$<name>[0],
+            $value_ast
+        ));
+        my @name := Perl6::Grammar::parse_name(~$<name>[0]);
+        make PAST::Var.new( :name(@name.pop), :namespace(@name), :scope('package') );
+    }
+    else {
+        # Anonymous, so we're done.
+        make $value_ast;
+    }
 }
 
 method type_declarator:sym<subset>($/) {
@@ -1584,7 +1626,7 @@ method trait_mod:sym<is>($/) {
         # the parameter.
         my @name := Perl6::Grammar::parse_name(~$<longname>);
         $trait.unshift(PAST::Var.new(
-            :scope('package'),
+            :scope(is_lexical(~$<longname>) ?? 'lexical' !! 'package'),
             :name(@name.pop()),
             :namespace(@name)
         ));
@@ -2178,18 +2220,38 @@ method postfixish($/) {
 }
 
 method postcircumfix:sym<[ ]>($/) {
-    make PAST::Op.new( $<EXPR>.ast, :name('!postcircumfix:<[ ]>'),
-                       :pasttype('call'), :node($/) );
+    my $past := PAST::Op.new( :name('!postcircumfix:<[ ]>'), :pasttype('call'), :node($/) );
+    if $<semilist><statement> { $past.push($<semilist>.ast); }
+    make $past;
 }
 
 method postcircumfix:sym<{ }>($/) {
-    make PAST::Op.new( $<EXPR>.ast, :name('!postcircumfix:<{ }>'),
-                       :pasttype('call'), :node($/) );
+    my $past := PAST::Op.new( :name('!postcircumfix:<{ }>'), :pasttype('call'), :node($/) );
+    if $<semilist><statement> {
+        if +$<semilist><statement> > 1 {
+            $/.CURSOR.panic("Sorry, multi-dimensional indexes are not yet supported");
+        }
+        my $slast := $<semilist>.ast;
+        if $slast[0].isa(PAST::Op) && $slast[0].name eq '&infix:<,>' {
+            for @($slast[0]) { $past.push($_); }
+        }
+        else {
+            $past.push($slast);
+        }
+    }
+    make $past;
 }
 
 method postcircumfix:sym<ang>($/) {
-    make PAST::Op.new( $<quote_EXPR>.ast, :name('!postcircumfix:<{ }>'),
-                       :pasttype('call'), :node($/) );
+    my $past := PAST::Op.new( :name('!postcircumfix:<{ }>'), :pasttype('call'), :node($/) );
+    my $quoted := $<quote_EXPR>.ast;
+    if $quoted.isa(PAST::Stmts) && $quoted[0].isa(PAST::Op) && $quoted[0].name() eq '&infix:<,>' {
+        for @($quoted[0]) { $past.push($_); }
+    }
+    else {
+        $past.push($quoted);
+    }
+    make $past;
 }
 
 method postcircumfix:sym<( )>($/) {
@@ -2426,7 +2488,7 @@ method quote_escape:sym<{ }>($/) {
 # and use &infix:<,> to build the parcel
 method quote_EXPR($/) {
     my $past := $<quote_delimited>.ast;
-    if HLL::Grammar::quotemod_check($/, 'w') {
+    if $/.CURSOR.quotemod_check('w') {
         if !$past.isa(PAST::Val) {
             $/.CURSOR.panic("Can't form :w list from non-constant strings (yet)");
         }
@@ -2522,7 +2584,7 @@ class Perl6::RegexActions is Regex::P6Regex::Actions {
     }
 }
 
-# Takes a block and adds a signature ot it, as well as code to bind the call
+# Takes a block and adds a signature to it, as well as code to bind the call
 # capture against the signature. Returns the name of the signature setup block.
 sub add_signature($block, $sig_obj, $lazy) {
     # Set arity.
@@ -2543,16 +2605,22 @@ sub add_signature($block, $sig_obj, $lazy) {
     ));
 
     # If lazy, make and push signature setup block.
+    $block<signature_ast> := $sig_obj.ast(1);
     if $lazy {
-        my $sig_setup_block :=
-            PAST::Block.new( :blocktype<declaration>, $sig_obj.ast(1) );
-        $block[0].push($sig_setup_block);
-        PAST::Val.new(:value($sig_setup_block));
+        make_lazy_sig_block($block)
     }
     else {
-        $block.loadinit.push($sig_obj.ast(1));
+        $block.loadinit.push($block<signature_ast>);
         $block.loadinit.push(PAST::Op.new( :inline('    setprop block, "$!signature", signature') ));
     }
+}
+
+# Makes a lazy signature building block.
+sub make_lazy_sig_block($block) {
+    my $sig_setup_block :=
+            PAST::Block.new( :blocktype<declaration>, $block<signature_ast> );
+    $block[0].push($sig_setup_block);
+    PAST::Val.new(:value($sig_setup_block));
 }
 
 # Adds a placeholder parameter to this block's signature.
@@ -2595,10 +2663,11 @@ sub create_code_object($block, $type, $multiness, $lazy_init) {
         :name('new'),
         PAST::Var.new( :name(@name.pop), :namespace(@name), :scope('package') ),
         $block,
-        $multiness,
-        $lazy_init
+        $multiness
     );
+    if $lazy_init { $past.push($lazy_init) }
     $past<past_block> := $block;
+    $past<block_class> := $type;
     $past
 }
 
@@ -2891,8 +2960,9 @@ sub prevent_null_return($block) {
 # one. Used by things doing where clause-ish things.
 sub where_blockify($expr) {
     my $past;
-    if $expr.isa(PAST::Block) {
-        $past := $expr;
+    if $expr<past_block> && $expr<block_class> eq 'Block' {
+        my $lazy_name := make_lazy_sig_block($expr<past_block>);
+        $past := create_code_object($expr<past_block>, 'Block', 0, $lazy_name);
     }
     else {
         $past := PAST::Block.new( :blocktype('declaration'),

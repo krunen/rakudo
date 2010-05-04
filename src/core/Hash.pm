@@ -1,5 +1,5 @@
 role Hash is EnumMap {
-    method postcircumfix:<{ }>($key) {
+    multi method postcircumfix:<{ }>($key) {
         Q:PIR {
             .local pmc self
             self = find_lex 'self'
@@ -101,4 +101,13 @@ role Hash is EnumMap {
             self.{$key} = $value;
         }
     }
+
+    multi method sort(&by = &infix:<cmp>) {
+        self.pairs.sort(&by)
+    }
+
 }
+
+multi sub sort (%h, :&by = &infix:<cmp>) { %h.pairs.sort(&by) }
+multi sub sort (&by, %h) { %h.pairs.sort(&by) }
+

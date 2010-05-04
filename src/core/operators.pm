@@ -34,19 +34,19 @@ our multi sub prefix:<->($a) {
 }
 
 our multi sub infix:<+>($a, $b) {
-    pir::add__NNN($a, $b)
+    +$a + +$b;
 }
 
 our multi sub infix:<->($a, $b) {
-    pir::sub__NNN($a, $b)
+    +$a - +$b;
 }
 
 our multi sub infix:<*>($a, $b) {
-    pir::mul__NNN($a, $b)
+    +$a * +$b;
 }
 
 our multi sub infix:</>($a, $b) {
-    pir::div__NNN($a, $b)
+    +$a / +$b;
 }
 
 our multi sub infix:<%>($a, $b) {
@@ -54,7 +54,7 @@ our multi sub infix:<%>($a, $b) {
 }
 
 our multi sub infix:<**>($a, $b) {
-    pir::pow__NNN($a, $b)
+    (+$a) ** +$b; # parenthesis needed because of precendence.
 }
 
 our multi sub infix:<&>(*@items) {
@@ -67,6 +67,38 @@ our multi sub infix:<|>(*@items) {
 
 our multi sub infix:<^>(*@items) {
     Junction.new(@items, :one)
+}
+
+our multi sub infix:<+&>($a, $b) {
+    pir::band__III($a, $b);
+}
+
+our multi sub infix:<+|>($a, $b) {
+    pir::bor__III($a, $b);
+}
+
+our multi sub infix:<+^>($a, $b) {
+    pir::bxor__III($a, $b);
+}
+
+our multi sub infix:«+<»($a, $b) {
+    pir::shl__III($a, $b);
+}
+
+our multi sub infix:«+>»($a, $b) {
+    pir::shr__III($a, $b);
+}
+
+our multi sub infix:<~|>($a, $b) {
+    pir::bors__SSS($a, $b);
+}
+
+our multi sub infix:<~&>($a, $b) {
+    pir::bands__SSS($a, $b);
+}
+
+our multi sub infix:<~^>($a, $b) {
+    pir::bxors__SSS($a, $b);
 }
 
 our sub all(*@items) {
@@ -108,6 +140,16 @@ our multi infix:<does>(Mu \$do-it-to-me, ConcreteRole $r) {
     $do-it-to-me
 }
 
+our multi infix:<does>(Mu \$do-it-to-me, Parcel $roles) {
+    my $*SCOPE = 'my';
+    my $mr = RoleHOW.new();
+    for @($roles) -> $r {
+        $mr.^add_composable($r);
+    }
+    my $r = $mr.^compose();
+    $do-it-to-me does $r;
+}
+
 our multi infix:<but>(Mu \$do-it-to-me, \$r) {
     $do-it-to-me.clone() does $r
 }
@@ -138,6 +180,10 @@ our multi infix:<min>(*@args) {
 
 our multi infix:<max>(*@args) {
     @args.max;
+}
+
+our multi infix:<minmax>(*@args) {
+    @args.minmax;
 }
 
 our multi infix:«=>»($key, Mu $value) {
@@ -356,6 +402,7 @@ our multi sub infix:<...>(@lhs is copy, $rhs) {
         $next = @lhs.pop;
     } else {
         given @lhs.elems {
+            when 0 { fail "Need something on the LHS"; }
             when 1 {
                 if @lhs[0] cmp $rhs == 1 {
                     $next = { .prec };
@@ -366,16 +413,15 @@ our multi sub infix:<...>(@lhs is copy, $rhs) {
             when 2 {
                 $next = { $_ + (@lhs[1] - @lhs[0]) };
             }
-            when 3 {
-                if @lhs[1] - @lhs[0] == @lhs[2] - @lhs[1] {
-                    $next = { $_ + (@lhs[1] - @lhs[0]) };
-                } elsif @lhs[1] / @lhs[0] == @lhs[2] / @lhs[1] {
-                    $next = { $_ * (@lhs[1] / @lhs[0]) };
+            default {
+                if @lhs[*-2] - @lhs[*-3] == @lhs[*-1] - @lhs[*-2] {
+                    $next = { $_ + (@lhs[*-2] - @lhs[*-3]) };
+                } elsif @lhs[*-2] / @lhs[*-3] == @lhs[*-1] / @lhs[*-2] {
+                    $next = { $_ * (@lhs[*-2] / @lhs[*-3]) };
                 } else {
                     fail "Unable to figure out pattern of series";
                 }
             }
-            default { fail "Unable to figure out pattern of series"; }
         }
     }
 
@@ -385,11 +431,10 @@ our multi sub infix:<...>(@lhs is copy, $rhs) {
         my @args;
         my $j;
         my $top = $arity min @lhs.elems;
-        for 0..^$top -> $i {
-            $j = @lhs[$i];
-            my $jj = $j;
-            take $jj;
-            @args.push($jj);
+        for @lhs.kv -> $i, $v {
+            $j = $v;
+            take $v;
+            @args.push($v) if $i >= @lhs.elems - $top;
         }
 
         if !$limit.defined || $limit cmp $j != 0 {

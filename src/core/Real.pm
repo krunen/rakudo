@@ -5,13 +5,22 @@ role Real does Numeric {
         fail "Bridge must be defined for the Real type " ~ self.WHAT;
     }
 
-    method abs() {
-        self < 0 ?? -self !! self;
+    method abs(Real $x:) {
+        $x < 0 ?? -$x !! $x;
     }
 
-    method sign {
-        self.notdef ?? Mu
-                    !! (self ~~ NaN ?? NaN !! self <=> 0);
+    # Hmmm... should the second argument be Numeric for the next two?
+    method exp(Real $exponent: Numeric $base = e) {
+        $base ** $exponent;
+    }
+
+    method log(Real $x: Numeric $base = e) {
+        $x.Bridge.log($base);
+    }
+
+    method sign(Real $x:) {
+        $x.notdef ?? Mu
+                    !! ($x ~~ NaN ?? NaN !! $x <=> 0);
     }
 
     method ceiling(Real $x:) {
@@ -89,10 +98,26 @@ multi sub infix:<->(Num $a, Num $b) {
     pir::sub__NNN($a, $b)
 }
 
+multi sub infix:<*>(Real $a, Real $b) {
+    $a.Bridge * $b.Bridge;
+}
+
+multi sub infix:<*>(Num $a, Num $b) {
+    pir::mul__NNN($a, $b)
+}
+
 multi sub infix:</>(Real $a, Real $b) {
     $a.Bridge / $b.Bridge;
 }
 
 multi sub infix:</>(Num $a, Num $b) {
     pir::div__NNN($a, $b)
+}
+
+multi sub infix:<**>(Real $a, Real $b) {
+    $a.Bridge ** $b.Bridge;
+}
+
+multi sub infix:<**>(Num $a, Num $b) {
+    pir::pow__NNN($a, $b)
 }

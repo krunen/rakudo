@@ -1,7 +1,4 @@
-augment class Any {
-    method ACCEPTS($topic) {
-        self === $topic
-    }
+augment class Cool {
 
     our Int multi method bytes() is export {
         pir::box__PI(pir::bytelength__IS(self))
@@ -45,10 +42,32 @@ augment class Any {
         my $c = 0;
         my $l = $limit ~~ ::Whatever ?? Inf !! $limit;
         gather while $l > 0 && (my $m = self.match($matcher, :c($c))) {
-            take $match ?? $m !! ~$m;
+            if $match {
+                my $m-clone = $m;
+                take $m-clone;
+            } else {
+                take ~$m;
+            }
             $c = $m.to == $c ?? $c + 1 !! $m.to;
             --$l;
         }
+    }
+
+    multi method samecase($pattern) is export {
+        my $result = '';
+        my $p = '';
+        my @pattern = $pattern.comb;
+        for self.comb -> $s {
+            $p = @pattern.shift if @pattern;
+            if $p ~~ /<.upper>/ {
+                $result ~= $s.uc;
+            } elsif $p ~~ /<.lower>/ {
+                $result ~= $s.lc;
+            } else {
+                $result ~= $s;
+            }
+        }
+        $result;
     }
 
     multi method split(Regex $matcher, $limit = *, :$all) {
@@ -58,7 +77,8 @@ augment class Any {
             gather {
                 while $l-- > 0 && (my $m = self.match($matcher, :c($c))) {
                     take self.substr($c, $m.from - $c);
-                    take $m if $all;
+                    my $m-clone = $m;
+                    take $m-clone if $all;
                     $c = $m.to == $c ?? $c + 1 !! $m.to;
                 }
                 take self.substr($c);
@@ -252,10 +272,6 @@ augment class Any {
             $result = pir::sprintf__SSP(~self, (|@args)!PARROT_POSITIONALS);
         }
         $! ?? fail( "Insufficient arguments supplied to sprintf") !! $result
-    }
-
-    multi method Str() {
-        sprintf '%s<0x%x>', self.WHAT, self.WHERE;
     }
 }
 

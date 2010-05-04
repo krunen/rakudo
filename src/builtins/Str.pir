@@ -20,7 +20,7 @@ as the Perl 6 C<Str> class.
 .sub 'onload' :anon :init :load
     .local pmc p6meta, strproto
     p6meta = get_hll_global ['Mu'], '$!P6META'
-    strproto = p6meta.'new_class'('Str', 'parent'=>'parrot;Perl6Str Any')
+    strproto = p6meta.'new_class'('Str', 'parent'=>'parrot;Perl6Str Cool')
 .end
 
 .sub 'ACCEPTS' :method
@@ -155,7 +155,11 @@ Increment and Decrement Methods
   dec_2:
     dec ipos
     repl = substr RANGES, ipos, 1
-    substr str, r1, 1, repl
+    $S0 = substr str, 0, r1
+    $I0 = r1 + 1
+    $S1 = substr str, $I0
+    str = concat $S0, repl
+    str = concat str, $S1
     # if the replacement wasn't a carry, we're done
     if orig > repl goto done
   carry:
@@ -186,7 +190,11 @@ Increment and Decrement Methods
     inc ipos
     .local string repl
     repl = substr RANGES, ipos, 1
-    substr str, r1, 1, repl
+        $S0 = substr str, 0, r1
+    $I0 = r1 + 1
+    $S1 = substr str, $I0
+    str = concat $S0, repl
+    str = concat str, $S1
     # if the replacement wasn't a carry, we're done
     if orig < repl goto done
   carry:
@@ -198,7 +206,10 @@ Increment and Decrement Methods
     unless repl == '0' goto extend_1
     repl = '1'
   extend_1:
-    substr str, r0, 0, repl
+    $S0 = substr str, 0, r0
+    $S1 = substr str, r0
+    str = concat $S0, repl
+    str = concat str, $S1
 
   done:
     .return (str)

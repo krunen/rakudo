@@ -11,8 +11,6 @@
 # S03-operators/binding-arrays.t - regressed to allow slices
 # S03-operators/binding-hashes.t - regressed to allow slices
 # integration/rule-in-class-Str.t - 'is also' -> augment
-# S12-class/extending-arrays.t - 'is also' -> augment
-# S12-class/open.t - 'is also' -> augment
 # S12-class/is_also_instead.t - 'is also' -> augment
 # S12-attributes/mutators.t - we no longer get away with missing rw and Proxy; some bogus passes anyway
 # S16-filehandles/filetest.t - regressed when spec changed (RT #68160)
@@ -22,7 +20,7 @@ integration/99problems-01-to-10.t
 integration/99problems-11-to-20.t
 integration/99problems-21-to-30.t
 integration/99problems-31-to-40.t
-# integration/99problems-41-to-50.t
+integration/99problems-41-to-50.t
 # integration/99problems-51-to-60.t
 # integration/99problems-61-to-70.t
 integration/code-blocks-as-sub-args.t
@@ -49,10 +47,10 @@ S02-builtin_data_types/capture.t
 S02-builtin_data_types/catch_type_cast_mismatch.t
 S02-builtin_data_types/declare.t
 S02-builtin_data_types/flattening.t
-# S02-builtin_data_types/hash_ref.t
+S02-builtin_data_types/hash_ref.t
 S02-builtin_data_types/hash.t
 S02-builtin_data_types/infinity.t
-# S02-builtin_data_types/lists.t
+S02-builtin_data_types/lists.t
 # S02-builtin_data_types/mixed_multi_dimensional.t
 S02-builtin_data_types/multi_dimensional_array.t
 S02-builtin_data_types/nan.t
@@ -91,21 +89,21 @@ S02-literals/subscript.t
 S02-literals/types.t
 S02-literals/underscores.t
 S02-magicals/config.t
-# S02-magicals/dollar_bang.t
-# S02-magicals/dollar-underscore.t
+S02-magicals/dollar_bang.t
+S02-magicals/dollar-underscore.t
 # S02-magicals/env.t
 S02-magicals/pid.t
 S02-magicals/progname.t
 S02-names_and_variables/contextual.t
 S02-names_and_variables/fmt.t
 S02-names_and_variables/names.t
-S02-names_and_variables/perl.t
+S02-names_and_variables/perl.t                             # icu
 S02-names_and_variables/list_array_perl.t
 S02-names_and_variables/signature.t
 S02-names_and_variables/variables-and-packages.t
 S02-names_and_variables/varnames.t
 S02-names/identifier.t
-# S02-names/our.t
+S02-names/our.t
 S02-one-pass-parsing/less-than.t
 S02-polymorphic_types/subset.t
 S02-whitespace_and_comments/begin_end_pod.t
@@ -139,26 +137,27 @@ S03-operators/basic-types.t
 S03-operators/bit.t
 S03-operators/boolean-bitwise.t
 S03-operators/brainos.t
-# S03-operators/chained-declarators.t
+S03-operators/chained-declarators.t
 # S03-operators/comparison.t
 S03-operators/comparison-simple.t
 S03-operators/context-forcers.t
-# S03-operators/context.t
+S03-operators/context.t
 S03-operators/equality.t
 S03-operators/eqv.t
 S03-operators/identity.t
 S03-operators/increment.t
 S03-operators/inplace.t
 S03-operators/list-quote-junction.t
+S03-operators/minmax.t
 S03-operators/misc.t
 S03-operators/names.t
+S03-operators/nesting.t
 S03-operators/not.t
 S03-operators/numeric-context.t
-# S03-operators/p5arrow.t
 S03-operators/precedence.t
 S03-operators/range-basic.t
 S03-operators/range.t
-# S03-operators/reduce-le1arg.t
+S03-operators/reduce-le1arg.t
 S03-operators/relational.t
 S03-operators/repeat.t
 S03-operators/scalar-assign.t
@@ -222,7 +221,7 @@ S04-statements/given.t
 S04-statements/if.t
 S04-statements/last.t
 S04-statements/loop.t
-# S04-statements/map-and-sort-in-for.t
+S04-statements/map-and-sort-in-for.t
 S04-statements/next.t
 S04-statements/no-implicit-block.t
 S04-statements/redo.t
@@ -248,9 +247,9 @@ S05-grammar/signatures.t
 # S05-grammar/ws.t
 # S05-mass/named-chars.t                                     # icu
 S05-mass/properties-block.t                                # icu
-# S05-mass/properties-derived.t                              # icu
+S05-mass/properties-derived.t                              # icu
 S05-mass/properties-general.t                              # icu
-# S05-mass/properties-script.t                               # icu
+S05-mass/properties-script.t                               # icu
 S05-mass/rx.t
 # S05-mass/recursive.t
 S05-mass/stdrules.t
@@ -272,7 +271,7 @@ S05-metasyntax/null.t
 # S05-metasyntax/regex.t
 S05-metasyntax/repeat.t
 S05-metasyntax/single-quotes.t
-# S05-metasyntax/unknown.t
+S05-metasyntax/unknown.t
 # S05-modifier/ignorecase.t
 # S05-modifier/perl5_1.t
 # S05-modifier/perl5_2.t
@@ -295,7 +294,8 @@ S06-multi/type-based.t
 S06-multi/value-based.t
 S06-multi/unpackability.t
 # S06-operator-overloading/imported-subs.t
-# S06-operator-overloading/sub.t
+S06-operator-overloading/methods.t
+S06-operator-overloading/sub.t
 # S06-operator-overloading/workout.t
 S06-other/anon-hashes-vs-blocks.t
 # S06-other/main.t
@@ -351,17 +351,21 @@ S12-attributes/inheritance.t
 S12-attributes/instance.t
 # S12-attributes/recursive.t
 S12-attributes/undeclared.t
-# S12-class/anonymous.t
-# S12-class/attributes.t
+S12-class/anonymous.t
+S12-class/attributes.t
 S12-class/basic.t
 S12-class/declaration-order.t
+S12-class/extending-arrays.t
 S12-class/inheritance-class-methods.t
 S12-class/inheritance.t
 S12-class/instantiate.t
 # S12-class/interface-consistency.t
+S12-class/lexical.t
 # S12-class/namespaced.t
+S12-class/open.t
 # S12-class/parent_attributes.t
 # S12-class/rw.t
+S12-class/self-inheritance.t
 S12-class/stubs.t
 S12-construction/autopairs.t
 # S12-construction/BUILD.t
@@ -375,7 +379,7 @@ S12-enums/anonymous.t
 # S12-introspection/attributes.t
 # S12-introspection/can.t
 S12-introspection/meta-class.t
-# S12-introspection/methods.t
+S12-introspection/methods.t
 S12-introspection/parents.t
 S12-introspection/roles.t
 # S12-introspection/walk.t
@@ -391,10 +395,10 @@ S12-methods/how.t
 S12-methods/instance.t
 S12-methods/lastcall.t
 S12-methods/method-vs-sub.t
-# S12-methods/multi.t
+S12-methods/multi.t
 S12-methods/parallel-dispatch.t
 S12-methods/private.t
-# S12-methods/submethods.t
+S12-methods/submethods.t
 S12-methods/syntax.t
 S12-methods/topic.t
 S12-methods/typed-attributes.t
@@ -405,15 +409,17 @@ S13-type-casting/methods.t
 S13-overloading/typecasting-long.t
 # S13-overloading/metaoperators.t
 S13-overloading/operators.t
+S14-roles/anonymous.t
 S14-roles/attributes.t
 S14-roles/basic.t
 S14-roles/composition.t
 S14-roles/crony.t
 S14-roles/instantiation.t
+S14-roles/lexical.t
 # S14-roles/mixin.t
 S14-roles/namespaced.t
 S14-roles/parameter-subtyping.t
-# S14-roles/parameterized-basic.t
+S14-roles/parameterized-basic.t
 # S14-roles/parameterized-mixin.t
 S14-roles/parameterized-type.t
 S14-roles/submethods.t
@@ -457,7 +463,7 @@ S32-array/unshift.t
 # S32-container/zip.t
 S32-hash/exists.t
 S32-hash/invert.t
-# S32-hash/keys_values.t
+S32-hash/keys_values.t
 S32-hash/pairs.t
 S32-hash/push.t
 # S32-hash/slice.t
@@ -471,12 +477,12 @@ S32-list/first.t
 S32-list/grep.t
 S32-list/join.t
 # S32-list/map_function_return_values.t
-# S32-list/map.t
+S32-list/map.t
 S32-list/minmax.t
 S32-list/pick.t
-# S32-list/reduce.t
+S32-list/reduce.t
 S32-list/reverse.t
-# S32-list/sort.t
+S32-list/sort.t
 S32-list/uniq.t
 S32-num/abs.t
 S32-num/complex.t
@@ -511,7 +517,7 @@ S32-str/lc.t                                                 # icu
 S32-str/p5chop.t
 S32-str/pos.t
 # S32-str/rindex.t
-# S32-str/samecase.t                                         # icu
+S32-str/samecase.t                                         # icu
 # S32-str/split-simple.t
 S32-str/split-simple2.t   # CHEAT!  simplified version of split-simple.t
 S32-str/split.t
@@ -522,7 +528,8 @@ S32-str/ucfirst.t                                          # icu
 S32-str/uc.t                                               # icu
 # S32-str/unpack.t
 S32-str/words.t                                            # icu
-# S32-temporal/Temporal.t
+S32-temporal/Date.t
+S32-temporal/DateTime.t
 S32-trig/e.t
 # S32-trig/pi.t
 S32-trig/sin.t

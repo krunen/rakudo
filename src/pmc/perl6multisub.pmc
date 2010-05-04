@@ -452,8 +452,8 @@ static STRING* dump_signature(PARROT_INTERP, STRING *so_far, PMC *sub) {
     Parrot_ext_call(interp, sig_meth, "Pi->P", sub, &sig_obj);
     perl_meth = VTABLE_find_method(interp, sig_obj, perl_name);
     Parrot_ext_call(interp, perl_meth, "Pi->S", sig_obj, &sig_perl);
-    so_far = Parrot_str_append(interp, so_far, sig_perl);
-    so_far = Parrot_str_append(interp, so_far, newline);
+    so_far = Parrot_str_concat(interp, so_far, sig_perl);
+    so_far = Parrot_str_concat(interp, so_far, newline);
     return so_far;
 }
 
@@ -881,7 +881,7 @@ The proto that is in effect.
 */
 
 
-pmclass Perl6MultiSub extends MultiSub need_ext dynpmc group perl6_group {
+pmclass Perl6MultiSub extends MultiSub need_ext dynpmc group perl6_group manual_attrs {
     ATTR PMC  *candidates;
     ATTR struct candidate_info **candidates_sorted;
     ATTR MMD_Cache *cache_single;
@@ -1281,7 +1281,7 @@ Gets a list of all candidates.
 =cut
 
 */
-    METHOD PMC *candidates() {
+    METHOD PMC *ll_candidates() {
         PMC *candidates;
         GETATTR_Perl6MultiSub_candidates(interp, SELF, candidates);
         RETURN (PMC *candidates);

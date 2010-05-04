@@ -22,6 +22,16 @@ Multi - Perl 6 multi-dispatch routine
     p6meta.'register'('MultiSub', 'parent'=>proto, 'protoobject'=>proto)
 .end
 
+=item candidates
+
+=cut
+
+.sub 'candidates' :method
+    $P0 = self.'ll_candidates'()
+    $P0 = '&infix:<,>'($P0 :flat)
+    .return ($P0)
+.end
+
 =item multi
 
 =cut
@@ -29,6 +39,15 @@ Multi - Perl 6 multi-dispatch routine
 .sub 'multi' :method
     $P0 = get_hll_global ['Bool'], 'True'
     .return ($P0)
+.end
+
+=item name
+
+=cut
+
+.sub 'name' :method
+    $S0 = self
+    .return ($S0)
 .end
 
 =back

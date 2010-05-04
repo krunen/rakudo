@@ -1,4 +1,4 @@
-class Complex does Numeric {
+class Complex does Numeric is Cool {
     has $.re;
     has $.im;
 
@@ -13,10 +13,6 @@ class Complex does Numeric {
         ($topic.Num ~~ $.re) && ($.im == 0);
     }
 
-    method abs() {
-        ($!re * $!re + $!im * $!im).sqrt
-    }
-
     multi method Complex() { self }
 
     our Bool multi method Bool() { ( $!re != 0 || $!im != 0 ) ?? Bool::True !! Bool::False }
@@ -29,8 +25,42 @@ class Complex does Numeric {
         "$.re + {$.im}i";
     }
 
+    method abs(Complex $x:) {
+        ($x.re * $x.re + $x.im * $x.im).sqrt
+    }
+
     multi method exp() {
         Complex.new($.re.Num.exp * $.im.Num.cos, $.re.Num.exp * $.im.Num.sin);
+    }
+
+    multi method exp(Complex $exponent: Numeric $base) {
+        $base ** $exponent;
+    }
+
+    multi method log() {
+        Q:PIR {
+            .local pmc self
+            self = find_lex 'self'
+            $P0 = get_root_namespace ['parrot'; 'Complex' ]
+            $P0 = get_class $P0
+            $P0 = $P0.'new'()
+            $N0 = self.'re'()
+            $P0[0] = $N0
+            $N1 = self.'im'()
+            $P0[1] = $N1
+            $P0 = $P0.'ln'()
+            $N0 = $P0[0]
+            $P2 = box $N0
+            $N1 = $P0[1]
+            $P3 = box $N1
+            $P1 = get_hll_global 'Complex'
+            $P1 = $P1.'new'($P2, $P3)
+            %r  = $P1
+        }
+    }
+
+    multi method log(Complex $x: Numeric $base) {
+        $x.log / $base.log;
     }
 
     multi method sin($base = Radians) {
@@ -129,32 +159,6 @@ class Complex does Numeric {
         (1 / self).atanh($base);
     }
 
-    multi method log() {
-        Q:PIR {
-            .local pmc self
-            self = find_lex 'self'
-            $P0 = get_root_namespace ['parrot'; 'Complex' ]
-            $P0 = get_class $P0
-            $P0 = $P0.'new'()
-            $N0 = self.'re'()
-            $P0[0] = $N0
-            $N1 = self.'im'()
-            $P0[1] = $N1
-            $P0 = $P0.'ln'()
-            $N0 = $P0[0]
-            $P2 = box $N0
-            $N1 = $P0[1]
-            $P3 = box $N1
-            $P1 = get_hll_global 'Complex'
-            $P1 = $P1.'new'($P2, $P3)
-            %r  = $P1
-        }
-    }
-
-    multi method log($base) {
-        $.log / $base.log;
-    }
-
     multi method polar() {
         $.abs, atan2($.im, $.re);
     }
@@ -251,11 +255,11 @@ multi sub infix:<+>(Complex $a, Complex $b) {
     Complex.new($a.re + $b.re, $a.im + $b.im);
 }
 
-multi sub infix:<+>(Complex $a, $b) {
+multi sub infix:<+>(Complex $a, Real $b) {
    Complex.new($a.re + $b, $a.im);
 }
 
-multi sub infix:<+>($a, Complex $b) {
+multi sub infix:<+>(Real $a, Complex $b) {
     # Was $b + $a; but that trips a ng bug, and also means
     # that Num + Complex is slower than Complex + Num, which
     # seems daft.
@@ -270,11 +274,11 @@ multi sub infix:<->(Complex $a, Complex $b) {
     Complex.new($a.re - $b.re, $a.im - $b.im);
 }
 
-multi sub infix:<->(Complex $a, $b) {
+multi sub infix:<->(Complex $a, Real $b) {
    Complex.new($a.re - $b, $a.im);
 }
 
-multi sub infix:<->($a, Complex $b) {
+multi sub infix:<->(Real $a, Complex $b) {
     Complex.new($a - $b.re, -$b.im);
 }
 
@@ -282,11 +286,11 @@ multi sub infix:<*>(Complex $a, Complex $b) {
     Complex.new($a.re * $b.re - $a.im * $b.im, $a.im * $b.re + $a.re * $b.im);
 }
 
-multi sub infix:<*>(Complex $a, $b) {
+multi sub infix:<*>(Complex $a, Real $b) {
    Complex.new($a.re * $b, $a.im * $b);
 }
 
-multi sub infix:<*>($a, Complex $b) {
+multi sub infix:<*>(Real $a, Complex $b) {
     Complex.new($a * $b.re, $a * $b.im);
 }
 
@@ -296,11 +300,11 @@ multi sub infix:</>(Complex $a, Complex $b) {
                 ($a.im * $b.re - $a.re * $b.im) / $d);
 }
 
-multi sub infix:</>(Complex $a, $b) {
+multi sub infix:</>(Complex $a, Real $b) {
     Complex.new($a.re / $b, $a.im / $b);
 }
 
-multi sub infix:</>($a, Complex $b) {
+multi sub infix:</>(Real $a, Complex $b) {
     Complex.new($a, 0) / $b;
 }
 
@@ -320,11 +324,11 @@ multi sub infix:<**>(Complex $a, Complex $b) {
    ($a.log * $b).exp;
 }
 
-multi sub infix:<**>(Complex $a, $b) {
+multi sub infix:<**>(Complex $a, Real $b) {
    ($a.log * $b).exp;
 }
 
-multi sub infix:<**>($a, Complex $b) {
+multi sub infix:<**>(Real $a, Complex $b) {
     ($a.log * $b).exp;
 }
 

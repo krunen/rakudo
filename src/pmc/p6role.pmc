@@ -19,7 +19,7 @@ like punning.
 
 #include "parrot/parrot.h"
 
-pmclass P6role extends Role need_ext dynpmc group perl6_group {
+pmclass P6role extends Role need_ext dynpmc group perl6_group auto_attrs {
     VTABLE PMC *find_method(STRING *name) {
         PMC *ns_key, *ns, *punner, *boxed_name;
         STRING *first_char;
@@ -41,13 +41,13 @@ pmclass P6role extends Role need_ext dynpmc group perl6_group {
             return SUPER(name);
         if (Parrot_str_equal(interp, name, CONST_STRING(interp, "WHAT")))
             return SUPER(name);
-        if (Parrot_str_equal(interp, name, CONST_STRING(interp, "Scalar")))
+        if (Parrot_str_equal(interp, name, CONST_STRING(interp, "item")))
             return SUPER(name);
         if (Parrot_str_equal(interp, name, CONST_STRING(interp, "HOW")))
             return SUPER(name);
         if (Parrot_str_equal(interp, name, CONST_STRING(interp, "WHICH")))
             return SUPER(name);
-        first_char = Parrot_str_substr(interp, name, 0, 1, NULL, 0);
+        first_char = Parrot_str_substr(interp, name, 0, 1);
         if (Parrot_str_equal(interp, first_char, CONST_STRING(interp, "!")))
             return SUPER(name);
 

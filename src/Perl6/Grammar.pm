@@ -27,11 +27,11 @@ method TOP() {
     self.comp_unit;
 }
 
-method add_my_name($name) {
+method add_my_name($name, $up_levels = 0) {
     my @BLOCK := Q:PIR{ %r = get_hll_global ['Perl6';'Actions'], '@BLOCK' };
 
     # We need to flag up most re-declaration collisions.
-    my $cur_decl := @BLOCK[0].symbol($name);
+    my $cur_decl := @BLOCK[$up_levels].symbol($name);
     if $cur_decl {
         if $*PKGDECL eq 'role' || $cur_decl<stub> {
             return 1;
@@ -42,11 +42,11 @@ method add_my_name($name) {
     }
 
     # Add it.
-    @BLOCK[0].symbol($name, :does_abstraction(1));
+    @BLOCK[$up_levels].symbol($name, :does_abstraction(1));
     return 1;
 }
 
-method add_our_name($name) {
+method add_our_name($name, $up_levels = 0) {
     our %COMPILINGPACKAGES;
     our %STUBCOMPILINGPACKAGES;
 
@@ -76,10 +76,10 @@ method add_our_name($name) {
     %COMPILINGPACKAGES{$name} := 1;
 
     # Always need to add our names as lexical names too.
-    return self.add_my_name($name);
+    return self.add_my_name($name, $up_levels);
 }
 
-method add_name($name) {
+method add_name($name, $up_levels = 0) {
     if $*SCOPE eq 'augment' || $*SCOPE eq 'supersede' {
         unless self.is_name($name) {
             pir::die("Can't $*SCOPE $*PKGDECL that doesn't exist");
@@ -90,10 +90,10 @@ method add_name($name) {
     }
     else {
         if $*SCOPE eq 'our' {
-            self.add_our_name($name);
+            self.add_our_name($name, $up_levels);
         }
         else {
-            self.add_my_name($name);
+            self.add_my_name($name, $up_levels);
         }
     }
     return 1;
@@ -107,6 +107,11 @@ method is_name($name) {
         if $sym && $sym<does_abstraction> {
             return 1;
         }
+    }
+    
+    # Is it a package we're compiling?
+    if %COMPILINGPACKAGES{$name} {
+        return 1;
     }
 
     # Otherwise, check in the namespace.
@@ -140,7 +145,16 @@ token name {
 
 token morename {
     :my $*QSIGIL := '';
-    '::' <identifier>
+    '::'
+    [
+    ||  <?before '(' | <alpha> >
+        [
+        | <identifier>
+        | '(' ~ ')' <EXPR>
+            <.panic: "Indirect name lookups not yet implemented">
+        ]
+    || <?before '::'> <.panic: "Name component may not be null">
+    ]?
 }
 
 token longname {
@@ -247,10 +261,10 @@ token comp_unit {
     :my $*MULTINESS := '';                     # which multi declarator we're under
     :my $*QSIGIL := '';                        # sigil of current interpolation
     :my $*TYPENAME := '';
-    {*} #= open
     <.newpad>
     <.outerlex>
     <.finishpad>
+    {*} #= open
     <statementlist>
     [ $ || <.panic: 'Confused'> ]
 }
@@ -662,7 +676,7 @@ token special_variable:sym<$]> {
 }
 
 token special_variable:sym<$\\> {
-    <sym> <?before \s | ',' | '=' | <terminator> >
+    '$\\' <?before \s | ',' | '=' | <terminator> >
     <.obs('$\\ variable', "the filehandle's :ors attribute")>
 }
 
@@ -728,11 +742,17 @@ token variable {
         }
     }> {}
     [
-    | <sigil> <twigil>? <desigilname>
-    | <special_variable>
-    | <sigil> $<index>=[\d+]
-    | <sigil> <?[<[]> <postcircumfix>
-    | $<sigil>=['$'] $<desigilname>=[<[/_!]>]
+    || '&'
+        [
+        | '[' ~ ']' <infixish>
+        ]
+    ||  [
+        | <sigil> <twigil>? <desigilname>
+        | <special_variable>
+        | <sigil> $<index>=[\d+]
+        | <sigil> <?[<[]> <postcircumfix>
+        | $<sigil>=['$'] $<desigilname>=[<[/_!]>]
+        ]
     ]
     [ <?{ $<twigil> && $<twigil>[0] eq '.' }>
         [ <.unsp> | '\\' | <?> ] <?before '('> <arglist=.postcircumfix>
@@ -778,15 +798,15 @@ token package_declarator:sym<does> {
 
 rule package_def {
     :my $*IN_DECL := 'package';
+    <.newpad>
     <def_module_name>?
     <trait>*
     {*} #= open
     [
     || ';'
-        <.newpad>
         <.finishpad>
         <statementlist>
-    || <?[{]> <block>
+    || <?[{]> <blockoid>
     || <.panic: 'Malformed package declaration'>
     ]
 }
@@ -825,6 +845,7 @@ token scope_declarator:sym<my>        { <sym> <scoped('my')> }
 token scope_declarator:sym<our>       { <sym> <scoped('our')> }
 token scope_declarator:sym<has>       { <sym> <scoped('has')> }
 token scope_declarator:sym<augment>   { <sym> <scoped('augment')> }
+token scope_declarator:sym<anon>      { <sym> <scoped('anon')> }
 token scope_declarator:sym<supersede> {
     <sym> <.panic: '"supersede" not yet implemented'>
 }
@@ -1109,8 +1130,20 @@ rule trait {
 
 proto token trait_mod { <...> }
 token trait_mod:sym<is>      { <sym>:s <longname><circumfix>? }
-token trait_mod:sym<hides>   { <sym>:s <module_name> }
-token trait_mod:sym<does>    { <sym>:s <module_name> }
+token trait_mod:sym<hides>   {
+    <sym>:s <module_name>
+    [
+    || <?{ $/.CURSOR.is_name($<module_name><longname>.Str) }>
+    || <panic("Typename " ~ $<module_name> ~ " must be pre-declared to use it with hides")>
+    ]
+}
+token trait_mod:sym<does>    {
+    <sym>:s <module_name>
+    [
+    || <?{ $/.CURSOR.is_name($<module_name><longname>.Str) }>
+    || <panic("Typename " ~ $<module_name> ~ " must be pre-declared to use it with does")>
+    ]
+}
 token trait_mod:sym<will>    { <sym>:s <identifier> <pblock> }
 token trait_mod:sym<of>      { <sym>:s <typename> }
 token trait_mod:sym<as>      { <sym>:s <typename> }
@@ -1260,17 +1293,23 @@ token typename {
 token term:sym<type_declarator>   { <type_declarator> }
 
 proto token quote { <...> }
-token quote:sym<apos>  { <?[']>             <quote_EXPR: ':q'>  }
-token quote:sym<dblq>  { <?["]>             <quote_EXPR: ':qq'> }
-token quote:sym<q>     { 'q'   <![(]> <.ws> <quote_EXPR: ':q'>  }
-token quote:sym<qq>    { 'qq'  <![(]> <.ws> <quote_EXPR: ':qq'> }
-token quote:sym<qx>    { 'qx'  <![(]> <.ws> <quote_EXPR: ':q'>  }
-token quote:sym<qqx>   { 'qqx' <![(]> <.ws> <quote_EXPR: ':qq'> }
-token quote:sym<Q>     { 'Q'   <![(]> <.ws> <quote_EXPR> }
+token quote:sym<apos>  { <?[']>                <quote_EXPR: ':q'>  }
+token quote:sym<dblq>  { <?["]>                <quote_EXPR: ':qq'> }
+token quote:sym<q>     { 'q'   >> <![(]> <.ws> <quote_EXPR: ':q'>  }
+token quote:sym<qq>    { 'qq'  >> <![(]> <.ws> <quote_EXPR: ':qq'> }
+token quote:sym<qx>    { 'qx'  >> <![(]> <.ws> <quote_EXPR: ':q'>  }
+token quote:sym<qqx>   { 'qqx' >> <![(]> <.ws> <quote_EXPR: ':qq'> }
+token quote:sym<Q>     { 'Q'   >> <![(]> <.ws> <quote_EXPR> }
 token quote:sym<Q:PIR> { 'Q:PIR'      <.ws> <quote_EXPR> }
 token quote:sym</null/> { '/' \s* '/' <.panic: "Null regex not allowed"> }
 token quote:sym</ />  { '/'<p6regex=.LANG('Regex','nibbler')>'/' <.old_rx_mods>? }
-token quote:sym<rx>   { <sym> >> '/'<p6regex=.LANG('Regex','nibbler')>'/' <.old_rx_mods>? }
+token quote:sym<rx>   {
+    <sym> >> 
+    [
+    | '/'<p6regex=.LANG('Regex','nibbler')>'/' <.old_rx_mods>?
+    | '{'<p6regex=.LANG('Regex','nibbler')>'}' <.old_rx_mods>?
+    ]
+}
 token quote:sym<m> {
     <sym> >>
     [
@@ -1397,7 +1436,7 @@ sub bracket_ending($matches) {
 method EXPR($preclim = '') {
     # Override this so we can set $*LEFTSIGIL.
     my $*LEFTSIGIL := '';
-    HLL::Grammar::EXPR(self, $preclim);
+    pir::find_method__pps(HLL::Grammar, 'EXPR')(self, $preclim);
 }
 
 token prefixish { 
@@ -1550,18 +1589,18 @@ token dottyopish {
 
 token postcircumfix:sym<[ ]> {
     :my $*QSIGIL := '';
-    '[' ~ ']' [ <.ws> <EXPR> ]
+    '[' ~ ']' [ <.ws> <semilist> ]
     <O('%methodcall')>
 }
 
 token postcircumfix:sym<{ }> {
     :my $*QSIGIL := '';
-    '{' ~ '}' [ <.ws> <EXPR> ]
+    '{' ~ '}' [ <.ws> <semilist> ]
     <O('%methodcall')>
 }
 
 token postcircumfix:sym<ang> {
-    <?[<]> <quote_EXPR: ':q'>
+    <?[<]> <quote_EXPR: ':q', ':w'>
     <O('%methodcall')>
 }
 
@@ -1588,7 +1627,7 @@ token postfix:sym«->» {
 
 token infix:sym<**>   { <sym>  <O('%exponentiation')> }
 
-token prefix:sym<+>   { <sym>  <O('%symbolic_unary, :pirop<set N*>')> }
+token prefix:sym<+>   { <sym>  <O('%symbolic_unary')> }
 token prefix:sym<~>   { <sym>  <O('%symbolic_unary')> }
 token prefix:sym<->   { <sym> <![>]> <O('%symbolic_unary')> }
 token prefix:sym<?>   { <!before '???'> <sym>  <O('%symbolic_unary')> }
@@ -1679,6 +1718,7 @@ token infix_prefix_meta_operator:sym<R> { <sym> <infixish> <O=.copyO('infixish')
 token infix_prefix_meta_operator:sym<S> { <sym> <infixish> <O=.copyO('infixish')> }
 token infix_prefix_meta_operator:sym<X> { <sym> <infixish> <O('%list_infix')> }
 token infix_prefix_meta_operator:sym<Z> { <sym> <infixish> <O('%list_infix')> }
+token infix:sym<minmax> { <sym>  <O('%list_infix')> }
 
 token infix:sym<:=> {
     <sym>  <O('%item_assignment, :reducecheck<bindish_check>')>
