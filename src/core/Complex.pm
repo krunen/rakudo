@@ -37,7 +37,7 @@ class Complex does Numeric is Cool {
         $base ** $exponent;
     }
 
-    multi method log() {
+    method ln() {
         Q:PIR {
             .local pmc self
             self = find_lex 'self'
@@ -59,12 +59,8 @@ class Complex does Numeric is Cool {
         }
     }
 
-    multi method log(Complex $x: Numeric $base) {
-        $x.log / $base.log;
-    }
-
-    multi method sin($base = Radians) {
-        $.re.sin($base) * $.im.cosh($base) + ($.re.cos($base) * $.im.sinh($base))i;
+    method sin(Complex $x: $base = Radians) {
+        $x.re.sin($base) * $x.im.cosh($base) + ($x.re.cos($base) * $x.im.sinh($base))i;
     }
 
     multi method asin($base = Radians) {
@@ -188,7 +184,7 @@ class Complex does Numeric is Cool {
         fail('Cannot take the sign() of a Complex number');
     }
 
-    multi method sqrt() {
+    method sqrt() {
         Q:PIR {
             .local pmc self
             self = find_lex 'self'
@@ -337,9 +333,5 @@ multi sub log(Complex $x) {
 }
 
 multi sub sign(Complex $x) { $x.sign }
-
-multi sub sqrt(Complex $x) {
-    $x.sqrt;
-}
 
 # vim: ft=perl6

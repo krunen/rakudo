@@ -14,8 +14,8 @@ role Real does Numeric {
         $base ** $exponent;
     }
 
-    method log(Real $x: Numeric $base = e) {
-        $x.Bridge.log($base);
+    method ln(Real $x:) {
+        $x.Bridge.ln;
     }
 
     method sign(Real $x:) {
@@ -41,21 +41,36 @@ role Real does Numeric {
 
     # CHEAT: the .Bridges in unpolar should go away in the long run
     method unpolar(Real $mag: Real $angle) {
-        Complex.new($mag.Bridge * $angle.Bridge.cos("radians"),
-                    $mag.Bridge * $angle.Bridge.sin("radians"));
+        Complex.new($mag * $angle.Bridge.cos(Radians),
+                    $mag * $angle.sin(Radians));
     }
 
     method cis(Real $angle:) {
         1.unpolar($angle);
     }
+
+    method sqrt(Real $x:) {
+        $x.Bridge.sqrt;
+    }
+
+    method sin(Real $x: $base = Radians) {
+        $x.Bridge.sin($base);
+    }
 }
+
+# Comparison operators
 
 multi sub infix:«<=>»(Real $a, Real $b) {
     $a.Bridge <=> $b.Bridge;
 }
 
 multi sub infix:«<=>»(Num $a, Num $b) {
-    $a cmp $b;
+    # TODO: should be Order::Same, ::Increase, ::Decrease once they work
+    if $a == $b {
+        0;
+    } else {
+        $a < $b ?? -1 !! 1;
+    }
 }
 
 multi sub infix:«==»(Real $a, Real $b) {
@@ -66,6 +81,14 @@ multi sub infix:«==»(Num $a, Num $b) {
     pir::iseq__INN( $a, $b) ?? True !! False
 }
 
+multi sub infix:«!=»(Real $a, Real $b) {
+    $a.Bridge != $b.Bridge;
+}
+
+multi sub infix:«!=»(Num $a, Num $b) {
+    pir::iseq__INN( $a, $b) ?? False !! True # note reversed
+}
+
 multi sub infix:«<»(Real $a, Real $b) {
     $a.Bridge < $b.Bridge;
 }
@@ -73,6 +96,32 @@ multi sub infix:«<»(Real $a, Real $b) {
 multi sub infix:«<»(Num $a, Num $b) {
     pir::islt__INN( $a, $b) ?? True !! False
 }
+
+multi sub infix:«>»(Real $a, Real $b) {
+    $a.Bridge > $b.Bridge;
+}
+
+multi sub infix:«>»(Num $a, Num $b) {
+    pir::isgt__INN( $a, $b) ?? True !! False
+}
+
+multi sub infix:«<=»(Real $a, Real $b) {
+    $a.Bridge <= $b.Bridge;
+}
+
+multi sub infix:«<=»(Num $a, Num $b) {
+    pir::isgt__INN( $a, $b) ?? False !! True # note reversed
+}
+
+multi sub infix:«>=»(Real $a, Real $b) {
+    $a.Bridge >= $b.Bridge;
+}
+
+multi sub infix:«>=»(Num $a, Num $b) {
+    pir::islt__INN( $a, $b) ?? False !! True # note reversed
+}
+
+# Arithmetic operators
 
 multi sub prefix:<->(Real $a) {
     -($a.Bridge);

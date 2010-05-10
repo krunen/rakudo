@@ -52,8 +52,8 @@ augment class Cool {
         $.Complex.roots($n);
     }
 
-    multi method sqrt() {
-        self.Num.sqrt;
+    method sqrt($x:) {
+        (+$x).sqrt;
     }
 
     multi method log($base = e) {
@@ -385,22 +385,12 @@ my Num sub rand (*@args) {
     1.rand
 }
 
-multi sub sqrt(Any $x) {
-    $x.Num.sqrt
+proto sub sqrt(Any $x) {
+    (+$x).sqrt
 }
 
 multi sub roots($x, $n) {
     $x.Complex.roots($n)
-}
-
-
-our multi sub infix:<cmp>(Num $a, Num $b) {
-    # TODO: should be Order::Same, ::Increase, ::Decrease once they work
-    if $a == $b {
-        0;
-    } else {
-        $a < $b ?? -1 !! 1;
-    }
 }
 
 our multi sub infix:«<=>»($a, $b) {

@@ -13,13 +13,22 @@ role Numeric {
         fail "$.WHAT() needs a version of .exp";
     }
 
-    multi method log(Numeric $x: Numeric $base = e) {
-        note "$.WHAT() needs a version of .log";
-        fail "$.WHAT() needs a version of .log";
+    method ln(Numeric $x:) {
+        note "$.WHAT() needs a version of .ln";
+        fail "$.WHAT() needs a version of .ln";
+    }
+
+    method log(Numeric $x: Numeric $base = e) {
+        $x.ln / $base.ln;
     }
 
     method log10(Numeric $x:) {
         self.log(10);
+    }
+
+    method sqrt(Numeric $x:) {
+        note "$.WHAT() needs a version of .sqrt";
+        fail "$.WHAT() needs a version of .sqrt";
     }
 
     INIT {
@@ -34,4 +43,11 @@ role Numeric {
     method from-radians(Numeric $x: $base) {
         $x / pir::get_global__Ps('@trig-base-conversions')[$base];
     }
+
+    method sin(Numeric $x: $base = Radians) {
+        note "$.WHAT() needs a version of .sin";
+        fail "$.WHAT() needs a version of .sin";
+    }
 }
+
+multi sub infix:«cmp»(Numeric $a, Numeric $b) { $a <=> $b; }

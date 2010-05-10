@@ -65,6 +65,7 @@ S02-builtin_data_types/range.t
 S02-builtin_data_types/sigils-and-types.t
 S02-builtin_data_types/subscripts_and_context.t
 S02-builtin_data_types/type.t
+S02-builtin_data_types/undefined-types.t
 # S02-builtin_data_types/whatever.t
 S02-lexical-conventions/unicode.t                          # icu
 S02-literals/array-interpolation.t
@@ -125,6 +126,7 @@ S03-metaops/not.t
 S03-metaops/reduce.t
 S03-metaops/reverse.t
 S03-metaops/zip.t
+S03-operators/also.t
 S03-operators/arith.t
 S03-operators/assign-is-not-binding.t
 S03-operators/assign.t
@@ -196,6 +198,7 @@ S03-smartmatch/scalar-hash.t
 # S04-blocks-and-statements/pointy-rw.t
 S04-blocks-and-statements/pointy.t
 S04-phasers/end.t
+S04-phasers/rvalue.t
 # S04-phasers/start.t
 # S04-declarations/constant.t
 S04-declarations/implicit-parameter.t
@@ -270,6 +273,7 @@ S05-metasyntax/charset.t
 S05-metasyntax/null.t
 # S05-metasyntax/regex.t
 S05-metasyntax/repeat.t
+S05-metasyntax/sequential-alternation.t
 S05-metasyntax/single-quotes.t
 S05-metasyntax/unknown.t
 # S05-modifier/ignorecase.t
@@ -352,6 +356,7 @@ S12-attributes/instance.t
 # S12-attributes/recursive.t
 S12-attributes/undeclared.t
 S12-class/anonymous.t
+S12-class/augment-supersede.t
 S12-class/attributes.t
 S12-class/basic.t
 S12-class/declaration-order.t
@@ -368,7 +373,7 @@ S12-class/open.t
 S12-class/self-inheritance.t
 S12-class/stubs.t
 S12-construction/autopairs.t
-# S12-construction/BUILD.t
+S12-construction/BUILD.t
 S12-construction/construction.t
 S12-construction/named-params-in-BUILD.t
 S12-construction/new.t
@@ -416,7 +421,7 @@ S14-roles/composition.t
 S14-roles/crony.t
 S14-roles/instantiation.t
 S14-roles/lexical.t
-# S14-roles/mixin.t
+S14-roles/mixin.t
 S14-roles/namespaced.t
 S14-roles/parameter-subtyping.t
 S14-roles/parameterized-basic.t
@@ -471,6 +476,7 @@ S32-hash/push.t
 S32-io/file-tests.t
 S32-io/note.t
 # S32-io/IO-Socket-INET.t
+S32-list/classify.t
 ## S32-list/create.t
 S32-list/end.t
 S32-list/first.t

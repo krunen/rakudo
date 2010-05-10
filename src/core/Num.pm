@@ -71,12 +71,8 @@ augment class Num does Real {
     #     pir::exp__Nn(self);
     # }
 
-    multi method log(Num $x:) {
+    method ln(Num $x:) {
         pir::ln__Nn($x);
-    }
-
-    multi method log(Num $x: Num $base) {
-        $x.log / $base.log;
     }
 
     multi method perl() {
@@ -91,12 +87,12 @@ augment class Num does Real {
         pir::box__PI(pir::floor__IN($x));
     }
 
-    multi method sqrt() {
-        pir::sqrt__Nn(self);
+    method sqrt(Num $x:) {
+        pir::sqrt__Nn($x);
     }
 
-    multi method sin($base = Radians) {
-        pir::sin__Nn(self.to-radians($base));
+    method sin(Num $x: $base = Radians) {
+        pir::sin__Nn($x.to-radians($base));
     }
 
     multi method asin($base = Radians) {
@@ -193,10 +189,6 @@ augment class Num does Real {
 
     multi method atan2(Num $x = 1, $base = Radians) {
         pir::atan__NNn(self, $x).from-radians($base);
-    }
-
-    our ::Complex multi method unpolar($angle) {
-        Complex.new(self * $angle.cos("radians"), self * $angle.sin("radians"));
     }
 }
 
