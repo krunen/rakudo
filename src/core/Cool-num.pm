@@ -56,112 +56,112 @@ augment class Cool {
         (+$x).sqrt;
     }
 
-    multi method log($base = e) {
-        $.Num.log($base);
+    multi method log($x: $base = e) {
+        (+$x).log(+$base);
     }
 
     multi method log10() {
         $.Num.log10;
     }
 
-    our Num multi method sin($base = Radians) {
-        self.Num.sin($base);
+    method sin($x: $base = Radians) {
+        (+$x).sin($base);
     }
 
-    our Num multi method cos($base = Radians) {
-        self.Num.cos($base);
+    method cos($x: $base = Radians) {
+        (+$x).cos($base);
     }
 
-    our Num multi method tan($base = Radians) {
-        self.Num.tan($base);
+    method tan($x: $base = Radians) {
+        (+$x).tan($base);
     }
 
-    our Num multi method sec($base = Radians) {
-         self.Num.sec($base);
+    method sec($x: $base = Radians) {
+         (+$x).sec($base);
     }
 
-    our Num multi method cosec($base = Radians) {
-        self.Num.cosec($base);
+    method cosec($x: $base = Radians) {
+        (+$x).cosec($base);
     }
 
-    our Num multi method cotan($base = Radians) {
-        self.Num.cotan($base);
+    method cotan($x: $base = Radians) {
+        (+$x).cotan($base);
     }
 
-    our Num multi method sinh($base = Radians) {
-        self.Num.sinh($base);
+    method sinh($x: $base = Radians) {
+        (+$x).sinh($base);
     }
 
-    our Num multi method cosh($base = Radians) {
-        self.Num.cosh($base);
+    method cosh($x: $base = Radians) {
+        (+$x).cosh($base);
     }
 
-    our Num multi method tanh($base = Radians) {
-        self.Num.tanh($base);
+    method tanh($x: $base = Radians) {
+        (+$x).tanh($base);
     }
 
-    our Num multi method sech($base = Radians) {
-        self.Num.sech($base);
+    method sech($x: $base = Radians) {
+        (+$x).sech($base);
     }
 
-    our Num multi method cosech($base = Radians) {
-        self.Num.cosech($base);
+    method cosech($x: $base = Radians) {
+        (+$x).cosech($base);
     }
 
-    our Num multi method cotanh($base = Radians) {
-        self.Num.cotanh($base);
+    method cotanh($x: $base = Radians) {
+        (+$x).cotanh($base);
     }
 
-    our Num multi method asin($base = Radians) {
-        self.Num.asin($base);
+    method asin($x: $base = Radians) {
+        (+$x).asin($base);
     }
 
-    our Num multi method acos($base = Radians) {
-        self.Num.acos($base);
+    method acos($x: $base = Radians) {
+        (+$x).acos($base);
     }
 
-    our Num multi method atan($base = Radians) {
-        self.Num.atan($base);
+    method atan($x: $base = Radians) {
+        (+$x).atan($base);
     }
 
-    our Num multi method atan2($x = 1, $base = Radians) {
-        self.Num.atan2($x.Num, $base);
+    method atan2($y: $x = 1, $base = Radians) {
+        (+$y).atan2(+$x, $base);
     }
 
-    our Num multi method asec($base = Radians) {
-        self.Num.asec($base);
+    method asec($x: $base = Radians) {
+        (+$x).asec($base);
     }
 
-    our Num multi method acosec($base = Radians) {
-        self.Num.acosec($base);
+    method acosec($x: $base = Radians) {
+        (+$x).acosec($base);
     }
 
-    our Num multi method acotan($base = Radians) {
-        self.Num.acotan($base);
+    method acotan($x: $base = Radians) {
+        (+$x).acotan($base);
     }
 
-    our Num multi method asinh($base = Radians) {
-        self.Num.asinh($base);
+    method asinh($x: $base = Radians) {
+        (+$x).asinh($base);
     }
 
-    our Num multi method acosh($base = Radians) {
-        self.Num.acosh($base);
+    method acosh($x: $base = Radians) {
+        (+$x).acosh($base);
     }
 
-    our Num multi method atanh($base = Radians) {
-        self.Num.atanh($base);
+    method atanh($x: $base = Radians) {
+        (+$x).atanh($base);
     }
 
-    our Num multi method asech($base = Radians) {
-        self.Num.asech($base);
+    method asech($x: $base = Radians) {
+        (+$x).asech($base);
     }
 
-    our Num multi method acosech($base = Radians) {
-        self.Num.acosech($base);
+    method acosech($x: $base = Radians) {
+        (+$x).acosech($base);
     }
 
-    our Num multi method acotanh($base = Radians) {
-        self.Num.acotanh($base);
+    method acotanh($x: $base = Radians) {
+        (+$x).acotanh($base);
     }
 }
 
@@ -180,204 +180,104 @@ proto sub round($x, $scale = 1) { $x.round($scale); }
 
 # jnthn says that we should have both the multi sub declaration and the proto.
 
-multi sub sin($x, $base = Radians) {
+proto sin($x, $base = Radians) {
     $x.sin($base)
 }
 
-proto sin($x, $base = Radians) {
-    sin($x, $base)
-}
-
-multi sub asin($x, $base = Radians) {
+proto asin($x, $base = Radians) {
     $x.asin($base)
 }
 
-proto asin($x, $base = Radians) {
-    asin($x, $base)
-}
-
-multi sub cos($x, $base = Radians) {
+proto cos($x, $base = Radians) {
     $x.cos($base)
 }
 
-proto cos($x, $base = Radians) {
-    cos($x, $base)
-}
-
-multi sub acos($x, $base = Radians) {
+proto acos($x, $base = Radians) {
     $x.acos($base)
 }
 
-proto acos($x, $base = Radians) {
-    acos($x, $base)
-}
-
-multi sub tan($x, $base = Radians) {
+proto tan($x, $base = Radians) {
     $x.tan($base)
 }
 
-proto tan($x, $base = Radians) {
-    tan($x, $base)
-}
-
-multi sub atan($x, $base = Radians) {
+proto atan($x, $base = Radians) {
     $x.atan($base)
 }
 
-proto atan($x, $base = Radians) {
-    atan($x, $base)
-}
-
-multi sub sec($x, $base = Radians) {
+proto sec($x, $base = Radians) {
     $x.sec($base)
 }
 
-proto sec($x, $base = Radians) {
-    sec($x, $base)
-}
-
-multi sub asec($x, $base = Radians) {
+proto asec($x, $base = Radians) {
     $x.asec($base)
 }
 
-proto asec($x, $base = Radians) {
-    asec($x, $base)
-}
-
-multi sub cosec($x, $base = Radians) {
+proto cosec($x, $base = Radians) {
     $x.cosec($base)
 }
 
-proto cosec($x, $base = Radians) {
-    cosec($x, $base)
-}
-
-multi sub acosec($x, $base = Radians) {
+proto acosec($x, $base = Radians) {
     $x.acosec($base)
 }
 
-proto acosec($x, $base = Radians) {
-    acosec($x, $base)
-}
-
-multi sub cotan($x, $base = Radians) {
+proto cotan($x, $base = Radians) {
     $x.cotan($base)
 }
 
-proto cotan($x, $base = Radians) {
-    cotan($x, $base)
-}
-
-multi sub acotan($x, $base = Radians) {
+proto acotan($x, $base = Radians) {
     $x.acotan($base)
 }
 
-proto acotan($x, $base = Radians) {
-    acotan($x, $base)
-}
-
-multi sub sinh($x, $base = Radians) {
+proto sinh($x, $base = Radians) {
     $x.sinh($base)
 }
 
-proto sinh($x, $base = Radians) {
-    sinh($x, $base)
-}
-
-multi sub asinh($x, $base = Radians) {
+proto asinh($x, $base = Radians) {
     $x.asinh($base)
 }
 
-proto asinh($x, $base = Radians) {
-    asinh($x, $base)
-}
-
-multi sub cosh($x, $base = Radians) {
+proto cosh($x, $base = Radians) {
     $x.cosh($base)
 }
 
-proto cosh($x, $base = Radians) {
-    cosh($x, $base)
-}
-
-multi sub acosh($x, $base = Radians) {
+proto acosh($x, $base = Radians) {
     $x.acosh($base)
 }
 
-proto acosh($x, $base = Radians) {
-    acosh($x, $base)
-}
-
-multi sub tanh($x, $base = Radians) {
+proto tanh($x, $base = Radians) {
     $x.tanh($base)
 }
 
-proto tanh($x, $base = Radians) {
-    tanh($x, $base)
-}
-
-multi sub atanh($x, $base = Radians) {
+proto atanh($x, $base = Radians) {
     $x.atanh($base)
 }
 
-proto atanh($x, $base = Radians) {
-    atanh($x, $base)
-}
-
-multi sub sech($x, $base = Radians) {
+proto sech($x, $base = Radians) {
     $x.sech($base)
 }
 
-proto sech($x, $base = Radians) {
-    sech($x, $base)
-}
-
-multi sub asech($x, $base = Radians) {
+proto asech($x, $base = Radians) {
     $x.asech($base)
 }
 
-proto asech($x, $base = Radians) {
-    asech($x, $base)
-}
-
-multi sub cosech($x, $base = Radians) {
+proto cosech($x, $base = Radians) {
     $x.cosech($base)
 }
 
-proto cosech($x, $base = Radians) {
-    cosech($x, $base)
-}
-
-multi sub acosech($x, $base = Radians) {
+proto acosech($x, $base = Radians) {
     $x.acosech($base)
 }
 
-proto acosech($x, $base = Radians) {
-    acosech($x, $base)
-}
-
-multi sub cotanh($x, $base = Radians) {
+proto cotanh($x, $base = Radians) {
     $x.cotanh($base)
 }
 
-proto cotanh($x, $base = Radians) {
-    cotanh($x, $base)
-}
-
-multi sub acotanh($x, $base = Radians) {
+proto acotanh($x, $base = Radians) {
     $x.acotanh($base)
 }
 
-proto acotanh($x, $base = Radians) {
-    acotanh($x, $base)
-}
-
-multi sub atan2($y, $x = 1, $base = Radians) {
-    $y.atan2($x, $base)
-}
-
 proto atan2($y, $x = 1, $base = Radians) {
-    atan2($y, $x, $base)
+    $y.atan2($x, $base)
 }
 
 my Num sub rand (*@args) {

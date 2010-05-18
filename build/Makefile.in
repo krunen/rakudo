@@ -26,6 +26,7 @@ MV            = @mv@
 RM_F          = @rm_f@
 MKPATH        = $(PERL) -MExtUtils::Command -e mkpath
 CHMOD         = $(PERL) -MExtUtils::Command -e chmod
+POD2MAN       = @pod2man@
 
 # locations of parrot resources
 PARROT           = $(PARROT_BIN_DIR)/parrot$(EXE)
@@ -44,6 +45,8 @@ DYNEXT_DIR     = dynext
 PMC_DIR        = src/pmc
 OPS_DIR        = src/ops
 PERL6_LANG_DIR = $(PARROT_LIB_DIR)/languages/perl6
+MANDIR         = @mandir@
+DOCDIR         = @prefix@/share/doc
 
 # files we create
 PERL6_PBC     = perl6.pbc
@@ -254,6 +257,8 @@ PMC_SOURCES = \
 
 OPS_SOURCE   = perl6.ops
 
+DOCS = README CREDITS LICENSE docs/*
+
 CLEANUPS = \
   *.manifest \
   *.pdb \
@@ -289,6 +294,8 @@ CLEANUPS = \
 HARNESS_WITH_FUDGE = $(PERL) t/harness --fudge --keep-exit-code --icu=$(HAS_ICU)
 HARNESS_WITH_FUDGE_JOBS = $(HARNESS_WITH_FUDGE) --jobs
 
+STAGESTATS = @stagestats@
+
 # the default target
 all: $(PERL6_EXE) Test.pir
 
@@ -304,6 +311,11 @@ install: all
 	$(MKPATH)                     $(DESTDIR)$(PARROT_BIN_DIR)
 	$(CP)     $(PERL6_EXE)        $(DESTDIR)$(PARROT_BIN_DIR)
 	$(CHMOD)  755                 $(DESTDIR)$(PARROT_BIN_DIR)/$(PERL6_EXE)
+	$(MKPATH) 		      $(DESTDIR)$(DOCDIR)/rakudo
+	$(CP)     $(DOCS)             $(DESTDIR)$(DOCDIR)/rakudo
+	$(MKPATH) $(DESTDIR)$(MANDIR)/man1
+	-$(POD2MAN) docs/running.pod > $(DESTDIR)$(MANDIR)/man1/perl6.1
+	-$(POD2MAN) docs/running.pod > $(DESTDIR)$(MANDIR)/man1/rakudo.1
 
 xmas: $(PERL6_EXE)
 
@@ -313,7 +325,7 @@ $(PERL6_EXE): $(PERL6_PBC)
 
 # the complete compiler, including core/setting
 $(PERL6_PBC): $(S1_PERL6_PBC) src/gen/core.pm
-	$(PARROT) $(PARROT_ARGS) $(S1_PERL6_PBC) --target=pir \
+	$(PARROT) $(PARROT_ARGS) $(S1_PERL6_PBC) --target=pir $(STAGESTATS) \
 	    src/gen/core.pm > $(CORE_PIR)
 	$(PARROT) $(PARROT_ARGS) -o $(PERL6_PBC) src/Perl6/Compiler.pir
 
@@ -410,7 +422,7 @@ $(PMC_DIR)/objectref.pmc : $(PMC_DIR)/objectref_pmc.template build/gen_objectref
 
 ##  testing targets
 Test.pir: Test.pm perl6.pbc
-	$(PARROT) $(PARROT_ARGS) perl6.pbc --target=pir --output=Test.pir Test.pm
+	$(PARROT) $(PARROT_ARGS) perl6.pbc $(STAGESTATS) --target=pir --output=Test.pir Test.pm
 
 test    : coretest
 

@@ -19,8 +19,20 @@ by default also executes the compiled code.
   --encoding=[mode]    specify string encoding mode
   -o, --output=[name]  specify name of output file
   -v, --version        display version information
+  --stagestats         display time spent in the compilation stages
 
 Note that only boolean single-letter options may be bundled 
+
+Supported stages for --target are:
+
+ parse past post pir evalpmc
+
+where
+
+ parse = a representation of the parse tree
+ past  = an intermediate format representing the parrot abstract syntax tree
+ post  = an intermediate format representing the parrot opcode syntax tree
+ pir   = the parrot intermediate representation
 
 =head1 PARROT OPTIONS
 

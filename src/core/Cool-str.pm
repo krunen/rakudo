@@ -22,7 +22,7 @@ augment class Cool {
         }
     }
 
-    multi method subst($matcher, $replacement,  :g(:$global), :$x) {
+    multi method subst($matcher, $replacement, :g(:$global), :$x) {
         die "Can't combine :g/:global and :x in subst"
             if defined($global) && defined($x);
         my $limit = defined($x) ?? $x +1 !! 2;
@@ -177,19 +177,44 @@ augment class Cool {
         self gt '' ?? self.substr(0,1).lc ~ self.substr(1) !! ""
     }
 
-    our multi method match(Regex $pat, :$c = 0, :$g) {
-        if $g {
-            my $cont = $c;
-            gather while my $m = Regex::Cursor.parse(self, :rule($pat), :c($cont)) {
-                take $m;
-                if $m.to == $m.from {
-                    $cont = $m.to + 1;
+    our multi method match(Regex $pat,
+                           :c(:$continue),
+                           :g(:$global),
+                           :pos(:$p),
+                           Mu :$nth,
+                           :ov(:$overlap)) {
+        if $continue ~~ Bool {
+            note ":c / :continue requires a position in the string";
+            fail ":c / :continue requires a position in the string";
+        }
+        my %opts;
+        %opts<p> = $p        if defined $p;
+        %opts<c> = $continue // 0 unless defined $p;
+
+        if $global || $nth.defined || $overlap {
+            my $i = 1;
+            gather while my $m = Regex::Cursor.parse(self, :rule($pat), |%opts) {
+                my $m-copy = $m;
+                if $nth.defined {
+                    take $m-copy if $i ~~ any(|$nth);
                 } else {
-                    $cont = $m.to;
+                    take $m-copy;
                 }
+
+                if ($overlap) {
+                    %opts<c> = $m.from + 1;
+                } else {
+                    if $m.to == $m.from {
+                        %opts<c> = $m.to + 1;
+                    } else {
+                        %opts<c> = $m.to;
+                    }
+                }
+
+                $i++;
             }
         } else {
-            Regex::Cursor.parse(self, :rule($pat), :c($c));
+            Regex::Cursor.parse(self, :rule($pat), |%opts);
         }
     }
 

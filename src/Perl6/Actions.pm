@@ -848,7 +848,15 @@ method declarator($/) {
         my $list  := PAST::Op.new( :pasttype('call'), :name('&infix:<,>') );
         my $decls := $<signature>.ast.get_declarations;
         for @($decls) {
-            $list.push(declare_variable($/, $_, $_<sigil>, $_<twigil>, $_<desigilname>, $_<traits>));
+            if $_.isa(PAST::Var) {
+                my $decl := declare_variable($/, $_, $_<sigil>, $_<twigil>, $_<desigilname>, $_<traits>);
+                unless $decl.isa(PAST::Op) && $decl.pasttype() eq 'null' {
+                    $list.push($decl);
+                }
+            }
+            else {
+                $list.push($_);
+            }
         }
         $list<signature_from_declarator> := $<signature>.ast;
         make $list;
@@ -905,7 +913,7 @@ sub declare_variable($/, $past, $sigil, $twigil, $desigilname, $trait_list) {
 
         # Nothing to emit here; just hand  back an empty node, but also
         # annotate it with the attribute table.
-        $past := PAST::Stmts.new( );
+        $past := PAST::Op.new( :pasttype('null') );
         $past<attribute_data> := %attr_info;
     }
     else {
@@ -1370,6 +1378,7 @@ method type_declarator:sym<enum>($/) {
         $/.CURSOR.add_name(~$<name>[0]);
         for $result {
             $/.CURSOR.add_name(~$_.key);
+            $/.CURSOR.add_name(~$<name>[0] ~ '::' ~ ~$_.key);
         }
         
         # Emit code to set up named enum.
@@ -2502,7 +2511,7 @@ method quote_EXPR($/) {
                 $past := PAST::Stmts.new($past);
             }
             else {
-                $past := PAST::Val.new(:value(~@words[0]), :returns<Perl6Str>);
+                $past := PAST::Val.new(:value(~@words[0]), :returns<Str>);
             }
         }
     }
@@ -2523,7 +2532,7 @@ method quote_delimited($/) {
         else {
             if $lastlit gt '' {
                 @parts.push(
-                    PAST::Val.new( :value($lastlit), :returns('Perl6Str') )
+                    PAST::Val.new( :value($lastlit), :returns('Str') )
                 );
             }
             @parts.push($ast);
@@ -2532,7 +2541,7 @@ method quote_delimited($/) {
     }
     if $lastlit gt '' || !@parts {
         @parts.push(
-            PAST::Val.new( :value($lastlit), :returns('Perl6Str') )
+            PAST::Val.new( :value($lastlit), :returns('Str') )
         );
     }
     my $past := @parts ?? @parts.shift !! '';
@@ -2597,8 +2606,10 @@ sub add_signature($block, $sig_obj, $lazy) {
     $block[0].push(PAST::Var.new( :name('call_sig'), :scope('parameter'), :call_sig(1) ));
     my $decls := $sig_obj.get_declarations();
     for @($decls) {
-        $_.isdecl(1);
-        $block.symbol( $_.name, :scope('lexical') );
+        if $_.isa(PAST::Var) {
+            $_.isdecl(1);
+            $block.symbol( $_.name, :scope('lexical') );
+        }
     }
     $block[0].push($decls);
     $block[0].push(PAST::Op.new(
