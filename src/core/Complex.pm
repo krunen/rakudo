@@ -15,6 +15,10 @@ class Complex does Numeric is Cool {
 
     multi method Complex() { self }
 
+    method reals() {
+        (self.re, self.im);
+    }
+
     our Bool multi method Bool() { ( $!re != 0 || $!im != 0 ) ?? Bool::True !! Bool::False }
 
     multi method perl() {
@@ -159,25 +163,14 @@ class Complex does Numeric is Cool {
         $.abs, atan2($.im, $.re);
     }
 
-    multi method roots($n is copy) {
-       # my ($mag, $angle) = @.polar;
-       my $mag = $.abs;
-       my $angle = atan2($.im, $.re);
-       if $n < 1
-       {
-           return NaN;
-       }
+    method roots(Complex $x: Int $n) {
+       return NaN if $n < 1;
+       return self if $n == 1;
+       return NaN  if $x.re | $x.im ~~  Inf | NaN | -Inf;
 
-       if $n == 1
-       {
-           return self;
-       }
-
-       # return NaN  if $!re|$!im ~~  Inf|NaN|-Inf;
-       $n = $n.Int;
-       $mag **= 1/$n;
-       # (^$n).map: { $mag.unpolar( ($angle + $_ * 2 * pi) / $n) };
-       (0 ... ($n-1)).map: { $mag.unpolar( ($angle + $^x * 2 * 312689/99532) / $n) };
+       my ($mag, $angle) = $x.polar;
+       $mag **= 1 / $n;
+       (^$n).map: { $mag.unpolar( ($angle + $_ * 2 * pi) / $n) };
     }
 
     multi method sign() {
@@ -270,14 +263,6 @@ multi sub infix:</>(Complex $a, Real $b) {
 
 multi sub infix:</>(Real $a, Complex $b) {
     Complex.new($a, 0) / $b;
-}
-
-multi sub postfix:<i>($x) {
-    Complex.new(0, +$x);
-}
-
-multi sub postfix:<i>(Complex $z) {
-    Complex.new(-$z.im, $z.re);
 }
 
 multi sub prefix:<->(Complex $a) {

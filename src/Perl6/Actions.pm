@@ -196,12 +196,10 @@ method pblock($/) {
         $signature := Perl6::Compiler::Signature.new();
         unless $block.symbol('$_') {
             if $*IMPLICIT {
-                my $parameter := Perl6::Compiler::Parameter.new();
-                $parameter.var_name('$_');
-                $parameter.optional(1);
-                $parameter.is_parcel(1);
-                $parameter.default_from_outer(1);
-                $signature.add_parameter($parameter);
+                $signature.add_parameter(Perl6::Compiler::Parameter.new(
+                    :var_name('$_'), :optional(1),
+                    :is_parcel(1), :default_from_outer(1)
+                ));
             }
             else {
                 add_implicit_var($block, '$_', 1);
@@ -245,15 +243,10 @@ method newpad($/) {
 }
 
 method outerlex($/) {
-    my $outer_ctx := %*COMPILING<%?OPTIONS><outer_ctx>;
-    if pir::defined__IP($outer_ctx) {
-        my $block := @BLOCK[0];
-        my %lexinfo := Perl6::Compiler.get_lexinfo($outer_ctx);
-        for %lexinfo { $block.symbol($_.key, :scope<lexical>); }
-        my @ns := pir::getattribute__PPs($outer_ctx, 'current_namespace').get_name;
-        @ns.shift;
-        $block.namespace(@ns);
-    }
+    # Use SET_BLOCK_OUTER_CTX (inherited from HLL::Actions)
+    # to set dynamic outer lexical context and namespace details
+    # for the compilation unit.
+    self.SET_BLOCK_OUTER_CTX(@BLOCK[0]);
 }
 
 method finishpad($/) {
@@ -1774,10 +1767,11 @@ method methodop($/) {
         my @parts := Perl6::Grammar::parse_name(~$<longname>);
         my $name := @parts.pop;
         if +@parts {
+            my $scope := is_lexical(pir::join('::', @parts)) ?? 'lexical' !! 'package';
             $past.unshift(PAST::Var.new(
                 :name(@parts.pop),
                 :namespace(@parts),
-                :scope('package')
+                :scope($scope)
             ));
             $past.unshift($name);
             $past.name('!dispatch_::');
@@ -1887,7 +1881,7 @@ method term:sym<pir::op>($/) {
 method term:sym<*>($/) {
     my @name := Perl6::Grammar::parse_name('Whatever');
     make PAST::Op.new(
-        :pasttype('callmethod'), :name('new'), :node($/), :lvalue(1),
+        :pasttype('callmethod'), :name('new'), :node($/), :lvalue(1), :returns('Whatever'),
         PAST::Var.new( :name(@name.pop), :namespace(@name), :scope('package') )
     )
 }
@@ -2070,6 +2064,9 @@ method EXPR($/, $key?) {
     else {
         for $/.list { if $_.ast { $past.push($_.ast); } }
     }
+    if $key eq 'PREFIX' || $key eq 'INFIX' || $key eq 'POSTFIX' {
+        $past := whatever_curry($past, $key eq 'INFIX' ?? 2 !! 1);
+    }
     make $past;
 }
 
@@ -2078,7 +2075,7 @@ method prefixish($/) {
         my $opsub := '&prefix:<' ~ $<OPER>.Str ~ '<<>';
         unless %*METAOPGEN{$opsub} {
             my $base_op := '&prefix:<' ~ $<OPER>.Str ~ '>';
-            @BLOCK[0].loadinit.push(PAST::Op.new(
+            get_outermost_block().loadinit.push(PAST::Op.new(
                 :pasttype('bind'),
                 PAST::Var.new( :name($opsub), :scope('package') ),
                 PAST::Op.new(
@@ -2098,7 +2095,7 @@ method infixish($/) {
         my $sym := ~$<infix><sym>;
         my $opsub := "&infix:<$sym=>";
         unless %*METAOPGEN{$opsub} {
-            @BLOCK[0].loadinit.push(
+            get_outermost_block().loadinit.push(
                 PAST::Op.new( :name('!gen_assign_metaop'), $sym,
                               :pasttype('call') )
             );
@@ -2109,7 +2106,7 @@ method infixish($/) {
 
     if $<infix_prefix_meta_operator> {
         my $metaop := ~$<infix_prefix_meta_operator><sym>;
-        my $sym := ~$<infix_prefix_meta_operator><infixish>;
+        my $sym := ~$<infix_prefix_meta_operator><infixish><OPER>;
         my $opsub := "&infix:<$metaop$sym>";
         my $base_opsub := "&infix:<$sym>";
         if $opsub eq "&infix:<!=>" {
@@ -2129,7 +2126,7 @@ method infixish($/) {
                 $helper := '&zipwith';
             }
 
-            @BLOCK[0].loadinit.push(
+            get_outermost_block().loadinit.push(
                 PAST::Op.new( :pasttype('bind'),
                               PAST::Var.new( :name($opsub), :scope('package') ),
                               PAST::Op.new( :pasttype('callmethod'),
@@ -2143,13 +2140,17 @@ method infixish($/) {
 
         make PAST::Op.new( :name($opsub), :pasttype('call') );
     }
+
+    if $<infixish> {
+        make $<infixish>.ast;
+    }
 }
 
 method prefix_circumfix_meta_operator:sym<reduce>($/) {
     my $opsub := '&prefix:<' ~ ~$/ ~ '>';
     unless %*METAOPGEN{$opsub} {
         my $base_op := '&infix:<' ~ $<op>.Str ~ '>';
-        @BLOCK[0].loadinit.push(PAST::Op.new(
+        get_outermost_block().loadinit.push(PAST::Op.new(
             :pasttype('bind'),
             PAST::Var.new( :name($opsub), :scope('package') ),
             PAST::Op.new(
@@ -2177,10 +2178,10 @@ method infix_circumfix_meta_operator:sym<« »>($/) {
 sub make_hyperop($/) {
     my $opsub := '&infix:<' ~ ~$/ ~ '>';
     unless %*METAOPGEN{$opsub} {
-        my $base_op := '&infix:<' ~ $<infixish>.Str ~ '>';
+        my $base_op := '&infix:<' ~ $<infixish><OPER>.Str ~ '>';
         my $dwim_lhs := $<opening> eq '<<' || $<opening> eq '«';
         my $dwim_rhs := $<closing> eq '>>' || $<closing> eq '»';
-        @BLOCK[0].loadinit.push(PAST::Op.new(
+        get_outermost_block().loadinit.push(PAST::Op.new(
             :pasttype('bind'),
             PAST::Var.new( :name($opsub), :scope('package') ),
             PAST::Op.new(
@@ -2213,7 +2214,7 @@ method postfixish($/) {
             my $opsub := '&postfix:<>>' ~ $<OPER>.Str ~ '>';
             unless %*METAOPGEN{$opsub} {
                 my $base_op := '&postfix:<' ~ $<OPER>.Str ~ '>';
-                @BLOCK[0].loadinit.push(PAST::Op.new(
+                get_outermost_block().loadinit.push(PAST::Op.new(
                     :pasttype('bind'),
                     PAST::Var.new( :name($opsub), :scope('package') ),
                     PAST::Op.new(
@@ -2275,14 +2276,6 @@ method value:sym<quote>($/) {
 
 method value:sym<number>($/) {
     make $<number>.ast;
-}
-
-method number:sym<rational>($/) {
-    make PAST::Op.new(
-        :pasttype('callmethod'), :name('new'),
-        PAST::Var.new( :name('Rat'), :namespace(''), :scope('package') ),
-        $<nu>.ast, $<de>.ast
-    );
 }
 
 method number:sym<complex>($/) {
@@ -2372,10 +2365,8 @@ method typename($/) {
                 PAST::Var.new( :name('$_'), :scope('lexical') )
             )
         );
-        my $sig := Perl6::Compiler::Signature.new();
-        my $param := Perl6::Compiler::Parameter.new();
-        $param.var_name('$_');
-        $sig.add_parameter($param);
+        my $sig := Perl6::Compiler::Signature.new(
+            Perl6::Compiler::Parameter.new(:var_name('$_')));
         add_signature($past, $sig, 0);
         $past := create_code_object($past, 'Block', 0, '');
     }
@@ -2560,24 +2551,38 @@ class Perl6::RegexActions is Regex::P6Regex::Actions {
         make PAST::Regex.new( $past, :pasttype('pastnode') );
     }
 
-    method metachar:sym<{ }>($/) { make $<codeblock>.ast; }
+    method metachar:sym<{ }>($/) { 
+        make PAST::Regex.new( $<codeblock>.ast,
+                              :pasttype<pastnode>, :node($/) );
+    }
 
-    method assertion:sym<{ }>($/) { make $<codeblock>.ast; }
+    method metachar:sym<rakvar>($/) {
+        make PAST::Regex.new( '!INTERPOLATE', $<var>.ast,
+                              :pasttype<subrule>, :subtype<method>, :node($/));
+    }
+
+    method assertion:sym<{ }>($/) { 
+        make PAST::Regex.new( '!INTERPOLATE', 
+                 PAST::Op.new( :name<!MAKE_REGEX>, $<codeblock>.ast ),
+                 :pasttype<subrule>, :subtype<method>, :node($/));
+    }
+
+    method assertion:sym<?{ }>($/) {
+        make PAST::Regex.new( $<codeblock>.ast,
+                              :subtype<zerowidth>, :negate( $<zw> eq '!' ),
+                              :pasttype<pastnode>, :node($/) );
+    }
+
+    method assertion:sym<var>($/) {
+        make PAST::Regex.new( '!INTERPOLATE', 
+                 PAST::Op.new( :name<!MAKE_REGEX>, $<var>.ast ),
+                 :pasttype<subrule>, :subtype<method>, :node($/));
+    }
 
     method codeblock($/) {
         my $block := $<block>.ast;
         $block.blocktype('immediate');
-        make bindmatch($block);
-    }
-
-    method p6arglist($/) {
-        my $arglist := $<arglist>.ast;
-#        make bindmatch($arglist);
-        make $arglist;
-    }
-
-    sub bindmatch($past) {
-        PAST::Regex.new(
+        my $past := 
             PAST::Stmts.new(
                 PAST::Op.new(
                     PAST::Var.new( :name('$/') ),
@@ -2588,11 +2593,16 @@ class Perl6::RegexActions is Regex::P6Regex::Actions {
                     ),
                     :pasttype('bind')
                 ),
-                $past
-            ),
-            :pasttype('pastnode')
-        );
+                $block
+            );
+        make $past;
     }
+
+    method p6arglist($/) {
+        my $arglist := $<arglist>.ast;
+        make $arglist;
+    }
+
 }
 
 # Takes a block and adds a signature to it, as well as code to bind the call
@@ -2928,10 +2938,8 @@ sub make_attr_init_closure($init_value) {
     );
     $block[0].unshift(PAST::Var.new( :name('self'), :scope('lexical'), :isdecl(1), :viviself(sigiltype('$')) ));
     $block.symbol('self', :scope('lexical'));
-    my $sig := Perl6::Compiler::Signature.new();
-    my $parameter := Perl6::Compiler::Parameter.new();
-    $parameter.var_name('$_');
-    $sig.add_parameter($parameter);
+    my $sig := Perl6::Compiler::Signature.new(
+        Perl6::Compiler::Parameter.new(:var_name('$_')));
     $sig.add_invocant();
     my $lazy_name := add_signature($block, $sig, 1);
     create_code_object(PAST::Op.new( :pirop('newclosure PP'), $block ), 'Method', 0, $lazy_name);
@@ -2947,6 +2955,13 @@ sub is_lexical($name) {
         }
     }
     return 0;
+}
+
+# Gets the outermost block. We sometimes want to install global things in
+# it, e.g. generated meta-ops.
+sub get_outermost_block() {
+    our @BLOCK;
+    return @BLOCK[+@BLOCK - 1];
 }
 
 # Looks to see if a variable has been set up as an alias to an attribute.
@@ -2978,21 +2993,13 @@ sub where_blockify($expr) {
         $past := create_code_object($expr<past_block>, 'Block', 0, $lazy_name);
     }
     else {
-        $past := PAST::Block.new( :blocktype('declaration'),
-            PAST::Stmts.new( ),
-            PAST::Stmts.new(
-                PAST::Op.new( :pasttype('call'), :name('&infix:<~~>'),
-                    PAST::Var.new( :name('$_'), :scope('lexical') ),
-                    $expr
-                )
-            )
-        );
-        my $sig := Perl6::Compiler::Signature.new();
-        my $param := Perl6::Compiler::Parameter.new();
-        $param.var_name('$_');
-        $sig.add_parameter($param);
-        my $lazy_name := add_signature($past, $sig, 1);
-        $past := create_code_object($past, 'Block', 0, $lazy_name);
+        my $sig := Perl6::Compiler::Signature.new(
+            Perl6::Compiler::Parameter.new(:var_name('$_')));
+        $past := make_block_from($sig, PAST::Op.new(
+            :pasttype('call'), :name('&infix:<~~>'),
+            PAST::Var.new( :name('$_'), :scope('lexical') ),
+            $expr
+        ));
     }
     $past
 }
@@ -3014,6 +3021,64 @@ sub capture_or_parcel($args, $name) {
     else {
         $args
     }
+}
+
+# This checks if we have something of the form * op *, * op <thing> or
+# <thing> op * and if so, and if it's not one of the ops we do not
+# auto-curry for, emits a closure instead. We hard-code the things not
+# to curry for now; in the future, we will inspect the multi signatures
+# of the op to decide, or likely store things in this hash from that
+# introspection and keep it as a quick cache.
+our %not_curried;
+INIT {
+    %not_curried{'&infix:<...>'} := 1;
+    %not_curried{'&infix:<..>'}  := 1;
+    %not_curried{'&infix:<~~>'}  := 1;
+}
+sub whatever_curry($past, $upto_arity) {
+    if $past.isa(PAST::Op) && !%not_curried{$past.name} {
+        if $upto_arity == 2 && $past[0] ~~ PAST::Op && $past[0].returns eq 'Whatever'
+                            && $past[1] ~~ PAST::Op && $past[1].returns eq 'Whatever' {
+            # Curry left and right, two args.
+            $past.shift; $past.shift;
+            $past.push(PAST::Var.new( :name('$x'), :scope('lexical') ));
+            $past.push(PAST::Var.new( :name('$y'), :scope('lexical') ));
+            my $sig := Perl6::Compiler::Signature.new(
+                Perl6::Compiler::Parameter.new(:var_name('$x')),
+                Perl6::Compiler::Parameter.new(:var_name('$y')));
+            $past := make_block_from($sig, $past);
+        }
+        elsif $upto_arity == 2 && $past[1] ~~ PAST::Op && $past[1].returns eq 'Whatever' {
+            # Curry right arg.
+            $past.pop;
+            $past.push(PAST::Var.new( :name('$y'), :scope('lexical') ));
+            my $sig := Perl6::Compiler::Signature.new(
+                Perl6::Compiler::Parameter.new(:var_name('$y')));
+            $past := make_block_from($sig, $past);
+        }
+        elsif $upto_arity >= 1 && $past[0] ~~ PAST::Op && $past[0].returns eq 'Whatever' {
+            # Curry left (or for unary, only) arg.
+            $past.shift;
+            $past.unshift(PAST::Var.new( :name('$x'), :scope('lexical') ));
+            my $sig := Perl6::Compiler::Signature.new(
+                Perl6::Compiler::Parameter.new(:var_name('$x')));
+            $past := make_block_from($sig, $past);
+        }
+    }
+    $past
+}
+
+# Helper for constructing a simple Perl 6 Block with the given signature
+# and body.
+sub make_block_from($sig, $body) {
+    my $past := PAST::Block.new( :blocktype('declaration'),
+        PAST::Stmts.new( ),
+        PAST::Stmts.new(
+            $body
+        )
+    );
+    my $lazy_name := add_signature($past, $sig, 1);
+    create_code_object($past, 'Block', 0, $lazy_name);
 }
 
 # vim: ft=perl6

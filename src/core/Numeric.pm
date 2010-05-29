@@ -3,6 +3,19 @@ role Numeric {
         self;
     }
 
+    method reals() {
+        note "$.WHAT() needs a version of .reals";
+        fail "$.WHAT() needs a version of .reals";
+    }
+
+    method succ(Numeric $x:) {
+        $x + 1;
+    }
+
+    method pred(Numeric $x:) {
+        $x - 1;
+    }
+
     method abs(Numeric $x:) {
         note "$.WHAT() needs a version of .abs";
         fail "$.WHAT() needs a version of .abs";
@@ -29,6 +42,11 @@ role Numeric {
     method sqrt(Numeric $x:) {
         note "$.WHAT() needs a version of .sqrt";
         fail "$.WHAT() needs a version of .sqrt";
+    }
+
+    method roots(Numeric $x: Int $n) {
+        note "$.WHAT() needs a version of .roots";
+        fail "$.WHAT() needs a version of .roots";
     }
 
     INIT {
@@ -166,3 +184,37 @@ role Numeric {
 }
 
 multi sub infix:«cmp»(Numeric $a, Numeric $b) { $a <=> $b; }
+
+multi sub postfix:<i>(Numeric $z) {
+    $z * 1i;
+}
+
+multi sub infix:«<=>»(Numeric $a, Numeric $b) {
+    my @a = $a.reals;
+    my @b = $b.reals;
+    [||] (@a Z<=> @b), (+@a <=> +@b);
+}
+
+multi sub infix:«==»(Numeric $a, Numeric $b) {
+    ($a <=> $b) == 0;
+}
+
+multi sub infix:«!=»(Numeric $a, Numeric $b) {
+    ($a <=> $b) != 0;
+}
+
+multi sub infix:«<»(Numeric $a, Numeric $b) {
+    ($a <=> $b) == -1;
+}
+
+multi sub infix:«>»(Numeric $a, Numeric $b) {
+    ($a <=> $b) == +1;
+}
+
+multi sub infix:«<=»(Numeric $a, Numeric $b) {
+    ($a <=> $b) != +1;
+}
+
+multi sub infix:«>=»(Numeric $a, Numeric $b) {
+    ($a <=> $b) != -1;
+}

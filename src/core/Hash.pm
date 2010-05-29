@@ -67,7 +67,7 @@ role Hash is EnumMap {
                 delete $P1[$P0]
             }
         }
-        @deleted
+        return |@deleted
     }
 
     method push(*@values) {
@@ -100,6 +100,10 @@ role Hash is EnumMap {
         } else {
             self.{$key} = $value;
         }
+    }
+
+    method list() {
+        return self.pairs;
     }
 
     multi method sort(&by = &infix:<cmp>) {

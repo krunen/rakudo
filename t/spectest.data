@@ -23,6 +23,24 @@ integration/99problems-31-to-40.t
 integration/99problems-41-to-50.t
 # integration/99problems-51-to-60.t
 # integration/99problems-61-to-70.t
+integration/advent2009-day01.t
+integration/advent2009-day02.t
+integration/advent2009-day03.t
+integration/advent2009-day04.t
+integration/advent2009-day05.t
+integration/advent2009-day06.t
+integration/advent2009-day07.t
+integration/advent2009-day08.t
+integration/advent2009-day09.t
+integration/advent2009-day11.t
+integration/advent2009-day14.t
+integration/advent2009-day15.t
+integration/advent2009-day16.t
+integration/advent2009-day17.t
+integration/advent2009-day19.t
+integration/advent2009-day20.t
+integration/advent2009-day22.t
+integration/advent2009-day23.t
 integration/code-blocks-as-sub-args.t
 integration/lexical-array-in-inner-block.t
 integration/lexicals-and-attributes.t
@@ -249,6 +267,7 @@ S05-grammar/protoregex.t
 S05-grammar/protos.t
 S05-grammar/signatures.t
 # S05-grammar/ws.t
+S05-interpolation/lexicals.t
 # S05-mass/named-chars.t                                     # icu
 S05-mass/properties-block.t                                # icu
 S05-mass/properties-derived.t                              # icu
@@ -287,6 +306,7 @@ S05-modifier/overlapping.t
 # S05-modifier/perl5_7.t
 # S05-modifier/perl5_8.t
 S05-modifier/pos.t
+S05-modifier/repetition.t
 S05-substitution/match.t
 S05-substitution/subst.t
 # S05-transliteration/trans.t
@@ -473,6 +493,7 @@ S32-array/splice.t
 S32-array/unshift.t
 # S32-container/zip.t
 S32-hash/exists.t
+S32-hash/delete.t
 S32-hash/invert.t
 S32-hash/keys_values.t
 S32-hash/pairs.t

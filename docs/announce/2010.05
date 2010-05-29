@@ -1,0 +1,59 @@
+    Announce: Rakudo Perl 6 development release #29 ("Erlangen")
+
+On behalf of the Rakudo development team, I'm pleased to announce the
+May 2010 development release of Rakudo Perl #29 "Erlangen".
+Rakudo is an implementation of Perl 6 on the Parrot Virtual Machine
+(see http://www.parrot.org).  The tarball for the May 2010 release
+is available from http://github.com/rakudo/rakudo/downloads .
+
+Rakudo Perl follows a monthly release cycle, with each release named
+after a Perl Mongers group.  The May 2010 release is code named
+"Erlangen" in recognition of Erlangen.pm and the Perl 6 talk that Moritz
+Lenz, one of our core developers, gave this month.
+
+Some of the specific changes and improvements occurring with this
+release include:
+
+* Lexical classes and roles were implemented. Additionally, anonymous classes
+  -- which were never quite right in alpha -- are now implemented more
+  correctly, and anonymous roles are also supported.
+
+* Basic support for named enumerations of the form 'enum Weekday <Monday
+  Tuesday ...>' has been restored.
+
+* First cut of use Foo:from<perl5> and eval('foo', :lang<perl5>); needs
+  Blizkost[1] to be installed to work.
+
+*  Numeric / Real roles much closer to the spec now.
+
+*  As always, many additional small features and bug fixes make working with
+   Rakudo more pleasant.
+
+*  Rakudo now passes 32,347 spectests. We estimate that there are about
+   39,500 tests in the test suite, so Rakudo passes about 82% of all tests.
+
+For a more detailed list of changes see "docs/ChangeLog".
+
+The development team thanks all of our contributors and sponsors for
+making Rakudo Perl possible, as well as those people who worked on parrot, the
+Perl 6 test suite and the specification.
+
+The following people contributed to this release:
+Solomon Foster, Moritz Lenz, Jonathan Worthington, Martin Berends,
+chromatic, Carl Masak, snarkyboojum, Stefan O'Rear, Reini Urban,
+Jonathan Scott Duff, takadonet, Christoph Otto, isBEKaml,
+ash_, bubaflub, Jimmy Zhuo, Peter Lobsinger and Patrick Abi Salloum
+
+If you would like to contribute,
+see http://rakudo.org/how-to-help , ask on the perl6-compiler@perl.org
+mailing list, or ask on IRC #perl6 on freenode.
+
+The next release of Rakudo (#30) is scheduled for June 17, 2010.
+A list of the other planned release dates and code names for 2010 is
+available in the "docs/release_guide.pod" file.  In general, Rakudo
+development releases are scheduled to occur two days after each
+Parrot monthly release.  Parrot releases the third Tuesday of each month.
+
+Have fun!
+
+[1] http://github.com/jnthn/blizkost

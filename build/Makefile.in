@@ -83,6 +83,7 @@ BUILTINS_PIR = \
   src/glue/dispatch.pir \
   src/glue/enum.pir \
   src/glue/phasers.pir \
+  src/glue/regex.pir \
   src/glue/role.pir \
   src/glue/run.pir \
   src/glue/types.pir \
@@ -164,6 +165,7 @@ CHEATS_PIR = \
 
 CORE_SOURCES = \
   src/core/traits.pm \
+  src/core/metaops.pm \
   src/core/operators.pm \
   src/glue/subset.pm \
   src/cheats/trait-export.pm \
@@ -188,12 +190,13 @@ CORE_SOURCES = \
   src/core/Num.pm \
   src/core/Rat.pm \
   src/core/Complex.pm \
+  src/core/Stringy.pm \
+  src/core/Buf.pm \
   src/core/Str.pm \
   src/core/Whatever.pm \
   src/core/Pair.pm \
   src/core/Range.pm \
   src/core/RangeIter.pm \
-  src/core/metaops.pm \
   src/core/EnumMap.pm \
   src/core/Hash.pm \
   src/core/Enum.pm \

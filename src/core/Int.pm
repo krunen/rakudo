@@ -28,16 +28,16 @@ augment class Int does Real {
 
     our Bool multi method Bool() { self != 0 ?? Bool::True !! Bool::False }
 
-    our Int multi method Int() { self }
+    our Int method Int() { self; }
 
-    our Num multi method Num() {
-        pir::box__PN(pir::set__NP(self))
+    our Int method Rat(Real $epsilon = 1.0e-6) { self / 1; }
+
+    our Num method Num() {
+        pir::box__PN(pir::set__NP(self));
     }
 
     # Next has been moved to Rat.pm for the moment.
     # our Rat multi method Rat() { Rat.new(self, 1); }
-
-    our ::Complex multi method Complex() { Complex.new(self, 0); }
 }
 
 our multi sub infix:<+>(Int $a, Int $b) {

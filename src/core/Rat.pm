@@ -2,15 +2,6 @@ class Rat is Cool does Real {
     has $.numerator;
     has $.denominator;
 
-    our sub gcd(Int $a is copy, Int $b is copy) {
-        $a = -$a if ($a < 0);
-        $b = -$b if ($b < 0);
-        while $a > 0 && $b > 0 {
-            ($a, $b) = ($b, $a) if ($b > $a);
-            $a %= $b;
-        }
-        return $a + $b;
-    }
 
     multi method new() {
         self.bless(*, :numerator(0), :denominator(1));
@@ -22,7 +13,7 @@ class Rat is Cool does Real {
             $numerator = -$numerator;
             $denominator = -$denominator;
         }
-        my $gcd = gcd($numerator, $denominator);
+        my $gcd = pir::gcd__iii($numerator, $denominator);
         $numerator = $numerator div $gcd;
         $denominator = $denominator div $gcd;
         self.bless(*, :numerator($numerator), :denominator($denominator));
@@ -41,29 +32,30 @@ class Rat is Cool does Real {
 
     our Bool multi method Bool() { $!numerator != 0 ?? Bool::True !! Bool::False }
 
-    multi method Num() {
+    method Int() { self.Num.Int; }
+
+    method Rat(Real $epsilon = 1.0e-6) { self; }
+
+    method Num() {
         $!denominator == 0 ?? Inf * $!numerator.sign
                            !! $!numerator.Num / $!denominator.Num;
     }
-
-    multi method Rat() { self; }
-
-    multi method Int() { self.Num.Int; }
 
     multi method Str() { $.Num.Str; }
 
     multi method nude() { $.numerator, $.denominator; }
 
-    multi method succ {
+    method succ {
         Rat.new($!numerator + $!denominator, $!denominator);
     }
-    multi method pred {
+
+    method pred {
         Rat.new($!numerator - $!denominator, $!denominator);
     }
 }
 
 multi sub infix:<+>(Rat $a, Rat $b) {
-    my $gcd = Rat::gcd($a.denominator, $b.denominator);
+    my $gcd = pir::gcd__iii($a.denominator, $b.denominator);
     ($a.numerator * ($b.denominator div $gcd) + $b.numerator * ($a.denominator div $gcd))
         / (($a.denominator div $gcd) * $b.denominator);
 }
@@ -77,7 +69,7 @@ multi sub infix:<+>(Int $a, Rat $b) {
 }
 
 multi sub infix:<->(Rat $a, Rat $b) {
-    my $gcd = Rat::gcd($a.denominator, $b.denominator);
+    my $gcd = pir::gcd__iii($a.denominator, $b.denominator);
     ($a.numerator * ($b.denominator div $gcd) - $b.numerator * ($a.denominator div $gcd))
         / (($a.denominator div $gcd) * $b.denominator);
 }
@@ -120,11 +112,6 @@ multi sub infix:</>(Int $a, Rat $b) {
 
 multi sub infix:</>(Int $a, Int $b) {
     Rat.new($a, $b);
-}
-
-augment class Int {
-    # CHEAT: Comes from Int.pm, moved here for the moment.
-    our Rat multi method Rat() { Rat.new(self, 1); }
 }
 
 # vim: ft=perl6 sw=4 ts=4 expandtab
