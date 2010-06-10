@@ -55,6 +55,9 @@ augment class Any {
     # CHEAT: this should take an ordering parameter
     # And use the FIRST: phaser
     multi method min($by = { $^a cmp $^b}) {
+        die "Unable to handle non-closure Ordering yet" unless $by ~~ Code;
+        my $cmp = $by.signature.params.elems == 2 ?? $by !! { $by($^a) cmp $by($^b) };
+
         my $min = +Inf;
         my $first-time = Bool::True;
         for @.list {
@@ -63,7 +66,7 @@ augment class Any {
                 $first-time = Bool::False;
                 next;
             }
-            if $by($_, $min) == -1 {
+            if $cmp($_, $min) == -1 {
                 $min = $_;
             }
         }
@@ -73,6 +76,9 @@ augment class Any {
     # CHEAT: this should take an ordering parameter
     # And use the FIRST: phaser
     multi method max($by = { $^a cmp $^b}) {
+        die "Unable to handle non-closure Ordering yet" unless $by ~~ Code;
+        my $cmp = $by.signature.params.elems == 2 ?? $by !! { $by($^a) cmp $by($^b) };
+
         my $max = -Inf;
         my $first-time = Bool::True;
         for @.list {
@@ -81,7 +87,7 @@ augment class Any {
                 $first-time = Bool::False;
                 next;
             }
-            if $by($_, $max) == 1 {
+            if $cmp($_, $max) == 1 {
                 $max = $_;
             }
         }
@@ -91,6 +97,9 @@ augment class Any {
     # CHEAT: this should take an ordering parameter
     # And use the FIRST: phaser
     multi method minmax($by = { $^a cmp $^b}) {
+        die "Unable to handle non-closure Ordering yet" unless $by ~~ Code;
+        my $cmp = $by.signature.params.elems == 2 ?? $by !! { $by($^a) cmp $by($^b) };
+
         my $min = +Inf;
         my $max = -Inf;
         my $excludes_min = Bool::False;
@@ -107,11 +116,11 @@ augment class Any {
                     $first-time = Bool::False;
                     next;
                 }
-                if $by($_.min, $min) == -1 {
+                if $cmp($_.min, $min) == -1 {
                     $min = $_;
                     $excludes_min = $_.excludes_min;
                 }
-                if $by($_.max, $max) == 1 {
+                if $cmp($_.max, $max) == 1 {
                     $max = $_;
                     $excludes_max = $_.excludes_max;
                 }
@@ -123,11 +132,11 @@ augment class Any {
                 $first-time = Bool::False;
                 next;
             }
-            if $by($_, $min) == -1 {
+            if $cmp($_, $min) == -1 {
                 $min = $_;
                 $excludes_min = Bool::False;
             }
-            if $by($_, $max) == 1 {
+            if $cmp($_, $max) == 1 {
                 $max = $_;
                 $excludes_max = Bool::False;
             }
@@ -269,7 +278,7 @@ proto sub max($by, *@values) { @values.max($by); }
 proto sub minmax($by, *@values) { @values.minmax($by); }
 proto sub uniq(@values) { @values.uniq; }
 proto sub pick ($num, :$replace, *@values) { @values.pick($num, :$replace); }
-proto sub map(&mapper, @values) { @values.map(&mapper); }
+proto sub map(&mapper, *@values) { @values.map(&mapper); }
 proto sub kv(@array) { @array.kv; }
 proto sub keys(@array) { @array.keys; }
 proto sub values(@array) { @array.values; }

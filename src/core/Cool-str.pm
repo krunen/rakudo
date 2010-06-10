@@ -15,7 +15,9 @@ augment class Cool {
     }
 
     our multi method chomp() is export {
-        if self ~~ /\x0a$/ {
+        if self ~~ /\x0d\x0a$/ {
+            self.substr(0, self.chars - 2);
+        } elsif self ~~ /\x0a$/ {
             self.substr(0, self.chars - 1);
         } else {
             self;
@@ -133,6 +135,75 @@ augment class Cool {
         pir::substr(self, $start, $len);
     }
 
+    multi method trans(*@changes) {
+        my sub expand($s) {
+            return $s.list if $s ~~ Iterable|Positional;
+            gather for $s.comb(/ (\w) '..' (\w) | . /, :match) {
+                if .[0] {
+                    take $_ for ~.[0] .. ~.[1];
+                } else {
+                    take ~$_;
+                }
+            }
+        }
+
+        my %c;
+        my %prefixes;
+        for (@changes) -> $p {
+            die "$p.perl is not a Pair" unless $p ~~ Pair;
+            my @from = expand $p.key;
+            my @to   = expand $p.value;
+#            warn "Substitution is longer than pattern\n" if @to > @from;
+            if @to {
+                @to = @to xx ceiling(@from / @to);
+            } else {
+                @to = '' xx @from;
+            }
+            for @from Z @to -> $f, $t {
+                if %c.exists($f) && %c{$f} ne $t {
+#                    warn "Ambigious transliteration rule for '$f'; "
+#                         ~ "using the first one (transliteration to '$t')";
+                } else {
+                    if $f.chars > 1 {
+                        %prefixes{$f.substr(0, 1)} //= [];
+                        %prefixes{$f.substr(0, 1)}.push($f);
+                    }
+                    %c{$f} = $t;
+                }
+            }
+        }
+
+        # should be replaced by a proper trie implementation
+        # at some point
+        for %prefixes.keys {
+            %prefixes{$_}.=sort({-.chars});
+        }
+
+        my @res;
+        my $l = $.chars;
+        loop (my $i = 0; $i < $l; ++$i) {
+            my $c = $.substr($i, 1);
+            my $success = 0;
+            if %prefixes.exists($c) {
+                for %prefixes{$c}.list {
+                    if self.substr($i, .chars) eq $_ {
+                        @res.push: %c{$_};
+                        $success = 1;
+                        $i += .chars - 1;
+                        last;
+                    }
+                }
+            }
+            unless $success {
+                @res.push: %c.exists($c)
+                            ?? %c{$c}
+                            !! $c;
+            }
+        }
+        @res.join: '';
+    }
+
+
     # S32/Str says that this should always return a StrPos object
     our Int multi method index($substring, $pos = 0) is export {
         if ($substring.chars == 0) {
@@ -216,7 +287,7 @@ augment class Cool {
 
             my $taken = 0;
             my $i = 1;
-            my @r = gather while my $m = Regex::Cursor.parse(self, :rule($pat), |%opts) {
+            my @r = gather while my $m = Cursor.parse(self, :rule($pat), |%opts) {
                 my $m-copy = $m;
                 if !$nth.defined || $i == $next-index {
                     take $m-copy;
@@ -249,7 +320,7 @@ augment class Cool {
             }
             return |@r;
         } else {
-            Regex::Cursor.parse(self, :rule($pat), |%opts);
+            Cursor.parse(self, :rule($pat), |%opts);
         }
     }
     multi method match($pat, *%options) {
@@ -361,11 +432,11 @@ our multi sub infix:<leg>($a, $b) {
     ~$a cmp ~$b
 }
 
-multi split ( Str $delimiter, Str $input, Int $limit = * ) {
+multi split ( Str $delimiter, Str $input, $limit = * ) {
     $input.split($delimiter, $limit);
 }
 
-multi split ( Regex $delimiter, Str $input, Int $limit = * ) {
+multi split ( Regex $delimiter, Str $input, $limit = * ) {
     $input.split($delimiter, $limit);
 }
 

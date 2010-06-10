@@ -5,6 +5,10 @@ role Real does Numeric {
         fail "Bridge must be defined for the Real type " ~ self.WHAT;
     }
 
+    method Bool() {
+        self != 0 ?? Bool::True !! Bool::False;
+    }
+
     method Int() {
         self.truncate;
     }
@@ -282,10 +286,22 @@ multi sub infix:</>(Num $a, Num $b) {
     pir::div__NNN($a, $b)
 }
 
+multi sub infix:<%>(Real $a, Real $b) {
+    # older version is pir::mod__NNN($a.Bridge, $b.Bridge)
+    $a - ($a / $b).floor * $b;
+}
+
 multi sub infix:<**>(Real $a, Real $b) {
     $a.Bridge ** $b.Bridge;
 }
 
 multi sub infix:<**>(Num $a, Num $b) {
     pir::pow__NNN($a, $b)
+}
+
+# NOTE: mod is only actually defined for integer types!
+# But if you have an integer type that does Real, this
+# should automatically define an appropriate mod for you.
+our multi sub infix:<mod>(Real $a, Real $b) {
+    $a - ($a div $b) * $b;
 }

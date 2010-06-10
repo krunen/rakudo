@@ -1,8 +1,8 @@
-our multi sub notresults(&op, Mu \$a, Mu \$b) {
+our multi sub negate(&op, Mu \$a, Mu \$b) {
     !(&op($a, $b));
 }
 
-our multi sub notresults(&op) {
+our multi sub negate(&op) {
     Bool::True;
 }
 
@@ -54,41 +54,48 @@ our multi reduce(&op, *@list) {
     @list.reduce(&op)
 }
 
-our multi sub hyper(&op, %lhs, %rhs, :$dwim-left, :$dwim-right) {
-    die "Sorry, hyper operators on hashes are not yet implemented.";
-}
-
 our multi sub hyper(&op, Iterable $lhs-iterable, Iterable $rhs-iterable, :$dwim-left, :$dwim-right) {
-    my @lhs = $lhs-iterable.Seq;
-    my @rhs = $rhs-iterable.Seq;
-
-    if @lhs.elems != @rhs.elems {
-        if @lhs.elems > @rhs.elems {
-            if $dwim-right {
-                if @rhs.elems > 0 {
-                    @rhs.push: @rhs[@rhs.elems - 1] xx (@lhs.elems - @rhs.elems);
-                } else {
-                    @rhs.push: &op() xx (@lhs.elems - @rhs.elems);
-                }
-            } else {
-                die "Sorry, right side is too short and not dwimmy.";
-            }
-        } else {
-            if $dwim-left {
-                if @lhs.elems > 0 {
-                    @lhs.push: @lhs[@lhs.elems - 1] xx (@rhs.elems - @lhs.elems);
-                } else {
-                    @lhs.push: &op() xx (@rhs.elems - @lhs.elems);
-                }
-            } else {
-                die "Sorry, left side is too short and not dwimmy.";
+    my sub repeating-array(@a) {
+        gather loop {
+            for @a -> $a {
+                take $a;
             }
         }
     }
 
+    my @lhs = $lhs-iterable.Seq;
+    my @rhs = $rhs-iterable.Seq;
+
+    my $length;
+    if !$dwim-left && !$dwim-right {
+        if +@lhs != +@rhs {
+            die "Sorry, sides are of uneven length and not dwimmy.";
+        }
+        $length = +@lhs;
+    } elsif !$dwim-left {
+        $length = +@lhs;
+    } elsif !$dwim-right {
+        $length = +@rhs;
+    } else {
+        $length = +@lhs max +@rhs;
+    }
+
+    if $length != +@lhs {
+        @lhs = repeating-array(@lhs).batch($length);
+    }
+    if $length != +@rhs {
+        @rhs = repeating-array(@rhs).batch($length);
+    }
+
     my @result;
     for @lhs Z @rhs -> $l, $r {
-        @result.push(op($l, $r));
+        if Associative.ACCEPTS($l) || Associative.ACCEPTS($r) {
+            @result.push(hyper(&op, $l, $r, :$dwim-left, :$dwim-right));
+        } elsif Iterable.ACCEPTS($l) || Iterable.ACCEPTS($r) {
+            @result.push([hyper(&op, $l.list, $r.list, :$dwim-left, :$dwim-right)]);
+        } else {
+            @result.push(op($l, $r));
+        }
     }
     @result
 }
@@ -97,10 +104,60 @@ our multi sub hyper(&op, $lhs, $rhs, :$dwim-left, :$dwim-right) {
     hyper(&op, $lhs.list, $rhs.list, :$dwim-left, :$dwim-right);
 }
 
+our multi sub hyper(&op, %lhs, %rhs, :$dwim-left, :$dwim-right) {
+    my %result;
+    my @keys;
+    if $dwim-left && $dwim-right {
+        @keys = %lhs.keys.grep({ %rhs.exists($_) });
+    } elsif $dwim-left {
+        @keys = %rhs.keys;
+    } elsif $dwim-right {
+        @keys = %lhs.keys;
+    } else {
+        # .eagers should not be necessary in next line, but are
+        # needed ATM because of the gather / take bug.
+        @keys = (%lhs.keys.eager, %rhs.keys.eager).uniq;
+    }
+
+    for @keys -> $key {
+        %result{$key} = &op(%lhs{$key}, %rhs{$key});
+    }
+    %result;
+}
+
+our multi sub hyper(&op, %arg) {
+    my %result;
+    for %arg.keys -> $key {
+        %result{$key} = &op(%arg{$key});
+    }
+    %result;
+}
+
+our multi sub hyper(&op, %lhs, $rhs, :$dwim-left, :$dwim-right) {
+    die "Sorry, right side is too short and not dwimmy." unless $dwim-right;
+    my %result;
+    for %lhs.keys -> $key {
+        %result{$key} = &op(%lhs{$key}, $rhs);
+    }
+    %result;
+}
+
+our multi sub hyper(&op, $lhs, %rhs, :$dwim-left, :$dwim-right) {
+    die "Sorry, left side is too short and not dwimmy." unless $dwim-left;
+    my %result;
+    for %rhs.keys -> $key {
+        %result{$key} = &op($lhs, %rhs{$key});
+    }
+    %result;
+}
+
 our multi sub hyper(&op, @arg) {
     my @result;
     for @arg {
-        @result.push(op($_));
+        # this is terribly ugly; but works
+        @result.push(hyper(&op, $_)) if Associative.ACCEPTS($_);
+        @result.push([hyper(&op, $_)]) if !Associative.ACCEPTS($_) && Iterable.ACCEPTS($_);
+        @result.push(op($_))  if !Associative.ACCEPTS($_) && !Iterable.ACCEPTS($_);
     }
     @result
 }

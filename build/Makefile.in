@@ -74,6 +74,7 @@ SOURCES = \
   src/gen/locator_pm.pir \
   src/gen/versiondetectionactions_pm.pir \
   src/gen/loader_pm.pir \
+  src/gen/backtraceprinter_pm.pir \
   $(PERL6_G) \
   $(PERL6_A) \
   $(DYNEXT_TARGET)
@@ -88,15 +89,15 @@ BUILTINS_PIR = \
   src/glue/run.pir \
   src/glue/types.pir \
   src/builtins/Mu.pir \
-  src/gen/Attribute.pir \
   src/metamodel/ClassHOW.pir \
+  src/builtins/Any.pir \
+  src/gen/Attribute.pir \
+  src/builtins/Cool.pir \
   src/metamodel/RoleHOW.pir \
   src/gen/RoleToRoleApplier.pir \
   src/gen/RoleToClassApplier.pir \
   src/gen/RoleToInstanceApplier.pir \
   src/metamodel/GrammarHOW.pir \
-  src/builtins/Any.pir \
-  src/builtins/Cool.pir \
   src/builtins/Role.pir \
   src/builtins/ConcreteRole.pir \
   src/builtins/Abstraction.pir \
@@ -136,6 +137,7 @@ BUILTINS_PIR = \
   src/builtins/assign.pir \
   src/builtins/metaops.pir \
   src/builtins/control.pir \
+  src/builtins/Cursor.pir \
 
 # Make sure parrot cheats are last in this list.
 # First parrot cheat must be attriter.pir (to get .HLL),
@@ -177,6 +179,7 @@ CORE_SOURCES = \
   src/core/Parcel.pm \
   src/core/Any.pm \
   src/core/Any-list.pm \
+  src/core/Cool.pm \
   src/core/Cool-num.pm \
   src/core/Cool-str.pm \
   src/core/Seq.pm \
@@ -215,48 +218,16 @@ CORE_SOURCES = \
   src/cheats/setup-io.pm \
   src/core/Date.pm \
   src/core/Temporal.pm \
+  src/core/Match.pm \
+  src/core/MAIN.pm \
   src/core/YOU_ARE_HERE.pm \
-
-# SETTING = \
-#   src/setting/traits.pm \
-#   src/setting/Any-list.pm \
-#   src/setting/Any-num.pm \
-#   src/setting/Any-str.pm \
-#   src/setting/Array.pm \
-#   src/setting/Attribute.pm \
-#   src/setting/Block.pm \
-#   src/setting/Bool.pm \
-#   src/setting/Buf.pm \
-#   src/setting/Code.pm \
-#   src/setting/Complex.pm \
-#   src/setting/Hash.pm \
-#   src/setting/Rat.pm \
-#   src/setting/Int.pm \
-#   src/setting/IO.pm \
-#   src/setting/IO/Socket.pm \
-#   src/setting/IO/Socket/INET.pm \
-#   src/setting/Junction.pm \
-#   src/setting/List.pm \
-#   src/setting/Mapping.pm \
-#   src/setting/Match.pm \
-#   src/setting/Num.pm \
-#   src/setting/NYI.pm \
-#   src/setting/Object.pm \
-#   src/setting/Operators.pm \
-#   src/setting/Pair.pm \
-#   src/setting/Parameter.pm \
-#   src/setting/Range.pm \
-#   src/setting/Signature.pm \
-#   src/setting/Str.pm \
-#   src/setting/Temporal.pm \
-#   src/setting/Whatever.pm \
 
 PMC_SOURCES = \
   $(PMC_DIR)/perl6str.pmc $(PMC_DIR)/objectref.pmc \
   $(PMC_DIR)/perl6scalar.pmc $(PMC_DIR)/mutablevar.pmc \
   $(PMC_DIR)/perl6multisub.pmc $(PMC_DIR)/p6invocation.pmc \
   $(PMC_DIR)/p6opaque.pmc $(PMC_DIR)/p6role.pmc \
-  $(PMC_DIR)/p6lowlevelsig.pmc
+  $(PMC_DIR)/p6lowlevelsig.pmc $(PMC_DIR)/byteview.pmc
 
 OPS_SOURCE   = perl6.ops
 
@@ -317,8 +288,8 @@ install: all
 	$(MKPATH) 		      $(DESTDIR)$(DOCDIR)/rakudo
 	$(CP)     $(DOCS)             $(DESTDIR)$(DOCDIR)/rakudo
 	$(MKPATH) $(DESTDIR)$(MANDIR)/man1
-	-$(POD2MAN) docs/running.pod > $(DESTDIR)$(MANDIR)/man1/perl6.1
-	-$(POD2MAN) docs/running.pod > $(DESTDIR)$(MANDIR)/man1/rakudo.1
+	-$(POD2MAN) docs/running.pod --name=perl6 > $(DESTDIR)$(MANDIR)/man1/perl6.1
+	-$(POD2MAN) docs/running.pod --name=rakudo > $(DESTDIR)$(MANDIR)/man1/rakudo.1
 
 xmas: $(PERL6_EXE)
 
@@ -394,6 +365,10 @@ src/gen/loader_pm.pir: $(PARROT) $(NQP_PBC) src/Perl6/Module/Loader.pm
 	$(NQP_EXE) --output=src/gen/loader_pm.pir --encoding=utf8 \
 	    --target=pir src/Perl6/Module/Loader.pm
 
+src/gen/backtraceprinter_pm.pir: $(PARROT) $(NQP_PBC) src/Perl6/BacktracePrinter.pm
+	$(NQP_EXE) --output=src/gen/backtraceprinter_pm.pir --encoding=utf8 \
+	    --target=pir src/Perl6/BacktracePrinter.pm
+
 src/gen/builtins.pir: build/gen_builtins_pir.pl $(BUILTINS_PIR)
 	$(PERL) build/gen_builtins_pir.pl $(BUILTINS_PIR) > src/gen/builtins.pir
 
@@ -405,18 +380,6 @@ src/gen/core.pm: build/gen_core_pm.pl $(CORE_SOURCES)
 
 src/gen/uprop-cheats.pir: build/gen_uprop_pir.pl
 	$(PERL) build/gen_uprop_pir.pl > src/gen/uprop-cheats.pir
-
-#src/gen_metaop.pir: build/gen_metaop_pir.pl
-#	$(PERL) build/gen_metaop_pir.pl > src/gen_metaop.pir
-#
-#src/gen_junction.pir: build/gen_junction_pir.pl
-#	$(PERL) build/gen_junction_pir.pl > src/gen_junction.pir
-#
-#src/gen_whatever.pir: build/gen_whatever_pir.pl
-#	$(PERL) build/gen_whatever_pir.pl > src/gen_whatever.pir
-#
-#src/gen_setting.pm: build/gen_setting_pm.pl $(SETTING)
-#	$(PERL) build/gen_setting_pm.pl $(SETTING) > src/gen_setting.pm
 
 $(PMC_DIR)/objectref.pmc : $(PMC_DIR)/objectref_pmc.template build/gen_objectref_pmc.pl
 	$(PERL) -I$(PARROT_PERL_LIB) build/gen_objectref_pmc.pl $(PMC_DIR)/objectref_pmc.template \

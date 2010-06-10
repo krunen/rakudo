@@ -505,7 +505,7 @@ token term:sym<regex_declarator>   { <regex_declarator> }
 token term:sym<statement_prefix>   { <statement_prefix> }
 token term:sym<*>                  { <sym> }
 token term:sym<lambda>             { <?lambda> <pblock> }
-token term:sym<sigterm>            { <sigterm> }
+# token term:sym<sigterm>            { <sigterm> }   # see colonpair instead
 
 token term:sym<undef> {
     <sym> >> {}
@@ -541,6 +541,7 @@ token colonpair {
         || <.unsp>? <circumfix> { $*value := $<circumfix>; }
         || { $*value := 1; }
         ]
+    | '(' ~ ')' <fakesignature>
     | <circumfix>
         { $*key := ""; $*value := $<circumfix>; }
     | $<var> = (<sigil> {} <twigil>? <desigilname>)
@@ -815,6 +816,11 @@ rule package_def {
     [
     || ';'
         <.finishpad>
+        {
+            if $*PKGDECL eq 'package' {
+                $/.CURSOR.panic('This appears to be Perl 5 code. If you intended it to be Perl 6 code, please use a Perl 6 style package block like "package Foo { ... }", or "module Foo; ...".');
+            }
+        }
         <statementlist>
     || <?[{]> <blockoid>
     || <.panic: 'Malformed package declaration'>
@@ -963,10 +969,6 @@ rule param_sep {
 rule multisig {
     :my $*SCOPE := 'my';
     <signature>
-}
-
-token sigterm {
-    ':(' ~ ')' <fakesignature>
 }
 
 token fakesignature {
@@ -1342,8 +1344,8 @@ token old_rx_mods {
         my $m := $/[0].Str;
         if    $m eq 'i' { $/.CURSOR.obs('/i',':i');                                   }
         elsif $m eq 'g' { $/.CURSOR.obs('/g',':g');                                   }
-        elsif $m eq 's' { $/.CURSOR.obs('/s','^^ and $$ anchors');                    }
-        elsif $m eq 'm' { $/.CURSOR.obs('/m','. or \N');                              }
+        elsif $m eq 'm' { $/.CURSOR.obs('/m','^^ and $$ anchors');                    }
+        elsif $m eq 's' { $/.CURSOR.obs('/s','. or \N');                              }
         elsif $m eq 'x' { $/.CURSOR.obs('/x','normal default whitespace');            }
         elsif $m eq 'c' { $/.CURSOR.obs('/c',':c or :p');                             }
         elsif $m eq 'e' { $/.CURSOR.obs('/e','interpolated {...} or s{} = ... form'); }
@@ -1424,6 +1426,7 @@ INIT {
 
 token termish {
     :my $*SCOPE := "";
+    :my $*MULTINESS := "";
     <prefixish>*
     <term>
     [
@@ -1666,6 +1669,7 @@ token infix:sym<*>    { <sym>  <O('%multiplicative')> }
 token infix:sym</>    { <sym>  <O('%multiplicative')> }
 token infix:sym<div>  { <sym>  <O('%multiplicative')> }
 token infix:sym<%>    { <sym>  <O('%multiplicative')> }
+token infix:sym<mod>  { <sym>  <O('%multiplicative')> }
 token infix:sym<+&>   { <sym>  <O('%multiplicative')> }
 token infix:sym<~&>   { <sym>  <O('%multiplicative')> }
 token infix:sym<?&>   { <sym>  <O('%multiplicative')> }

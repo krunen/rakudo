@@ -1,6 +1,5 @@
 module Test;
-# Copyright (C) 2007, The Perl Foundation.
-# $Id: Test.pm 34904 2009-01-03 23:24:38Z masak $
+# Copyright (C) 2007 - 2010 The Perl Foundation.
 
 ## This is a temporary Test.pm to get us started until we get pugs's Test.pm
 ## working. It's shamelessly stolen & adapted from MiniPerl6 in the pugs repo.
@@ -94,6 +93,11 @@ multi sub isnt(Mu $got, Mu $expected) is export { isnt($got, $expected, ''); }
 multi sub is_approx(Mu $got, Mu $expected, $desc) is export {
     my $test = ($got - $expected).abs <= 1/100000;
     proclaim(?$test, $desc);
+    unless $test {
+        diag("got:      $got");
+        diag("expected: $expected");
+    }
+    ?$test;
 }
 
 multi sub is_approx(Mu $got, Mu $expected) is export {
@@ -197,6 +201,7 @@ multi sub is_deeply(Mu $got, Mu $expected, $reason = '')
             diag "expected: $expected_perl";
         }
     }
+    $test;
 }
 
 sub _is_deeply(Mu $got, Mu $expected) {
@@ -207,9 +212,8 @@ sub _is_deeply(Mu $got, Mu $expected) {
 ## 'private' subs
 
 sub eval_exception($code) {
-    my $eval_exception;
-    try { eval ($code); $eval_exception = $! }
-    $eval_exception // $!;
+    eval ($code);
+    $!;
 }
 
 sub proclaim($cond, $desc) {

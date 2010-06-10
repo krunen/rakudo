@@ -26,8 +26,6 @@ augment class Int does Real {
         self.Num;
     }
 
-    our Bool multi method Bool() { self != 0 ?? Bool::True !! Bool::False }
-
     our Int method Int() { self; }
 
     our Int method Rat(Real $epsilon = 1.0e-6) { self / 1; }
@@ -53,7 +51,11 @@ our multi sub infix:<*>(Int $a, Int $b) {
 }
 
 our multi sub infix:<div>(Int $a, Int $b) {
-    pir::box__PI(pir::div__III($a, $b))
+    my $result = pir::box__PI(pir::div__III($a, $b));
+    if $a.sign * $b.sign < 0 && $result * $b != $a {
+        $result--;
+    }
+    $result;
 }
 
 our multi sub infix:<%>(Int $a, Int $b) {

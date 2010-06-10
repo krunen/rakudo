@@ -37,11 +37,13 @@ integration/advent2009-day14.t
 integration/advent2009-day15.t
 integration/advent2009-day16.t
 integration/advent2009-day17.t
+integration/advent2009-day18.t
 integration/advent2009-day19.t
 integration/advent2009-day20.t
 integration/advent2009-day22.t
 integration/advent2009-day23.t
 integration/code-blocks-as-sub-args.t
+integration/error-reporting.t
 integration/lexical-array-in-inner-block.t
 integration/lexicals-and-attributes.t
 # integration/man-or-boy.t
@@ -84,7 +86,7 @@ S02-builtin_data_types/sigils-and-types.t
 S02-builtin_data_types/subscripts_and_context.t
 S02-builtin_data_types/type.t
 S02-builtin_data_types/undefined-types.t
-# S02-builtin_data_types/whatever.t
+S02-builtin_data_types/whatever.t
 S02-lexical-conventions/unicode.t                          # icu
 S02-literals/array-interpolation.t
 # S02-literals/autoref.t
@@ -254,10 +256,10 @@ S04-statements/try.t
 S04-statements/unless.t
 S04-statements/until.t
 S04-statements/while.t
-# S05-capture/caps.t
+S05-capture/caps.t
 # S05-capture/dot.t
 # S05-capture/named.t
-# S05-capture/subrule.t
+S05-capture/subrule.t
 S05-grammar/action-stubs.t
 # S05-grammar/inheritance.t
 S05-grammar/methods.t
@@ -268,30 +270,30 @@ S05-grammar/protos.t
 S05-grammar/signatures.t
 # S05-grammar/ws.t
 S05-interpolation/lexicals.t
-# S05-mass/named-chars.t                                     # icu
+S05-mass/named-chars.t                                     # icu
 S05-mass/properties-block.t                                # icu
 S05-mass/properties-derived.t                              # icu
 S05-mass/properties-general.t                              # icu
 S05-mass/properties-script.t                               # icu
 S05-mass/rx.t
-# S05-mass/recursive.t
+S05-mass/recursive.t
 S05-mass/stdrules.t
-# S05-match/arrayhash.t
+S05-match/arrayhash.t
 S05-match/blocks.t
-# S05-match/capturing-contexts.t
-# S05-match/non-capturing.t
-# S05-match/perl.t
-# S05-match/positions.t
+S05-match/capturing-contexts.t
+S05-match/non-capturing.t
+S05-match/perl.t
+S05-match/positions.t
 S05-metachars/closure.t
 S05-metachars/line-anchors.t
 S05-metachars/newline.t
-# S05-metachars/tilde.t
+S05-metachars/tilde.t
 S05-metasyntax/angle-brackets.t
 S05-metasyntax/changed.t
 S05-metasyntax/charset.t
 # S05-metasyntax/lookaround.t
 S05-metasyntax/null.t
-# S05-metasyntax/regex.t
+S05-metasyntax/regex.t
 S05-metasyntax/repeat.t
 S05-metasyntax/sequential-alternation.t
 S05-metasyntax/single-quotes.t
@@ -309,7 +311,7 @@ S05-modifier/pos.t
 S05-modifier/repetition.t
 S05-substitution/match.t
 S05-substitution/subst.t
-# S05-transliteration/trans.t
+S05-transliteration/trans.t
 # S05-transliteration/with-closure.t
 S06-advanced_subroutine_features/lexical-subs.t
 S06-advanced_subroutine_features/recurse.t
@@ -407,7 +409,7 @@ S12-enums/anonymous.t
 # S12-enums/as-role.t
 # S12-enums/basic.t
 # S12-enums/thorough.t
-# S12-introspection/attributes.t
+S12-introspection/attributes.t
 # S12-introspection/can.t
 S12-introspection/meta-class.t
 S12-introspection/methods.t
@@ -474,6 +476,7 @@ S29-any/cmp.t
 S29-any/isa.t
 S29-context/die.t
 S29-context/eval.t
+S29-context/exit.t
 S29-context/sleep.t
 S29-conversions/ord_and_chr.t                              #icu
 S32-array/bool.t
@@ -519,6 +522,7 @@ S32-list/sort.t
 S32-list/uniq.t
 S32-num/abs.t
 S32-num/complex.t
+S32-num/cool-num.t
 S32-num/exp.t
 S32-num/int.t
 S32-num/log.t
@@ -541,7 +545,7 @@ S32-str/capitalize.t                                       # icu
 S32-str/chomp.t
 S32-str/chop.t
 S32-str/comb.t                                             # icu
-# S32-str/encode.t
+S32-str/encode.t
 S32-str/flip.t
 S32-str/index.t
 S32-str/lcfirst.t                                            # icu

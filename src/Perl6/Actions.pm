@@ -61,6 +61,18 @@ method comp_unit($/, $key?) {
         return 1;
     }
 
+    # run MAIN subs
+    # TODO: run this only when not in a module
+    # TODO: find a less hacky solution than IN_EVAL
+    unless IN_EVAL() {
+        $mainline.push(
+            PAST::Op.new(
+                :pasttype('call'),
+                :name('&MAIN_HELPER')
+            )
+        );
+    }
+
     # Create a block for the entire compilation unit.
     our $?RAKUDO_HLL;
     my $unit := PAST::Block.new( :node($/), :hll($?RAKUDO_HLL) );
@@ -100,6 +112,12 @@ method comp_unit($/, $key?) {
             )
         )
     );
+
+    # Add file annotation.
+    my $file := pir::find_caller_lex__ps('$?FILES');
+    unless pir::isnull($file) {
+        $unit.unshift(PAST::Op.new(:inline(".annotate 'file', '" ~ $file ~ "'")));
+    }
 
     # Remove the outer module package.
     @PACKAGE.shift;
@@ -646,6 +664,9 @@ method colonpair($/) {
             make make_pair($*key, PAST::Var.new( :name('True'), :namespace('Bool'), :scope('package') ));
         }
     }
+    elsif $<fakesignature> {
+        make $<fakesignature>.ast.ast;   # XXX: Huh?
+    }
     else {
         make $*value.ast;
     }
@@ -911,13 +932,23 @@ sub declare_variable($/, $past, $sigil, $twigil, $desigilname, $trait_list) {
     }
     else {
         # Not an attribute - need to emit delcaration here.
-        # First, create a container and give it a 'rw' property
-        # Create the container, give it a 'rw' property
+        # Create the container
         my $cont := $sigil eq '%' ??
             PAST::Op.new( :name('&CREATE_HASH_LOW_LEVEL'), :pasttype('call') ) !!
             PAST::Op.new( sigiltype($sigil), :pirop('new Ps') );
+        
+        # Give it a 'rw' property unless it's explicitly readonly.
+        my $readtype := trait_readtype($trait_list);
+        if $readtype eq 'CONFLICT' {
+            $/.CURSOR.panic('Can not apply more than one of: is copy, is rw, is readonly');
+        }
+        if $readtype eq 'copy' {
+            $/.CURSOR.panic("'is copy' trait not valid on variable declaration");
+        }
         my $true := PAST::Var.new( :name('true'), :scope('register') );
-        my $vivipast := PAST::Op.new( $cont, 'rw', $true, :pirop('setprop'));
+        my $vivipast := $readtype ne 'readonly' ??
+            PAST::Op.new( $cont, 'rw', $true, :pirop('setprop')) !!
+            $cont;
 
         # If it's a scalar, mark it as scalar (non-flattening)
         if $sigil eq '$' || $sigil eq '&' {
@@ -943,15 +974,17 @@ sub declare_variable($/, $past, $sigil, $twigil, $desigilname, $trait_list) {
             my $trait_node := get_var_traits_node($BLOCK, $name);
             for $trait_list {
                 my $trait := $_.ast;
-                $trait.unshift(PAST::Var.new( :name('declarand'), :scope('register') ));
-                if $trait.name() eq '&trait_mod:<of>' && $*TYPENAME {
-                    $init_type := $trait[1] := PAST::Op.new(
-                        :pasttype('callmethod'), :name('postcircumfix:<[ ]>'),
-                        $*TYPENAME, $trait[1]
-                    );
-                    $*TYPENAME := '';
+                unless $trait<trait_is_compiler_handled> {
+                    $trait.unshift(PAST::Var.new( :name('declarand'), :scope('register') ));
+                    if $trait.name() eq '&trait_mod:<of>' && $*TYPENAME {
+                        $init_type := $trait[1] := PAST::Op.new(
+                            :pasttype('callmethod'), :name('postcircumfix:<[ ]>'),
+                            $*TYPENAME, $trait[1]
+                        );
+                        $*TYPENAME := '';
+                    }
+                    $trait_node.push($trait);
                 }
-                $trait_node.push($trait);
             }
             if $*TYPENAME {
                 $trait_node.push(PAST::Op.new(
@@ -1457,10 +1490,6 @@ method multisig($/) {
     make $<signature>.ast;
 }
 
-method sigterm($/) {
-    make $<fakesignature>.ast.ast;
-}
-
 method fakesignature($/) {
     @BLOCK.shift;
     make $<signature>.ast;
@@ -1555,7 +1584,12 @@ method param_var($/) {
             }
         }
         elsif $twigil ne '!' && $twigil ne '.' && $twigil ne '*' {
-            $/.CURSOR.panic("Illegal to use $twigil twigil in signature");
+            my $error := "In signature parameter, '" ~ ~$/ ~ "', it is illegal to use '" ~ $twigil ~ "' twigil";
+            if $twigil eq ':' {
+                $error := "In signature parameter, placeholder variables like " ~ ~$/ ~ " are illegal\n"
+                           ~ "you probably meant a named parameter: ':" ~ $<sigil> ~ ~$<name>[0] ~ "'";
+            }
+            $/.CURSOR.panic($error);
         }
     }
 }
@@ -1860,6 +1894,7 @@ method term:sym<name>($/) {
         }
         else { $past.name('&' ~ $name); }
     }
+    $past.node($/);
     make $past;
 }
 
@@ -1971,37 +2006,29 @@ method circumfix:sym<{ }>($/) {
     # element of which is either a hash or a pair, it's a hash constructor.
     my $past := $<pblock>.ast;
     my $is_hash := 0;
-    if +@($past) == 2 {
-        if +@($past[1]) == 0 {
-            # Empty block, so a hash.
+    my $stmts := +$<pblock><blockoid><statementlist><statement>;
+    if $stmts == 0 {
+        # empty block, so a hash
+        $is_hash := 1;
+    }
+    elsif $stmts == 1 {
+        my $elem := $past[1][0];
+        if $elem ~~ PAST::Op && $elem.name eq '&infix:<,>' {
+            # block contains a list, so test the first element
+            $elem := $elem[0];
+        }
+        if $elem ~~ PAST::Op 
+                && ($elem.returns eq 'Pair' || $elem.name eq '&infix:<=>>') {
+            # first item is a pair
             $is_hash := 1;
         }
-        elsif +@($past[1]) == 1 && $past[1][0].isa(PAST::Op) {
-            if $past[1][0].returns() eq 'Pair' || $past[1][0].name() eq '&infix:<=>>' {
-                # Block with just one pair in it, so a hash.
-                $is_hash := 1;
-            }
-            elsif $past[1][0].name() eq '&infix:<,>' {
-                # List, but first elements must be...
-                if $past[1][0][0].isa(PAST::Op) &&
-                        ($past[1][0][0].returns() eq 'Pair' || $past[1][0][0].name() eq '&infix:<=>>') {
-                    # ...a Pair
-                    $is_hash := 1;
-                }
-                elsif $past[1][0][0].isa(PAST::Var) &&
-                        pir::substr__SSII($past[1][0][0].name(), 0, 1) eq '%' {
-                    # ...or a hash.
-                    $is_hash := 1
-                }
-            }
-        }
-        elsif +@($past[1]) == 1 && $past[1][0].isa(PAST::Var) {
-            if pir::substr__SSII($past[1][0].name(), 0, 1) eq '%' {
-                $is_hash := 1;
-            }
+        elsif $elem ~~ PAST::Var
+                && pir::substr($elem.name, 0, 1) eq '%' {
+            # first item is a hash
+            $is_hash := 1;
         }
     }
-    if $is_hash {
+    if $is_hash && $past.arity < 1 {
         my @children := @($past[1]);
         $past := PAST::Op.new(
             :pasttype('call'),
@@ -2107,7 +2134,7 @@ method infixish($/) {
     if $<infix_prefix_meta_operator> {
         my $metaop := ~$<infix_prefix_meta_operator><sym>;
         my $sym := ~$<infix_prefix_meta_operator><infixish><OPER>;
-        my $opsub := "&infix:<$metaop$sym>";
+        my $opsub := "&infix:<$/>";
         my $base_opsub := "&infix:<$sym>";
         if $opsub eq "&infix:<!=>" {
             $base_opsub := "&infix:<==>";
@@ -2115,7 +2142,7 @@ method infixish($/) {
         unless %*METAOPGEN{$opsub} {
             my $helper := "";
             if $metaop eq '!' {
-                $helper := '&notresults';
+                $helper := '&negate';
             } elsif $metaop eq 'R' {
                 $helper := '&reverseargs';
             } elsif $metaop eq 'S' {
@@ -2149,7 +2176,7 @@ method infixish($/) {
 method prefix_circumfix_meta_operator:sym<reduce>($/) {
     my $opsub := '&prefix:<' ~ ~$/ ~ '>';
     unless %*METAOPGEN{$opsub} {
-        my $base_op := '&infix:<' ~ $<op>.Str ~ '>';
+        my $base_op := '&infix:<' ~ $<op><OPER>.Str ~ '>';
         get_outermost_block().loadinit.push(PAST::Op.new(
             :pasttype('bind'),
             PAST::Var.new( :name($opsub), :scope('package') ),
@@ -2291,7 +2318,7 @@ method number:sym<numish>($/) {
 }
 
 method numish($/) {
-    if $<integer> { make PAST::Val.new( :value($<integer>.ast) ); }
+    if $<integer> { make PAST::Val.new( :value($<integer>.ast), :returns('Int') ); }
     elsif $<dec_number> { make $<dec_number>.ast; }
     elsif $<rad_number> { make $<rad_number>.ast; }
     else {
@@ -2496,13 +2523,13 @@ method quote_EXPR($/) {
         }
         else {
             my @words := HLL::Grammar::split_words($/, $past.value);
-            if +@words > 1 {
+            if +@words != 1 {
                 $past := PAST::Op.new( :name('&infix:<,>'), :node($/) );
                 for @words { $past.push($_); }
                 $past := PAST::Stmts.new($past);
             }
             else {
-                $past := PAST::Val.new(:value(~@words[0]), :returns<Str>);
+                $past := PAST::Val.new( :value(~@words[0]), :returns('Str') );
             }
         }
     }

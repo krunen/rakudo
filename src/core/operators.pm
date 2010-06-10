@@ -22,7 +22,9 @@ our multi infix:<!~~>(Mu $topic, Mu $matcher) {
 }
 
 our multi prefix:<?>(Mu $a) {
-    $a.Bool;
+    pir::can($a, 'Bool') 
+    ?? $a.Bool 
+    !!  ( pir::istrue($a) ?? True !! False );
 }
 
 our multi prefix:<!>(Mu $a) {
@@ -50,7 +52,7 @@ our multi sub infix:</>($a, $b) {
 }
 
 our multi sub infix:<%>($a, $b) {
-    pir::mod__NNN($a, $b)
+    +$a % +$b;
 }
 
 our multi sub infix:<**>($a, $b) {
@@ -148,6 +150,13 @@ our multi infix:<does>(Mu \$do-it-to-me, Parcel $roles) {
     }
     my $r = $mr.^compose();
     $do-it-to-me does $r;
+}
+
+our multi infix:<does>(Mu \$do-it-to-me, \$value) {
+    # Need to manufacture a role here.
+    my $r = RoleHOW.new();
+    $r.^add_method($value.WHAT.perl, method () { $value });
+    $do-it-to-me does $r.^compose()
 }
 
 our multi infix:<but>(Mu \$do-it-to-me, \$r) {
