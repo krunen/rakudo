@@ -64,7 +64,9 @@ method comp_unit($/, $key?) {
     # run MAIN subs
     # TODO: run this only when not in a module
     # TODO: find a less hacky solution than IN_EVAL
-    unless IN_EVAL() {
+    # TODO: find a way to inject MAIN_HELPER call without modifying
+    # the return value of the compilation unit
+    if !IN_EVAL() && $mainline.symbol('&MAIN') {
         $mainline.push(
             PAST::Op.new(
                 :pasttype('call'),
@@ -180,7 +182,7 @@ method statement($/, $key?) {
                 $past := PAST::Block.new( :blocktype('immediate'),
                     PAST::Var.new( :name('$_'), :scope('parameter'), :isdecl(1) ),
                     $past);
-                $cond := PAST::Op.new(:name('&eager'), $cond);
+                $cond := PAST::Op.new(:name('&flat'), $cond);
                 $past := PAST::Op.new($cond, $past, :pasttype(~$ml<sym>), :node($/) );
             }
             else {
@@ -334,7 +336,7 @@ method statement_control:sym<repeat>($/) {
 method statement_control:sym<for>($/) {
     my $past := xblock_immediate($<xblock>.ast);
     $past.pasttype('for');
-    $past[0] := PAST::Op.new(:name('&eager'), $past[0]);
+    $past[0] := PAST::Op.new(:name('&flat'), $past[0]);
     $past.arity($past[1].arity || 1);
     make $past;
 }
@@ -636,7 +638,7 @@ method module_name($/) {
     if $<arglist> {
         my $past := $<arglist>[0].ast;
         $past.pasttype('callmethod');
-        $past.name('postcircumfix:<[ ]>');
+        $past.name('!select');
         $past.unshift($var);
         make $past;
     }
@@ -652,7 +654,7 @@ method fatarrow($/) {
 method colonpair($/) {
     if $*key {
         if $<var> {
-            make make_pair($*key, make_variable($/, ~$<var>));
+            make make_pair($*key, make_variable($/<var>, ~$<var>));
         }
         elsif $*value ~~ Regex::Match {
             make make_pair($*key, $*value.ast);
@@ -709,7 +711,7 @@ method variable($/) {
 
 sub make_variable($/, $name) {
     my @name := Perl6::Grammar::parse_name($name);
-    my $past := PAST::Var.new( :name(@name.pop) );
+    my $past := PAST::Var.new( :name(@name.pop), :node($/));
     if @name {
         $past.namespace(@name);
         $past.scope('package');
@@ -916,8 +918,13 @@ sub declare_variable($/, $past, $sigil, $twigil, $desigilname, $trait_list) {
         }
         my %attr_info;
         %attr_info<name>      := $attrname;
-        %attr_info<accessor> := $twigil eq '.' ?? 1 !! 0;
+        %attr_info<type>      := $*TYPENAME;
+        %attr_info<accessor>  := $twigil eq '.' ?? 1 !! 0;
         %attr_info<rw>        := $trait_list && has_compiler_trait_with_val($trait_list, '&trait_mod:<is>', 'rw') ?? 1 !! 0;
+        my $has_handles := has_compiler_trait($trait_list, '&trait_mod:<handles>');
+        if $has_handles {
+            %attr_info<handles> := $has_handles[0];
+        }
         @PACKAGE[0].attributes.push(%attr_info);
 
         # If no twigil, note $foo is an alias to $!foo.
@@ -934,7 +941,7 @@ sub declare_variable($/, $past, $sigil, $twigil, $desigilname, $trait_list) {
         # Not an attribute - need to emit delcaration here.
         # Create the container
         my $cont := $sigil eq '%' ??
-            PAST::Op.new( :name('&CREATE_HASH_LOW_LEVEL'), :pasttype('call') ) !!
+            PAST::Op.new( :name('&CREATE_HASH_FROM_LOW_LEVEL'), :pasttype('call') ) !!
             PAST::Op.new( sigiltype($sigil), :pirop('new Ps') );
         
         # Give it a 'rw' property unless it's explicitly readonly.
@@ -1507,7 +1514,7 @@ method signature($/) {
                 $param.invocant(1);
             }
             else {
-                $/.CURSOR.panic("Can not put ':' parameter seperator after first parameter");
+                $/.CURSOR.panic("Cannot put ':' parameter separator after first parameter");
             }
         }
         if @*seps[$cur_param] eq ';;' {
@@ -1894,6 +1901,12 @@ method term:sym<name>($/) {
         }
         else { $past.name('&' ~ $name); }
     }
+    elsif $<arglist> {
+        $past := $<arglist>[0].ast;
+        $past.pasttype('callmethod');
+        $past.name('!select');
+        $past.unshift($var);
+    }
     $past.node($/);
     make $past;
 }
@@ -2082,10 +2095,11 @@ method EXPR($/, $key?) {
         }
     }
     if $key eq 'POSTFIX' {
+        my $inv := $/[0].ast;
         $past.unshift(
             PAST::Op.ACCEPTS($past) && $past.pasttype eq 'callmethod'
-            ?? PAST::Op.new( :pirop('descalarref PP'), $/[0].ast )
-            !! $/[0].ast
+            ?? PAST::Op.new( :pirop('descalarref PP'), $inv, :returns($inv.returns) )
+            !! $inv
         );
     }
     else {
@@ -2270,26 +2284,15 @@ method postcircumfix:sym<{ }>($/) {
         if +$<semilist><statement> > 1 {
             $/.CURSOR.panic("Sorry, multi-dimensional indexes are not yet supported");
         }
-        my $slast := $<semilist>.ast;
-        if $slast[0].isa(PAST::Op) && $slast[0].name eq '&infix:<,>' {
-            for @($slast[0]) { $past.push($_); }
-        }
-        else {
-            $past.push($slast);
-        }
+        $past.push($<semilist>.ast);
     }
     make $past;
 }
 
 method postcircumfix:sym<ang>($/) {
     my $past := PAST::Op.new( :name('!postcircumfix:<{ }>'), :pasttype('call'), :node($/) );
-    my $quoted := $<quote_EXPR>.ast;
-    if $quoted.isa(PAST::Stmts) && $quoted[0].isa(PAST::Op) && $quoted[0].name() eq '&infix:<,>' {
-        for @($quoted[0]) { $past.push($_); }
-    }
-    else {
-        $past.push($quoted);
-    }
+    $past.push( $<quote_EXPR>.ast ) 
+        if +$<quote_EXPR><quote_delimited><quote_atom> > 0;
     make $past;
 }
 
@@ -2407,9 +2410,16 @@ method typename($/) {
     }
 
     # Parametric type?
+    if $<arglist> {
+        my $args := $<arglist>[0].ast;
+        $args.pasttype('callmethod');
+        $args.name('!select');
+        $args.unshift($past);
+        $past := $args;
+    }
     if $<typename> {
         $past := PAST::Op.new(
-            :pasttype('callmethod'), :name('postcircumfix:<[ ]>'),
+            :pasttype('callmethod'), :name('!select'),
             $past, $<typename>[0].ast
         );
     }
@@ -3058,9 +3068,16 @@ sub capture_or_parcel($args, $name) {
 # introspection and keep it as a quick cache.
 our %not_curried;
 INIT {
-    %not_curried{'&infix:<...>'} := 1;
-    %not_curried{'&infix:<..>'}  := 1;
-    %not_curried{'&infix:<~~>'}  := 1;
+    %not_curried{'&infix:<...>'}  := 1;
+    %not_curried{'&infix:<..>'}   := 1;
+    %not_curried{'&infix:<..^>'}  := 1;
+    %not_curried{'&infix:<^..>'}  := 1;
+    %not_curried{'&infix:<^..^>'} := 1;
+    %not_curried{'&prefix:<^>'}   := 1;
+    %not_curried{'&infix:<xx>'}   := 1;
+    %not_curried{'&infix:<~~>'}   := 1;
+    %not_curried{'&infix:<=>'}    := 1;
+    %not_curried{'&infix:<:=>'}   := 1;
 }
 sub whatever_curry($past, $upto_arity) {
     if $past.isa(PAST::Op) && !%not_curried{$past.name} {

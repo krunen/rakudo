@@ -48,7 +48,7 @@ dispatcher for each thingy we're dispatching over.
     .local pmc it, results, disp
     disp = find_name dispatcher
     results = new ['ResizablePMCArray']
-    invocanty = invocanty.'list'()
+    invocanty = invocanty.'flat'()
     it = iter invocanty
   it_loop:
     unless it goto it_loop_done
@@ -77,7 +77,7 @@ array of invocants.
 
     .local pmc it, results
     results = new ['ResizablePMCArray']
-    invocanty = invocanty.'list'()
+    invocanty = invocanty.'flat'()
     it = iter invocanty
   it_loop:
     unless it goto it_loop_done
@@ -221,8 +221,7 @@ Implements the .* operator. Calls one or more matching methods.
     rethrow exception
   it_loop_end:
 
-    result_list = '&infix:<,>'(result_list :flat)
-    .tailcall '&list'(result_list)
+    .tailcall '&list'(result_list :flat)
 .end
 
 
@@ -304,6 +303,23 @@ Helper for handling calls of the form .$indirectthingy()
     .param pmc pos_args   :slurpy
     .param pmc named_args :slurpy :named
     .tailcall to_call(invocant, pos_args :flat, named_args :flat :named)
+.end
+
+
+=item !handles_dispatch_helper
+
+Helper for implementing delegation to a handles method.
+
+=cut
+
+.sub '!handles_dispatch_helper'
+    .param string methodname
+    .param string attrname
+    .param pmc self
+    .param pmc pos_args   :slurpy
+    .param pmc named_args :slurpy :named
+    $P0 = getattribute self, attrname
+    .tailcall $P0.methodname(pos_args :flat, named_args :flat :named)
 .end
 
 

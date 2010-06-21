@@ -207,7 +207,7 @@ our multi infix:<~>($a, $b) {
 
 our sub circumfix:<{ }>(*@elements) {
     my %h = @elements;
-    %h
+    %h.item
 }
 
 our sub hash(*@list, *%hash) {
@@ -269,11 +269,7 @@ our multi infix:<ge>($a, $b) {
 
 # XXX Lazy version would be nice in the future too.
 our multi infix:<xx>(Mu \$item, $n) {
-    my @result = ();
-    for 1..$n {
-        @result.push($item);
-    }
-    @result
+    (1..$n).map( { $item } )
 }
 
 our multi prefix:<|>(@a) { @a.Capture }
@@ -310,81 +306,6 @@ our multi sub item($item) {
 
 class Whatever { ... }
 
-# the magic one that handles stuff like
-# 'a' ... 'z' and 'z' ... 'a'
-our multi sub infix:<...>($lhs, $rhs) {
-    if $rhs ~~ Whatever {
-        my $i = $lhs;
-        return gather {
-            loop {
-                my $j = $i++;
-                take $j;
-            }
-        }
-    }
-
-    gather {
-        take $lhs;
-        if ($lhs cmp $rhs) == 1 {
-            my $x = $lhs;
-            # since my $a = 'a'; $a-- gives
-            # "Decrement out of range" we can't easily
-            # decrement over our target, which is why the
-            # case of going backwards is slighly more complicated
-            # than going forward
-            while (--$x cmp $rhs) == 1 {
-                # need to make a fresh copy here because of RT #62178
-                my $y = $x;
-                take $y;
-            }
-            take $x if ($x cmp $rhs) == 0;
-        } elsif ($lhs cmp $rhs) == -1 {
-            my $x = $lhs;
-            while (++$x cmp $rhs) <= 0 {
-                my $y = $x;
-                take $y;
-            }
-        }
-    }
-}
-
-# our multi sub infix:<...>($lhs, Code $rhs) {
-#     if $rhs.count != 1 {
-#         die "Series operator currently cannot handle blocks with count != 1";
-#     }
-#
-#     my $i = $lhs;
-#     gather {
-#         my $j = $i;
-#         take $j;
-#         my $last = $i;
-#         loop {
-#             $i = $rhs.($last);
-#             my $j = $i;
-#             take $j;
-#             $last = $i;
-#         }
-#     }
-# }
-#
-# our multi sub infix:<...>(@lhs, Whatever) {
-#     given @lhs.elems {
-#         when 2 {
-#             @lhs[0] ... { $_ + (@lhs[1] - @lhs[0]) };
-#         }
-#         when 3 {
-#             if @lhs[1] - @lhs[0] == @lhs[2] - @lhs[1] {
-#                 @lhs[0] ... { $_ + (@lhs[1] - @lhs[0]) };
-#             } elsif @lhs[1] / @lhs[0] == @lhs[2] / @lhs[1] {
-#                 @lhs[0] ... { $_ * (@lhs[1] / @lhs[0]) };
-#             } else {
-#                 fail "Unable to figure out pattern of series";
-#             }
-#         }
-#         default { fail "Unable to figure out pattern of series"; }
-#     }
-# }
-
 our multi sub infix:<...>(Code $lhs, $rhs) {
     my $limit;
     $limit = $rhs if !($rhs ~~ Whatever);
@@ -404,7 +325,13 @@ our multi sub infix:<...>(Code $lhs, $rhs) {
 
 our multi sub infix:<...>(@lhs is copy, $rhs) {
     my sub succ-or-pred($lhs, $rhs) {
-        if $rhs ~~ Whatever || $lhs cmp $rhs != 1 {
+        if $lhs ~~ Str && $rhs ~~ Str && $lhs.chars == 1 && $rhs.chars == 1 {
+            if $lhs cmp $rhs != 1 {
+                -> $x { $x.ord.succ.chr };
+            } else {
+                -> $x { $x.ord.pred.chr };
+            }
+        } elsif $rhs ~~ Whatever || $lhs cmp $rhs != 1 {
             -> $x { $x.succ };
         } else {
             -> $x { $x.pred };
@@ -468,7 +395,7 @@ our multi sub infix:<...>(@lhs is copy, $rhs) {
 
         if !$limit.defined || $limit cmp $j != 0 {
             loop {
-                my $i = $next.(|@args);
+                my $i = $next.(|@args) // last;
                 my $j = $i;
 
                 my $cur_cmp = 1;
@@ -486,6 +413,20 @@ our multi sub infix:<...>(@lhs is copy, $rhs) {
             }
         }
     }
+}
+
+our multi sub infix:<...>($lhs, $rhs) {
+    $lhs.list ... $rhs;
+}
+
+our multi sub infix:<...>($lhs, @rhs is copy) {
+    fail "Need something on RHS" if !@rhs;
+    ($lhs ... @rhs.shift), @rhs
+}
+
+our multi sub infix:<...>(@lhs, @rhs is copy) {
+    fail "Need something on RHS" if !@rhs;
+    (@lhs ... @rhs.shift), @rhs
 }
 
 our multi sub infix:<eqv>(Mu $a, Mu $b) {
@@ -523,33 +464,28 @@ our multi sub infix:<eqv>(EnumMap $a, EnumMap $b) {
     Bool::True;
 }
 
-our multi sub infix:<Z>(Iterable $a-iterable, Iterable $b-iterable) {
-    my $ai = $a-iterable.iterator;
-    my $bi = $b-iterable.iterator;
-    gather loop {
-        my $a = $ai.get;
-        my $b = $bi.get;
-        last if ($a ~~ EMPTY) || ($b ~~ EMPTY);
+our multi sub infix:<Z>($lhs, $rhs) {
+    my $lhs-list = flat($lhs.list);
+    my $rhs-list = flat($rhs.list);
+    gather while ?$lhs-list && ?$rhs-list {
+        my $a = $lhs-list.shift;
+        my $b = $rhs-list.shift;
         take $a;
         take $b;
     }
 }
 
-our multi sub infix:<Z>($a, $b) { &infix:<Z>($a.list, $b.list) }
-
-our multi sub infix:<X>(Iterable $a-iterable, Iterable $b-iterable) {
-    my $ai = $a-iterable.iterator;
-    my @b = $b-iterable.Seq;
-    gather loop {
-        my $a = $ai.get;
-        last if ($a ~~ EMPTY);
-        for @b -> $b {
-            take ($a, $b);
+our multi sub infix:<X>($lhs, $rhs) {
+    my $lhs-list = flat($lhs.list);
+    my $rhs-list = flat($rhs.list);
+    gather while ?$lhs-list {
+        my $a = $lhs-list.shift;
+        for @($rhs-list) -> $b {
+            my $b-copy = $b;
+            take ($a, $b-copy);
         }
     }
 }
-
-our multi sub infix:<X>($a, $b) { &infix:<X>($a.list, $b.list) }
 
 # if we want &infix:<||> accessible (for example for meta operators), we need
 # to define it, because the normal || is short-circuit and special cased by

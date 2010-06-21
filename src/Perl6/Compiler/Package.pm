@@ -177,6 +177,19 @@ method finish($block) {
             $_<build>.named('build');
             $attr.push($_<build>);
         }
+        if $_<handles> {
+            $_<handles>.named('handles');
+            $attr.push($_<handles>);
+        }
+        if $_<type> ~~ PAST::Node {
+            $_<type>.named('type');
+            $attr.push($_<type>);
+        }
+        else {
+            $attr.push(PAST::Var.new(
+                :name('Mu'), :namespace([]), :scope('package'), :named('type')
+            ));
+        }
         $decl.push(PAST::Op.new(
             :pasttype('callmethod'),
             :name('add_attribute'),

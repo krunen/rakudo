@@ -6,6 +6,7 @@ has $!build;
 has $!has_accessor;
 has $!rw;
 has $!handles;
+has $!trait_applier;
 
 method new(:$name, :$type, :$build, :$has_accessor, :$rw, :$handles) {
     my $attr := pir::new__PS('Attribute');
@@ -27,7 +28,7 @@ method type() {
 }
 
 method build() {
-    $!build;
+    $!build || Mu
 }
 
 method has_accessor() {
@@ -44,6 +45,17 @@ method handles() {
 
 method readonly() {
     !$!rw
+}
+
+method apply_traits($metaclass, $container) {
+    if $!trait_applier {
+        my $decl := AttributeDeclarand.new(
+            container => $container,
+            how => $metaclass,
+            name => $!name
+        );
+        $!trait_applier($decl);
+    }
 }
 
 method compose($package) {
@@ -63,6 +75,7 @@ method compose($package) {
         my $meth := $!rw ?? pir::find_lex__Ps('accessor_helper_rw') !! pir::find_lex__Ps('accessor_helper_ro');
         my $meth_name := pir::substr__SSi($name, 2);
         $meth := pir::clone($meth);
+
         # introspection looks at the actual sub name, so set it
         # to the value the user expects
         # set $P0, $S0  is parrot's clunky PIR API for setting the sub name.
@@ -70,7 +83,10 @@ method compose($package) {
         $package.add_method($package, $meth_name, $meth);
     }
 
-    # XXX Handles...
+    # If we've a handles, pass it along to the handles setup helper.
+    unless pir::isa__ips($!handles, 'Undef') {
+        Rakudo::Guts.add_handles_method($package, $!name, $!handles);
+    }
 }
 
 # vim: ft=perl6

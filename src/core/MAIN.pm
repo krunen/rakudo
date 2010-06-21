@@ -1,32 +1,3 @@
-our sub USAGE ($sub=&MAIN) { #The user can still overwrite this in his program to get customized USAGE message
-    my @subs = $sub ~~ Multi  ?? $sub.candidates !! ($sub);
-    
-    my $USAGE-one-sub = sub ($sub=&MAIN) {
-        my $sig = $sub.signature;
-        my @arguments;
-        for $sig.params -> $param {
-            my $argument;
-            if ($param.named) {
-                $argument = "--"
-                        ~ $param.name.substr(1)
-                        ~ ($param.type ~~ Bool ?? '' !! "=value-of-{$param.name.substr(1)}")
-                        ;
-            } else {
-                $argument = $param.name.substr(1);
-                if ($param.slurpy) {
-                    $argument ~= " [more [...]]";
-                }
-            }
-            $argument = "[$argument]" if $param.optional;
-            @arguments.push($argument);
-        }
-        return  ($*PROGRAM_NAME eq '-e' ?? "-e '...'" !! $*PROGRAM_NAME )~ ' '  ~ @arguments.join(' ');
-    };
-    
-    my @help-msgs = @subs.map( { $USAGE-one-sub($_) } ) ;
-    return  "Usage\n" ~ @help-msgs.join("\nor\n");
-}
-
 our sub MAIN_HELPER() {
     my $m = Q:PIR {
         $P0 = getinterp
@@ -42,6 +13,8 @@ our sub MAIN_HELPER() {
     unless $m {
         return;
     }
+    
+    # We found MAIN, let's process the command line arguments accordingly
     my $process-cmd-args =  sub (@args is copy, %named) {
         my (@positional-arguments, %named-arguments , $negate);
         while ( @args )  {
@@ -57,7 +30,8 @@ our sub MAIN_HELPER() {
                     @positional-arguments.push: @args;
                     last;
                 } elsif %named{$arg} ~~ Bool {
-                    %named-arguments{$arg}=True;
+                    %named-arguments{$arg}=not $negate;
+                    $negate='';
                 } elsif %named{$arg} ~~ Array || ($passed_value.match( /\=/ ) &&  %named{$arg.split('=', 2)[0]} ~~ Array ) {
                     if $passed_value.match( /\=/ ) {
                         my ($name , $value) = $arg.split('=', 2);
@@ -92,22 +66,71 @@ our sub MAIN_HELPER() {
             }
         }
 
-        return @positional-arguments, %named-arguments;
+        return @positional-arguments, {%named-arguments};
     };
     
-    my $correct-main-found = False;
     my @subs = $m ~~ Multi  ?? $m.candidates !! ($m);
+    #TODO: We are calling the FIRST matching MAIN sub, we should be calling the BEST matching MAIN sub.
     for @subs -> $main {
         my @named-params = $main.signature.params.grep: {.named && .type ~~ Bool};
         my %named-params = @named-params».name».substr(1) Z=> @named-params».type;
         my @positional = $process-cmd-args(@*ARGS, %named-params);
         my %named = @positional.pop;
-        try { 
+        if Capture.new(|@positional, |%named) ~~ $main.signature { 
             $main(|@positional, |%named);
-            $correct-main-found = True;
+            return ;
         }
-        return if $correct-main-found;
     }
-    my $help = USAGE($m);
-    $help.say;
+    
+    #We could not find the correct main to dispatch to! Let's try to run the user defined USAGE sub
+    my $h = Q:PIR {
+        $P0 = getinterp
+        $P0 = $P0['lexpad';1]
+        $P0 = $P0['&USAGE']
+        unless null $P0 goto has_usage
+        %r  = get_hll_global "Any"
+        goto done_usage
+    has_usage:
+        %r  = $P0
+    done_usage:
+    };
+    return $h() if $h ;
+    
+    #We could not find a user defined USAGE sub! Let's display a default USAGE message
+    my @help-msgs;
+    my @mains = $m ~~ Multi  ?? $m.candidates !! ($m);
+    for @mains -> $sub {
+        my $sig = $sub.signature;
+        my @arguments , @help-msgs;
+        for $sig.params -> $param {
+            my $argument;
+            if ($param.named) {
+                $argument = "--"
+                        ~ $param.name.substr(1)
+                        ~ ($param.type ~~ Bool ?? '' !! "=value-of-{$param.name.substr(1)}")
+                        ;
+            } else {
+                $argument = ($param.name ?? $param.name.substr(1) !! ~$param.constraints  );
+                $argument = 'param' if $argument.match(/^_block\d+$/) ; #TODO: fixme
+                if ($param.slurpy) {
+                    $argument ~= " [more [...]]";
+                }
+            }
+            $argument = "[$argument]" if $param.optional;
+            if ($param.named) {
+                  @arguments.unshift($argument);
+            } else {
+                  @arguments.push($argument);
+            }
+        }
+        my $msg = ($*PROGRAM_NAME eq '-e' ?? "-e '...'" !! $*PROGRAM_NAME )~ ' '  ~ @arguments.join(' ');
+        @help-msgs.push( $msg );
+    }
+    my $msg = ("Usage:\n" ~ @help-msgs.join("\nor\n") );
+    if (@*ARGS ~~ ['--help']) {
+        $*OUT.say($msg);
+    } else {
+        $*ERR.say($msg);
+        exit 29; #TODO: Better return value
+    }
 }

@@ -1,32 +1,25 @@
-
-multi sub RangeIterCmp($a, $b) {
-    $a cmp $b;
-}
-
-multi sub RangeIterCmp(Str $a, Str $b) {
-    $a.chars <=> $b.chars || $a cmp $b;
-}
-
 class RangeIter is Iterator {
     has $!value;
     has $!max;
     has $!excludes_max;
+    has $!nextIter;
 
-    multi method new(Range $r) {
-        self.bless(*, :value($r.excludes_min ?? $r.min.succ !! $r.min),
-                      :max($r.max),
-                      :excludes_max($r.excludes_max));
-    }
-
-    method get() {
-        my $current = $!value;
-        unless $!max ~~ ::Whatever {
-            if RangeIterCmp($current, $!max) == 1
-               || $!excludes_max && RangeIterCmp($current, $!max) != -1 {
-                return EMPTY;
+    method reify() {
+        return ($!value,) if $!value ~~ EMPTY;
+        unless $!nextIter.defined || $!nextIter ~~ EMPTY {
+            if $!value cmp $!max != 0 {
+                my $s = $!value.succ;
+                $!nextIter =
+                    $!max == Inf || $s before $!max || (! $!excludes_max && !($s after $!max))
+                        ?? RangeIter.new( :value($s),
+                                        :max($!max),
+                                        :excludes_max($!excludes_max) )
+                        !! EMPTY;
+            } else {
+                $!nextIter = EMPTY;
             }
         }
-        $!value .= succ;
-        $current;
+        $!value, $!nextIter;
     }
 }
+

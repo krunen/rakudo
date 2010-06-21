@@ -1,8 +1,20 @@
 class Complex { ... }
 
 role Real does Numeric {
+    method ACCEPTS($other) {
+        if self eq "NaN" {
+            (+$other).reals.grep("NaN").elems > 0;
+        } else {
+            $other == self;
+        }
+    }
+
     method Bridge() {
         fail "Bridge must be defined for the Real type " ~ self.WHAT;
+    }
+
+    method Real() {
+        self;
     }
 
     method Bool() {
@@ -25,6 +37,10 @@ role Real does Numeric {
         Complex.new(self, 0);
     }
 
+    method Str() {
+        self.Num.Str;
+    }
+
     method reals() {
         (self);
     }
@@ -42,17 +58,25 @@ role Real does Numeric {
         $x.Bridge.ln;
     }
 
+    method sqrt(Real $x:) {
+        $x.Bridge.sqrt;
+    }
+
+    method roots(Real $x: Int $n) {
+        $x.Complex.roots($n);
+    }
+
     method sign(Real $x:) {
         $x.notdef ?? Mu
                     !! ($x ~~ NaN ?? NaN !! $x <=> 0);
     }
 
-    method ceiling(Real $x:) {
-        $x.Bridge.ceiling;
-    }
-
     method floor(Real $x:) {
         $x.Bridge.floor;
+    }
+
+    method ceiling(Real $x:) {
+        $x.Bridge.ceiling;
     }
 
     method truncate(Real $x:) {
@@ -63,21 +87,13 @@ role Real does Numeric {
         floor($x / $scale + 0.5) * $scale;
     }
 
-    method unpolar(Real $mag: Real $angle) {
-        Complex.new($mag * $angle.cos(Radians),
-                    $mag * $angle.sin(Radians));
-    }
-
     method cis(Real $angle:) {
         1.unpolar($angle);
     }
 
-    method sqrt(Real $x:) {
-        $x.Bridge.sqrt;
-    }
-
-    method roots(Real $x: Int $n) {
-        $x.Complex.roots($n);
+    method unpolar(Real $mag: Real $angle) {
+        Complex.new($mag * $angle.cos(Radians),
+                    $mag * $angle.sin(Radians));
     }
 
     method sin(Real $x: $base = Radians) {
@@ -187,61 +203,28 @@ multi sub infix:«<=>»(Real $a, Real $b) {
     $a.Bridge <=> $b.Bridge;
 }
 
-multi sub infix:«<=>»(Num $a, Num $b) {
-    # TODO: should be Order::Same, ::Increase, ::Decrease once they work
-    if $a == $b {
-        0;
-    } else {
-        $a < $b ?? -1 !! 1;
-    }
-}
-
 multi sub infix:«==»(Real $a, Real $b) {
     $a.Bridge == $b.Bridge;
-}
-
-multi sub infix:«==»(Num $a, Num $b) {
-    pir::iseq__INN( $a, $b) ?? True !! False
 }
 
 multi sub infix:«!=»(Real $a, Real $b) {
     $a.Bridge != $b.Bridge;
 }
 
-multi sub infix:«!=»(Num $a, Num $b) {
-    pir::iseq__INN( $a, $b) ?? False !! True # note reversed
-}
-
 multi sub infix:«<»(Real $a, Real $b) {
     $a.Bridge < $b.Bridge;
-}
-
-multi sub infix:«<»(Num $a, Num $b) {
-    pir::islt__INN( $a, $b) ?? True !! False
 }
 
 multi sub infix:«>»(Real $a, Real $b) {
     $a.Bridge > $b.Bridge;
 }
 
-multi sub infix:«>»(Num $a, Num $b) {
-    pir::isgt__INN( $a, $b) ?? True !! False
-}
-
 multi sub infix:«<=»(Real $a, Real $b) {
     $a.Bridge <= $b.Bridge;
 }
 
-multi sub infix:«<=»(Num $a, Num $b) {
-    pir::isgt__INN( $a, $b) ?? False !! True # note reversed
-}
-
 multi sub infix:«>=»(Real $a, Real $b) {
     $a.Bridge >= $b.Bridge;
-}
-
-multi sub infix:«>=»(Num $a, Num $b) {
-    pir::islt__INN( $a, $b) ?? False !! True # note reversed
 }
 
 # Arithmetic operators
@@ -250,40 +233,20 @@ multi sub prefix:<->(Real $a) {
     -($a.Bridge);
 }
 
-multi sub prefix:<->(Num $a) {
-    pir::neg__NN($a);
-}
-
 multi sub infix:<+>(Real $a, Real $b) {
     $a.Bridge + $b.Bridge;
-}
-
-multi sub infix:<+>(Num $a, Num $b) {
-    pir::add__NNN($a, $b)
 }
 
 multi sub infix:<->(Real $a, Real $b) {
     $a.Bridge - $b.Bridge;
 }
 
-multi sub infix:<->(Num $a, Num $b) {
-    pir::sub__NNN($a, $b)
-}
-
 multi sub infix:<*>(Real $a, Real $b) {
     $a.Bridge * $b.Bridge;
 }
 
-multi sub infix:<*>(Num $a, Num $b) {
-    pir::mul__NNN($a, $b)
-}
-
 multi sub infix:</>(Real $a, Real $b) {
     $a.Bridge / $b.Bridge;
-}
-
-multi sub infix:</>(Num $a, Num $b) {
-    pir::div__NNN($a, $b)
 }
 
 multi sub infix:<%>(Real $a, Real $b) {
@@ -293,10 +256,6 @@ multi sub infix:<%>(Real $a, Real $b) {
 
 multi sub infix:<**>(Real $a, Real $b) {
     $a.Bridge ** $b.Bridge;
-}
-
-multi sub infix:<**>(Num $a, Num $b) {
-    pir::pow__NNN($a, $b)
 }
 
 # NOTE: mod is only actually defined for integer types!

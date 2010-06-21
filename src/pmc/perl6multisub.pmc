@@ -14,22 +14,6 @@ dispatch algorithm, along with providing various other pieces.
 Since we need to store some extra information, we cannot just actually be
 a ResizablePMCArray, but rather we need to have one.
 
-=head1 TODO
-
-This is a list of things that I need to deal with/come back and worry about
-later (it's not a complete todo list for finishing up the PMC itself, just
-of fixup tasks in what is already done).
-
-=over 4
-
-=item Use Perl 6 types when boxing native arguments in the arg list
-
-=item Make sure we override everything that ResizablePMCArray and its parents
-would provide us with. Otherwise, we'll just get segfaults 'cus we don't store
-stuff the way it does.
-
-=back
-
 =head1 INTERNAL STRUCTURES
 
 We have some structures that we use to keep data around internally.
@@ -57,7 +41,7 @@ typedef struct candidate_info {
     PMC  **constraints; /* Refinement type constraints for each parameter
                          * (if there are many, this will be a junction). */
     INTVAL num_types;   /* Number of entries in the above two arrays. */
-    INTVAL min_arity;   /* The number of required positonal arguments. */
+    INTVAL min_arity;   /* The number of required positional arguments. */
     INTVAL max_arity;   /* # of required and optional positional arguments. */
     INTVAL bind_check;  /* A true value if any parameters have constraints and/or are named. */
     STRING *req_named;  /* Name of one required named argument, if any. This is to allow us
@@ -655,12 +639,12 @@ static PMC* do_dispatch(PARROT_INTERP, PMC *self, candidate_info **candidates, P
         Parrot_mmd_cache_store_by_values(interp, cache, "", capture, possibles[0]->sub);
     }
 
-    /* Perhaps we found nothing but have juncitonal arguments? */
+    /* Perhaps we found nothing but have junctional arguments? */
     if (possibles_count == 0 && has_junctional_args(interp, capture)) {
         /* Look up multi junction dispatcher, clone it, attach this multi-sub
          * as a property and hand that back as the dispatch result. We also
          * stick it in the MMD cache for next time around. */
-        PMC *sub = Parrot_find_global_n(interp, Parrot_get_ctx_HLL_namespace(interp),
+        PMC *sub = Parrot_ns_find_namespace_global(interp, Parrot_get_ctx_HLL_namespace(interp),
                 CONST_STRING(interp, "!DISPATCH_JUNCTION_MULTI"));
         sub = VTABLE_clone(interp, sub);
         VTABLE_setprop(interp, sub, CONST_STRING(interp, "sub"), self);
@@ -794,7 +778,7 @@ static PMC *find_many_candidates_with_arg_list(PARROT_INTERP, PMC *SELF, PMC *ca
                  MMD_MANY_RESULTS, VTABLE_elements(interp, unsorted), NULL, cache);
     }
 
-    /* Restore stuff that might have got overwriten by calls during the
+    /* Restore stuff that might have got overwritten by calls during the
      * dispatch algorithm. */
     CURRENT_CONTEXT(interp) = ctx;
     interp->current_cont = saved_ccont;
@@ -856,7 +840,7 @@ Unsorted list of all candidates.
 
 =item candidates_sorted
 
-C array of canididate_info structures. It stores a sequence of candidates
+C array of candidate_info structures. It stores a sequence of candidates
 length one or greater that are tied, followed by a NULL, followed by the next
 bunch that are less narrow but tied and so forth. It is terminated by a double
 NULL.
@@ -1013,7 +997,7 @@ the Perl 6 MMD algorithm.
                     VTABLE_elements(interp, unsorted), (opcode_t *)next, cache);
         }
 
-        /* Restore stuff that might have got overwriten by calls during the
+        /* Restore stuff that might have got overwritten by calls during the
          * dispatch algorithm. */
         CURRENT_CONTEXT(interp) = ctx;
         interp->current_cont = saved_ccont;

@@ -14,14 +14,6 @@ our sub upgrade_to_num_if_needed($test) {
 }
 
 augment class Int does Real {
-    multi method ACCEPTS(Int $other) {
-        self == $other;
-    }
-
-    multi method ACCEPTS($other) {
-        self.Num.ACCEPTS($other);
-    }
-
     method Bridge() {
         self.Num;
     }
@@ -33,9 +25,10 @@ augment class Int does Real {
     our Num method Num() {
         pir::box__PN(pir::set__NP(self));
     }
+}
 
-    # Next has been moved to Rat.pm for the moment.
-    # our Rat multi method Rat() { Rat.new(self, 1); }
+our multi sub prefix:<->(Int $a) {
+    upgrade_to_num_if_needed(pir::neg__NN($a))
 }
 
 our multi sub infix:<+>(Int $a, Int $b) {
@@ -68,8 +61,4 @@ our multi sub infix:<**>(Int $a, Int $b) {
     } else {
         pir::pow__NNN($a, $b)
     }
-}
-
-our multi sub prefix:<->(Int $a) {
-    upgrade_to_num_if_needed(pir::neg__NN($a))
 }

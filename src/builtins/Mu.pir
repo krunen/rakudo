@@ -264,18 +264,13 @@ XXX This had probably best really just tailcall .^CREATE; move this stuff later.
     goto attrinit_rw
   attrinit_array:
     attr = new ['Array']
+    transform_to_p6opaque attr
     goto attrinit_rw
   attrinit_hash:
-    attr = '&CREATE_HASH_LOW_LEVEL'()
+    attr = '&CREATE_HASH_FROM_LOW_LEVEL'()
   attrinit_rw:
     setprop attr, 'rw', attr
     setattribute example, cur_class, attrname, attr
-    traits = attrhash['traits']
-    if null traits goto traits_done
-    $P0 = getprop 'metaclass', cur_class
-    if null $P0 goto traits_done
-    traits(attr, $P0)
-  traits_done:
     goto attrinit_loop
   attrinit_done:
     # Only go to next class if we didn't already reach the top of the Perl 6
@@ -372,13 +367,13 @@ in the future.)
     .param pmc source
 
     # Get hold of the source object to assign.
-    $I0 = can source, '!FETCH'
+    $I0 = can source, 'item'
     if $I0 goto source_fetch
     source = deobjectref source
     source = new ['ObjectRef'], source
     goto have_source
   source_fetch:
-    source = source.'!FETCH'()
+    source = source.'item'()
     source = deobjectref source
   have_source:
 
@@ -528,10 +523,6 @@ Gets the object's identity value
 .sub '' :vtable('push_pmc') :method
     .param pmc value
     .tailcall self.'push'(value)
-.end
-
-.sub 'list' :method
-    .tailcall '&infix:<,>'(self)
 .end
 
 # Local Variables:

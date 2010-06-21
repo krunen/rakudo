@@ -105,9 +105,13 @@ BUILTINS_PIR = \
   src/builtins/Iterable.pir \
   src/builtins/Iterator.pir \
   src/builtins/EMPTY.pir \
-  src/builtins/ParrotIter.pir \
   src/builtins/List.pir \
+  src/builtins/ParrotIter.pir \
+  src/builtins/ListIter.pir \
+  src/builtins/MapIter.pir \
+  src/builtins/GatherIter.pir \
   src/builtins/Parcel.pir \
+  src/builtins/ParcelIter.pir \
   src/builtins/Bool.pir \
   src/builtins/Int.pir \
   src/builtins/Num.pir \
@@ -116,17 +120,16 @@ BUILTINS_PIR = \
   src/builtins/Pair.pir \
   src/builtins/Callable.pir \
   src/builtins/Code.pir \
-  src/builtins/Multi.pir \
   src/builtins/Block.pir \
   src/builtins/Routine.pir \
+  src/builtins/Multi.pir \
   src/builtins/Sub.pir \
   src/builtins/Method.pir \
   src/builtins/Submethod.pir \
   src/builtins/Regex.pir \
   src/builtins/Associative.pir \
-  src/builtins/Seq.pir \
-  src/builtins/SeqIter.pir \
   src/builtins/Array.pir \
+  src/builtins/Seq.pir \
   src/builtins/Proxy.pir \
   src/builtins/ContainerDeclarand.pir \
   src/builtins/Exception.pir \
@@ -153,14 +156,13 @@ CHEATS_PIR = \
   src/cheats/num-ops.pir \
   src/cheats/str-ops.pir \
   src/cheats/relops.pir \
-  src/cheats/mapiterator.pir \
-  src/cheats/gatheriterator.pir \
   src/cheats/only_infix_redispatcher.pir \
   src/cheats/import.pir \
   src/cheats/want-caller-side-callsig.pir \
   src/cheats/parrot-role-quirks.pir \
   src/cheats/parrot/attriter.pir \
   src/cheats/parrot/Protoobject.pir \
+  src/cheats/parrot/P6metaclass.pir \
   src/cheats/parrot/P6role.pir \
   src/gen/uprop-cheats.pir \
   src/cheats/parrot/register.pir \
@@ -169,10 +171,12 @@ CORE_SOURCES = \
   src/core/traits.pm \
   src/core/metaops.pm \
   src/core/operators.pm \
+  src/glue/handles.pm \
   src/glue/subset.pm \
   src/cheats/trait-export.pm \
   src/cheats/num.pm \
   src/cheats/eval.pm \
+  src/core/Positional.pm \
   src/core/Associative.pm \
   src/core/Mu.pm \
   src/core/Bool.pm \
@@ -182,7 +186,7 @@ CORE_SOURCES = \
   src/core/Cool.pm \
   src/core/Cool-num.pm \
   src/core/Cool-str.pm \
-  src/core/Seq.pm \
+  src/core/List.pm \
   src/core/Set.pm \
   src/core/Array.pm \
   src/core/Numeric.pm \
@@ -198,8 +202,8 @@ CORE_SOURCES = \
   src/core/Str.pm \
   src/core/Whatever.pm \
   src/core/Pair.pm \
-  src/core/Range.pm \
   src/core/RangeIter.pm \
+  src/core/Range.pm \
   src/core/EnumMap.pm \
   src/core/Hash.pm \
   src/core/Enum.pm \
@@ -209,6 +213,7 @@ CORE_SOURCES = \
   src/core/Parameter.pm \
   src/core/Signature.pm \
   src/core/Block.pm \
+  src/core/Routine.pm \
   src/core/Regex.pm \
   src/core/Junction.pm \
   src/core/Grammar.pm \
@@ -219,6 +224,10 @@ CORE_SOURCES = \
   src/core/Date.pm \
   src/core/Temporal.pm \
   src/core/Match.pm \
+  src/core/Attribute.pm \
+  src/core/CallFrame.pm \
+  src/core/LexPad.pm \
+  src/core/Capture.pm \
   src/core/MAIN.pm \
   src/core/YOU_ARE_HERE.pm \
 
@@ -227,7 +236,7 @@ PMC_SOURCES = \
   $(PMC_DIR)/perl6scalar.pmc $(PMC_DIR)/mutablevar.pmc \
   $(PMC_DIR)/perl6multisub.pmc $(PMC_DIR)/p6invocation.pmc \
   $(PMC_DIR)/p6opaque.pmc $(PMC_DIR)/p6role.pmc \
-  $(PMC_DIR)/p6lowlevelsig.pmc $(PMC_DIR)/byteview.pmc
+  $(PMC_DIR)/p6lowlevelsig.pmc
 
 OPS_SOURCE   = perl6.ops
 
@@ -392,10 +401,10 @@ Test.pir: Test.pm perl6.pbc
 
 test    : coretest
 
-fulltest: coretest spectest
+fulltest: coretest spectest stresstest
 
 coretest: Test.pir $(PERL6_EXE)
-	$(PERL) t/harness t/00-parrot t/01-sanity
+	PARROT=$(PARROT) $(PERL) t/harness t/00-parrot t/01-sanity t/02-embed
 
 # Run the spectests that we know work.
 spectest_regression: spectest
@@ -411,6 +420,9 @@ t/spec :
 
 spectest_update :
 	-cd t/spec && svn up
+
+stresstest: testable t/stresstest.data
+	$(HARNESS_WITH_FUDGE_JOBS) --tests-from-file=t/stresstest.data
 
 rakudo_test_run.tar.gz: testable t/spectest.data
 	- $(HARNESS_WITH_FUDGE_JOBS) --tests-from-file=t/spectest.data --archive rakudo_test_run.tar.gz --parrot_revision @revision@
@@ -431,7 +443,7 @@ localtest: all Test.pir spectest_checkout t/localtest.data
 localtest_loud: all Test.pir spectest_checkout t/localtest.data
 	@$(HARNESS_WITH_FUDGE) --tests-from-file=t/localtest.data --verbosity=1
 
-# Run many tests of your choise.
+# Run many tests of your choice.
 # make sometests TESTFILES=t/foo/bar
 sometests: all
 	@$(HARNESS_WITH_FUDGE_JOBS) $(TESTFILES)
@@ -511,7 +523,7 @@ manifest:
 	sort -u -o MANIFEST MANIFEST
 
 release: manifest
-	[ -n "$(VERSION)" ] || ( echo "\nTry 'make release VERSION=yyyymm'\n\n"; exit 1 )
+	[ -n "$(VERSION)" ] || ( echo "\nTry 'make release VERSION=yyyy.mm'\n\n"; exit 1 )
 	[ -d rakudo-$(VERSION) ] || ln -s . rakudo-$(VERSION)
 	$(PERL) -ne 'print "rakudo-$(VERSION)/$$_"' MANIFEST | \
 	    tar -zcv -T - -f rakudo-$(VERSION).tar.gz
