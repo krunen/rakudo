@@ -13,6 +13,15 @@ augment class List does Positional {
 
     method Str() { self.join(' ') }
 
+    multi method exists(*@indices) {
+        return False unless @indices;
+        while @indices && @indices.shift -> $key {
+            return False if $key < 0
+                || !pir::exists__IQi(self!fill($key+1), $key);
+        }
+        True;
+    }
+
     multi method fmt($format = '%s', $separator = ' ') {
         self.map({ .fmt($format) }).join($separator);
     }
@@ -52,7 +61,7 @@ augment class List does Positional {
 
         # If &by.arity < 2, then it represents a block to be applied
         # to the elements to obtain the values for sorting.
-        if (&by.?arity // 2) < 2 {
+        if (&by.?count || 2) < 2 {
             my $list = self.map(&by).eager;
             self[$index_rpa.sort(
                 -> $a, $b { $list[$a] cmp $list[$b] || $a <=> $b }

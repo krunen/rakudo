@@ -478,6 +478,7 @@ token statement_prefix:sym<BEGIN> { <sym> <blorst> }
 token statement_prefix:sym<CHECK> { <sym> <blorst> }
 token statement_prefix:sym<INIT>  { <sym> <blorst> }
 token statement_prefix:sym<END>   { <sym> <blorst> }
+token statement_prefix:sym<sink>  { <sym> <blorst> }
 token statement_prefix:sym<try>   { <sym> <blorst> }
 token statement_prefix:sym<gather>{ <sym> <blorst> }
 token statement_prefix:sym<do>    { <sym> <blorst> }
@@ -490,8 +491,11 @@ token blorst {
 
 proto token statement_mod_cond { <...> }
 
-token statement_mod_cond:sym<if>     { <sym> :s <cond=.EXPR> }
-token statement_mod_cond:sym<unless> { <sym> :s <cond=.EXPR> }
+rule modifier_expr { <EXPR> }
+
+token statement_mod_cond:sym<if>     { <sym> <modifier_expr> }
+token statement_mod_cond:sym<unless> { <sym> <modifier_expr> }
+token statement_mod_cond:sym<when>   { <sym> <modifier_expr> }
 
 proto token statement_mod_loop { <...> }
 
@@ -1678,7 +1682,9 @@ token infix:sym<*>    { <sym>  <O('%multiplicative')> }
 token infix:sym</>    { <sym>  <O('%multiplicative')> }
 token infix:sym<div>  { <sym>  <O('%multiplicative')> }
 token infix:sym<%>    { <sym>  <O('%multiplicative')> }
+token infix:sym<!%>   { <sym> <panic("Infix !% is deprecated in favor of infix %%")> }
 token infix:sym<mod>  { <sym>  <O('%multiplicative')> }
+token infix:sym<%%>   { <sym>  <O('%multiplicative')> }
 token infix:sym<+&>   { <sym>  <O('%multiplicative')> }
 token infix:sym<~&>   { <sym>  <O('%multiplicative')> }
 token infix:sym<?&>   { <sym>  <O('%multiplicative')> }

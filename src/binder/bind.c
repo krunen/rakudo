@@ -12,22 +12,41 @@ Copyright (C) 2009-2010, The Perl Foundation.
 
 
 /* Cache of the type ID for low level signatures and some strings. */
-static INTVAL lls_id      = 0;
-static INTVAL or_id       = 0;
-static INTVAL p6s_id      = 0;
-static STRING *ACCEPTS    = NULL;
-static STRING *HOW        = NULL;
-static PMC    *HashPunned = NULL;
+static INTVAL or_id             = 0;
+static INTVAL lls_id            = 0;
+static INTVAL p6s_id            = 0;
+static STRING *ACCEPTS          = NULL;
+static STRING *HOW              = NULL;
+static STRING *HASH_str         = NULL;
+static STRING *SELECT_str       = NULL;
+static STRING *PUN_str          = NULL;
+static STRING *CREATE_str       = NULL;
+static STRING *STORAGE_str      = NULL;
+static STRING *HASH_SIGIL_str   = NULL;
+static STRING *ARRAY_SIGIL_str  = NULL;
+static STRING *SCALAR_SIGIL_str = NULL;
+static STRING *BANG_TWIGIL_str  = NULL;
+static PMC    *HashPunned       = NULL;
 
 /* Initializes our cached versions of some strings and type IDs that we
  * use very commonly. For strings, this should mean we only compute their
  * hash value once, rather than every time we create and consume them. */
 static void setup_binder_statics(PARROT_INTERP) {
-    lls_id  = pmc_type(interp, string_from_literal(interp, "P6LowLevelSig"));
-    or_id   = pmc_type(interp, string_from_literal(interp, "ObjectRef"));
-    p6s_id  = pmc_type(interp, string_from_literal(interp, "Perl6Scalar"));
-    ACCEPTS = Parrot_str_new_constant(interp, "ACCEPTS");
-    HOW     = Parrot_str_new_constant(interp, "HOW");
+    or_id  = pmc_type(interp, string_from_literal(interp, "ObjectRef"));
+    lls_id = pmc_type(interp, string_from_literal(interp, "P6LowLevelSig"));
+    p6s_id = pmc_type(interp, string_from_literal(interp, "Perl6Scalar"));
+
+    ACCEPTS          = Parrot_str_new_constant(interp, "ACCEPTS");
+    HOW              = Parrot_str_new_constant(interp, "HOW");
+    HASH_str         = Parrot_str_new_constant(interp, "Hash");
+    SELECT_str       = Parrot_str_new_constant(interp, "!select");
+    PUN_str          = Parrot_str_new_constant(interp, "!pun");
+    CREATE_str       = Parrot_str_new_constant(interp, "CREATE");
+    STORAGE_str      = Parrot_str_new_constant(interp, "$!storage");
+    HASH_SIGIL_str   = Parrot_str_new_constant(interp, "%");
+    ARRAY_SIGIL_str  = Parrot_str_new_constant(interp, "@");
+    SCALAR_SIGIL_str = Parrot_str_new_constant(interp, "$");
+    BANG_TWIGIL_str  = Parrot_str_new_constant(interp, "!");
 }
 
 
@@ -63,19 +82,22 @@ static PMC *
 Rakudo_binding_create_hash(PARROT_INTERP, PMC *storage) {
     PMC *result = PMCNULL;
     PMC *create = PMCNULL;
+
     if (!HashPunned) {
         /* We cache the punned Hash role class so we can very quickly call
          * CREATE - critical as we have slurpy hashes for all methods. */
         PMC *root_ns   = Parrot_get_ctx_HLL_namespace(interp);
-        PMC *hash_role = VTABLE_get_pmc_keyed_str(interp, root_ns, string_from_literal(interp, "Hash"));
-        PMC *meth      = VTABLE_find_method(interp, hash_role, string_from_literal(interp, "!select"));
+        PMC *hash_role = VTABLE_get_pmc_keyed_str(interp, root_ns, HASH_str);
+        PMC *meth      = VTABLE_find_method(interp, hash_role, SELECT_str);
         Parrot_ext_call(interp, meth, "P->P", hash_role, &hash_role);
-        meth = VTABLE_find_method(interp, hash_role, string_from_literal(interp, "!pun"));
+        meth           = VTABLE_find_method(interp, hash_role, PUN_str);
         Parrot_ext_call(interp, meth, "P->P", hash_role, &HashPunned);
     }
-    create = VTABLE_find_method(interp, HashPunned, string_from_literal(interp, "CREATE"));
+
+    create = VTABLE_find_method(interp, HashPunned, CREATE_str);
     Parrot_ext_call(interp, create, "P->P", HashPunned, &result);
-    VTABLE_set_attr_str(interp, result, string_from_literal(interp, "$!storage"), storage);
+    VTABLE_set_attr_str(interp, result, STORAGE_str, storage);
+
     return result;
 }
 
@@ -278,7 +300,8 @@ Rakudo_binding_bind_one_param(PARROT_INTERP, PMC *lexpad, llsig_element *sig_inf
                 VTABLE_set_pmc_keyed_str(interp, lexpad, sig_info->variable_name, value);
         }
         else if (sig_info->flags & SIG_ELEM_IS_COPY) {
-            /* Clone the value appropriately, wrap it into an ObjectRef, and bind it. */
+            /* Place the value into a new container instead of binding to an existing one */
+            value = descalarref(interp, value);
             if (!STRING_IS_NULL(sig_info->variable_name)) {
                 PMC *copy, *ref, *store_meth;
                 if (sig_info->flags & SIG_ELEM_ARRAY_SIGIL) {
@@ -294,11 +317,11 @@ Rakudo_binding_bind_one_param(PARROT_INTERP, PMC *lexpad, llsig_element *sig_inf
                     Parrot_ext_call(interp, store_meth, "PiP", copy, value);
                 }
                 else {
-                    copy = VTABLE_clone(interp, value);
+                    copy = pmc_new_init(interp, p6s_id, value);
+                    VTABLE_setprop(interp, copy, string_from_literal(interp, "scalar"), copy);
                 }
-                ref = pmc_new_init(interp, or_id, copy);
-                VTABLE_setprop(interp, ref, string_from_literal(interp, "rw"), ref);
-                VTABLE_set_pmc_keyed_str(interp, lexpad, sig_info->variable_name, ref);
+                VTABLE_setprop(interp, copy, string_from_literal(interp, "rw"), copy);
+                VTABLE_set_pmc_keyed_str(interp, lexpad, sig_info->variable_name, copy);
             }
         }
         else {
@@ -460,6 +483,10 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
      * taking one - tell us we have a problem. */
     PMC *named_args_copy = PMCNULL;
 
+    /* If we have a |$foo that's followed by slurpies, then we can suppress
+     * any future arity checks. */
+    INTVAL suppress_arity_fail = 0;
+    
     /* Check that we have a valid signature and pull the bits out of it. */
     if (!lls_id)
         setup_binder_statics(interp);
@@ -487,17 +514,20 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
             /* Provided it has a name... */
             if (!STRING_IS_NULL(elements[i]->variable_name)) {
                 /* Strip any sigil, then stick in named to positional array. */
-                STRING *store = elements[i]->variable_name;
-                STRING *sigil = Parrot_str_substr(interp, store, 0, 1);
+                STRING *store  = elements[i]->variable_name;
+                STRING *sigil  = Parrot_str_substr(interp, store, 0, 1);
                 STRING *twigil = Parrot_str_substr(interp, store, 1, 1);
-                if (Parrot_str_equal(interp, sigil, string_from_literal(interp, "$")) ||
-                        Parrot_str_equal(interp, sigil, string_from_literal(interp, "@")) ||
-                        Parrot_str_equal(interp, sigil, string_from_literal(interp, "%")))
+
+                if (Parrot_str_equal(interp, sigil, SCALAR_SIGIL_str)
+                ||  Parrot_str_equal(interp, sigil, ARRAY_SIGIL_str)
+                ||  Parrot_str_equal(interp, sigil, HASH_SIGIL_str))
                     store = Parrot_str_substr(interp, store, 1,
                             Parrot_str_byte_length(interp, store));
-                if (Parrot_str_equal(interp, twigil, string_from_literal(interp, "!")))
+
+                if (Parrot_str_equal(interp, twigil, BANG_TWIGIL_str))
                     store = Parrot_str_substr(interp, store, 1,
                             Parrot_str_byte_length(interp, store));
+
                 VTABLE_set_integer_keyed_str(interp, named_to_pos_cache, store, i);
             }
         }
@@ -576,6 +606,10 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
                 if (pos_from_named)
                     mem_sys_free(pos_from_named);
                 return BIND_RESULT_OK;
+            }
+            else if (elements[i + 1]->flags &
+                    (SIG_ELEM_SLURPY_POS | SIG_ELEM_SLURPY_NAMED)) {
+                suppress_arity_fail = 1;
             }
         }
 
@@ -698,7 +732,7 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
                     bind_fail = Rakudo_binding_bind_one_param(interp, lexpad, elements[i],
                             value, 1, error);
                 }
-                else {
+                else if (!suppress_arity_fail) {
                     if (error)
                         *error = Parrot_sprintf_c(interp, "Required named parameter '%S' not passed",
                                 VTABLE_get_string_keyed_int(interp, elements[i]->named_names, 0));
@@ -726,7 +760,7 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
         mem_sys_free(pos_from_named);
 
     /* Do we have any left-over args? */
-    if (cur_pos_arg < num_pos_args) {
+    if (cur_pos_arg < num_pos_args && !suppress_arity_fail) {
         /* Oh noes, too many positionals passed. */
         if (error)
             *error = *error = Rakudo_binding_arity_fail(interp, elements, num_elements, num_pos_args, 1);

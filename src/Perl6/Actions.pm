@@ -143,6 +143,7 @@ method statementlist($/) {
             }
         }
     }
+    $past.push(PAST::Op.new(:name('&Nil'))) if +$past.list < 1;
     make $past;
 }
 
@@ -162,8 +163,9 @@ method statement($/, $key?) {
         my $ml := $<statement_mod_loop>[0];
         $past := $<EXPR>.ast;
         if $mc {
-            $past := PAST::Op.new($mc<cond>.ast, $past, PAST::Op.new(:name('&Nil')),
-                        :pasttype(~$mc<sym>), :node($/) );
+            $mc.ast.push($past);
+            $mc.ast.push(PAST::Op.new(:name('&Nil')));
+            $past := $mc.ast;
         }
         if $ml {
             my $cond := $ml<smexpr>.ast;
@@ -544,6 +546,16 @@ method statement_prefix:sym<gather>($/) {
     make PAST::Op.new( :pasttype('call'), :name('!GATHER'), $past );
 }
 
+method statement_prefix:sym<sink>($/) {
+    my $blast := $<blorst>.ast;
+    $blast.blocktype('immediate');
+    make PAST::Stmts.new(
+        PAST::Op.new( :name('&eager'), $blast ),
+        PAST::Op.new( :name('&Nil') ),
+        :node($/)
+    );
+}
+
 method statement_prefix:sym<try>($/) {
     my $block := $<blorst>.ast;
     $block.blocktype('immediate');
@@ -584,8 +596,24 @@ sub add_phaser($/, $bank) {
 
 # Statement modifiers
 
-method statement_mod_cond:sym<if>($/)     { make $<cond>.ast; }
-method statement_mod_cond:sym<unless>($/) { make $<cond>.ast; }
+method modifier_expr($/) { make $<EXPR>.ast; }
+
+method statement_mod_cond:sym<if>($/)     { 
+    make PAST::Op.new( :pasttype<if>, $<modifier_expr>.ast, :node($/) );
+}
+
+method statement_mod_cond:sym<unless>($/) {
+    make PAST::Op.new( :pasttype<unless>, $<modifier_expr>.ast, :node($/) );
+}
+
+method statement_mod_cond:sym<when>($/) {
+    make PAST::Op.new( :pasttype<if>,
+        PAST::Op.new( :name('&infix:<~~>'),
+                      PAST::Var.new( :name('$_') ),
+                      $<modifier_expr>.ast ),
+        :node($/)
+    );
+}
 
 method statement_mod_loop:sym<while>($/)  { make $<smexpr>.ast; }
 method statement_mod_loop:sym<until>($/)  { make $<smexpr>.ast; }
@@ -1860,10 +1888,7 @@ method term:sym<!!!>($/) {
 
 method term:sym<dotty>($/) {
     my $past := $<dotty>.ast;
-    $past.unshift(PAST::Op.new(
-        :pirop('descalarref PP'),
-        PAST::Var.new( :name('$_'), :scope('lexical') )
-    ));
+    $past.unshift(PAST::Var.new( :name('$_'), :scope('lexical') ) );
     make $past;
 }
 
@@ -2330,37 +2355,20 @@ method numish($/) {
 }
 
 method dec_number($/) {
-    my $int  := $<int> ?? $<int>.ast !! 0;
-    my $frac := $<frac> ?? $<frac>.ast !! 0;
-    my $base := Q:PIR {
-        $P0 = find_lex '$/'
-        $S0 = $P0['frac']
-        $I1 = length $S0
-        $I0 = 0
-        $I2 = 1
-      loop:
-        unless $I0 < $I1 goto done
-        $S1 = substr $S0, $I0, 1
-        inc $I0
-        if $S1 == '_' goto loop
-        $I2 *= 10
-        goto loop
-      done:
-        %r = box $I2
-    };
+    my $int  := $<int> ?? ~$<int> !! "0";
+    my $frac := $<frac> ?? ~$<frac> !! "0";
     if $<escale> {
-        my $exp := $<escale>[0]<decint>.ast;
-        if $<escale>[0]<sign> eq '-' { $exp := -$exp; }
-        make PAST::Val.new(
-            :value(($int * $base + $frac) / $base * 10 ** +$exp ) ,
-            :returns('Num')
-        );
-    }
-    else {
+        my $exp := ~$<escale>[0]<decint>;
         make PAST::Op.new(
-            :pasttype('callmethod'), :name('new'),
-            PAST::Var.new( :name('Rat'), :namespace(''), :scope('package') ),
-            $int * $base + $frac, $base, :node($/)
+            :pasttype('call'),
+            PAST::Var.new(:scope('package'), :name('&str2num-num'), :namespace('Str')),
+             0, $int, $frac, ($<escale>[0]<sign> eq '-'), $exp
+        );
+    } else {
+        make PAST::Op.new(
+            :pasttype('call'),
+            PAST::Var.new(:scope('package'), :name('&str2num-rat'), :namespace('Str')),
+             0, $int, $frac
         );
     }
 }
@@ -3090,7 +3098,7 @@ sub whatever_curry($past, $upto_arity) {
             my $sig := Perl6::Compiler::Signature.new(
                 Perl6::Compiler::Parameter.new(:var_name('$x')),
                 Perl6::Compiler::Parameter.new(:var_name('$y')));
-            $past := make_block_from($sig, $past);
+            $past := make_block_from($sig, $past, 'WhateverCode');
         }
         elsif $upto_arity == 2 && $past[1] ~~ PAST::Op && $past[1].returns eq 'Whatever' {
             # Curry right arg.
@@ -3098,7 +3106,7 @@ sub whatever_curry($past, $upto_arity) {
             $past.push(PAST::Var.new( :name('$y'), :scope('lexical') ));
             my $sig := Perl6::Compiler::Signature.new(
                 Perl6::Compiler::Parameter.new(:var_name('$y')));
-            $past := make_block_from($sig, $past);
+            $past := make_block_from($sig, $past, 'WhateverCode');
         }
         elsif $upto_arity >= 1 && $past[0] ~~ PAST::Op && $past[0].returns eq 'Whatever' {
             # Curry left (or for unary, only) arg.
@@ -3106,7 +3114,7 @@ sub whatever_curry($past, $upto_arity) {
             $past.unshift(PAST::Var.new( :name('$x'), :scope('lexical') ));
             my $sig := Perl6::Compiler::Signature.new(
                 Perl6::Compiler::Parameter.new(:var_name('$x')));
-            $past := make_block_from($sig, $past);
+            $past := make_block_from($sig, $past, 'WhateverCode');
         }
     }
     $past
@@ -3114,7 +3122,7 @@ sub whatever_curry($past, $upto_arity) {
 
 # Helper for constructing a simple Perl 6 Block with the given signature
 # and body.
-sub make_block_from($sig, $body) {
+sub make_block_from($sig, $body, $type = 'Block') {
     my $past := PAST::Block.new( :blocktype('declaration'),
         PAST::Stmts.new( ),
         PAST::Stmts.new(
@@ -3122,7 +3130,7 @@ sub make_block_from($sig, $body) {
         )
     );
     my $lazy_name := add_signature($past, $sig, 1);
-    create_code_object($past, 'Block', 0, $lazy_name);
+    create_code_object($past, $type, 0, $lazy_name);
 }
 
 # vim: ft=perl6
