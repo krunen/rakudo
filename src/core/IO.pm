@@ -14,7 +14,7 @@ class IO is Cool {
         ?$!PIO.eof();
     }
 
-    multi method get() is export {
+    multi method get() {
         my $x = $!PIO.readline;
         fail if $.eof && $x eq '';
         $!ins++;
@@ -33,6 +33,19 @@ class IO is Cool {
                take $line;
            }
         }
+    }
+
+    method open($filename, :$r, :$w, :$a) {
+        if $!PIO { $!PIO.close; $!PIO = Nil; }
+        my $mode = $w ?? 'w' !! ($a ?? 'wa' !! 'r');
+        $!PIO = $filename eq '-'
+                ?? pir::getstdin__P()
+                !! pir::open__PSS($filename, $mode);
+        unless pir::istrue__IP($!PIO) {
+            fail("Unable to open file '$filename'");
+        }
+        $!PIO.encoding('utf8');
+        self;
     }
 
     multi method print(*@items) {
@@ -67,6 +80,8 @@ class IO is Cool {
         $!PIO.isatty;
     }
 }
+
+multi sub get(IO $filehandle = $*ARGFILES) { $filehandle.get };
 
 multi sub lines(IO $filehandle = $*ARGFILES,
                 :$bin = False,
