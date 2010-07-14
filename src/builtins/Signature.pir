@@ -16,7 +16,7 @@ P6LowLevelSig and provides higher level access to it.
 .sub 'onload' :anon :init :load
     .local pmc p6meta
     p6meta = get_hll_global ['Mu'], '$!P6META'
-    p6meta.'new_class'('Signature', 'parent'=>'Cool', 'attr'=>'$!ll_sig $!param_cache $!try_bind_sub $!bind_target')
+    p6meta.'new_class'('Signature', 'parent'=>'Cool', 'attr'=>'$!llsig $!param_cache $!try_bind_sub $!bind_target')
 .end
 
 
@@ -42,9 +42,9 @@ Returns a C<List> of C<Parameter> descriptors.
     result = new ['Parcel']
 
     # Grab low level signature we're wrapping.
-    .local pmc signature
-    signature = getattribute self, '$!ll_sig'
-    signature = descalarref signature
+    .local pmc llsig
+    llsig = getattribute self, '$!llsig'
+    llsig = descalarref llsig
 
     # And Parameter proto.
     .local pmc parameter
@@ -52,7 +52,7 @@ Returns a C<List> of C<Parameter> descriptors.
 
     # Loop over parameters.
     .local int cur_param, count
-    count = get_signature_size signature
+    count = get_llsig_size llsig
     cur_param = -1
   param_loop:
     inc cur_param
@@ -62,7 +62,7 @@ Returns a C<List> of C<Parameter> descriptors.
     .local pmc nom_type, cons_type, names, type_captures, default, sub_sig
     .local int flags, optional, invocant, multi_invocant, slurpy, rw, parcel, capture, copy, named
     .local string name, coerce_to
-    get_signature_elem signature, cur_param, name, flags, nom_type, cons_type, names, type_captures, default, sub_sig, coerce_to
+    get_llsig_elem llsig, cur_param, name, flags, nom_type, cons_type, names, type_captures, default, sub_sig, coerce_to
     optional       = flags & SIG_ELEM_IS_OPTIONAL
     invocant       = flags & SIG_ELEM_INVOCANT
     multi_invocant = flags & SIG_ELEM_MULTI_INVOCANT
@@ -106,7 +106,7 @@ Returns a C<List> of C<Parameter> descriptors.
     default = '!FAIL'()
   default_done:
     if null sub_sig goto no_sub_sig
-    sub_sig = self.'new'('ll_sig'=>sub_sig)
+    sub_sig = self.'new'('llsig'=>sub_sig)
     goto sub_sig_done
   no_sub_sig:
     sub_sig = '!FAIL'()
@@ -188,7 +188,7 @@ PIR
 
     # Ending.
     pir = concat <<'PIR'
-    bind_signature capture
+    bind_llsig capture
     $P0 = getinterp
     $P0 = $P0['lexpad']
     .return ($P0)
@@ -199,9 +199,9 @@ PIR
     $P0 = compreg 'PIR'
     $P0 = $P0(pir)
     $P0 = $P0[0]
-    $P1 = getattribute self, '$!ll_sig'
+    $P1 = getattribute self, '$!llsig'
     $P1 = descalarref $P1
-    setprop $P0, '$!signature', $P1
+    setprop $P0, '$!llsig', $P1
     .return ($P0)
 .end
 

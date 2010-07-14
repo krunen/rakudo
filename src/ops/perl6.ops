@@ -22,12 +22,14 @@ BEGIN_OPS_PREAMBLE
 static INTVAL p6s_id = 0;
 static INTVAL or_id  = 0;
 static INTVAL lls_id = 0;
+static INTVAL obj_id = 0;
+static INTVAL p6o_id = 0;
 
 /* Plus a function pointer to the binder. */
-typedef INTVAL (*bind_signature_func_type) (PARROT_INTERP, PMC *lexpad,
-    PMC *signature, PMC *capture, INTVAL no_nom_type_check, STRING **error);
+typedef INTVAL (*bind_llsig_func_type) (PARROT_INTERP, PMC *lexpad,
+    PMC *llsig, PMC *capture, INTVAL no_nom_type_check, STRING **error);
 
-static bind_signature_func_type bind_signature_func = NULL;
+static bind_llsig_func_type bind_llsig_func = NULL;
 
 END_OPS_PREAMBLE
 
@@ -45,10 +47,12 @@ inline op rakudo_dynop_setup() :base_core {
     p6s_id = pmc_type(interp, string_from_literal(interp, "Perl6Scalar"));
     or_id  = pmc_type(interp, string_from_literal(interp, "ObjectRef"));
     lls_id = pmc_type(interp, string_from_literal(interp, "P6LowLevelSig"));
+    p6o_id = pmc_type(interp, string_from_literal(interp, "P6opaque"));
+    obj_id = enum_class_Object;
 
     /* Create dummy low level sig op and use its get_pointer to get a pointer
      * to the signature binder. */
-    bind_signature_func = (bind_signature_func_type)VTABLE_get_pointer(interp, pmc_new(interp, lls_id));
+    bind_llsig_func = (bind_llsig_func_type)VTABLE_get_pointer(interp, pmc_new(interp, lls_id));
 
     goto NEXT();
 }
@@ -66,7 +70,6 @@ an instance of class $2, where $2 is a subclass of the class of $1.
 */
 inline op rebless_subclass(in PMC, in PMC) :base_core {
     PMC *value;
-    INTVAL p6opaque = pmc_type(interp, string_from_literal(interp, "P6opaque"));
     PMC * const current_class = VTABLE_get_class(interp, $1);
     PMC * parent_list;
     int num_parents;
@@ -144,9 +147,9 @@ inline op rebless_subclass(in PMC, in PMC) :base_core {
                 i, pmc_new(interp, enum_class_Undef));
 
         /* And make sure the new object is of the right type. */
-        new_ins->vtable = interp->vtables[p6opaque];
+        new_ins->vtable = interp->vtables[p6o_id];
     }
-    else if ((value->vtable->base_type != enum_class_Object && value->vtable->base_type != p6opaque)
+    else if ((value->vtable->base_type != enum_class_Object && value->vtable->base_type != p6o_id)
             || current_class->vtable->base_type != enum_class_Class) {
         /* If we're here, we found a really odd state - the class claims to be
          * a standard Parrot one but the object it supposedly created is not.
@@ -306,7 +309,6 @@ nextsame need.
 inline op get_next_candidate_info(out PMC, out PMC, out PMC) :base_core {
     PMC     *ctx         = Parrot_pcc_get_caller_ctx(interp, CURRENT_CONTEXT(interp));
     STRING  *name        = string_from_literal(interp, "__CANDIDATE_LIST__");
-    STRING  *wrapper     = string_from_literal(interp, "$!p6type");
     PMC     *last_lexpad = PMCNULL;
     PMC     *last_sub    = PMCNULL;
 
@@ -349,8 +351,7 @@ kinda direction.)
 inline op transform_to_p6opaque(inout PMC) :base_core {
     /* Sanity check. */
     if ($1->vtable->base_type == enum_class_Object) {
-        INTVAL type_id = pmc_type(interp, string_from_literal(interp, "P6opaque"));
-        $1->vtable = interp->vtables[type_id];
+        $1->vtable = interp->vtables[p6o_id];
         goto NEXT();
     }
     else {
@@ -404,14 +405,35 @@ inline op descalarref(out PMC, in PMC) :base_core {
 
 /*
 
-=item allocate_signature(out PMC, in INT)
+=item deref_unless_object(out PMC, in PMC)
+
+If the value underlying $2 is anything but an Object or P6opaque,
+return that value; otherwise return $2.
+
+=cut
+
+*/
+inline op deref_unless_object(out PMC, in PMC) :base_core {
+    PMC * val;
+    val = $2;
+    while (val->vtable->base_type == or_id || val->vtable->base_type == p6s_id)
+        val = VTABLE_get_pmc(interp, val);
+    $1 = (val->vtable->base_type == obj_id || val->vtable->base_type == p6o_id)
+         ? $2 : val;
+    goto NEXT();
+}
+
+
+/*
+
+=item allocate_llsig(out PMC, in INT)
 
 Sets $1 to be a P6LowLevelSig with $2 signature elements allocated.
 
 =cut
 
 */
-inline op allocate_signature(out PMC, in INT) :base_core {
+inline op allocate_llsig(out PMC, in INT) :base_core {
     struct llsig_element **elements;
     INTVAL i;
 
@@ -423,14 +445,14 @@ inline op allocate_signature(out PMC, in INT) :base_core {
 
 /*
 
-=item get_signature_size(out INT, in PMC)
+=item get_llsig_size(out INT, in PMC)
 
 Sets $1 to be the number of elements the P6LowLevelSig $2 has.
 
 =cut
 
 */
-inline op get_signature_size(out INT, in PMC) :base_core {
+inline op get_llsig_size(out INT, in PMC) :base_core {
     if ($2->vtable->base_type == lls_id) {
         INTVAL num_elements;
         GETATTR_P6LowLevelSig_num_elements(interp, $2, num_elements);
@@ -439,7 +461,7 @@ inline op get_signature_size(out INT, in PMC) :base_core {
     }
     else {
         opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
-                EXCEPTION_INVALID_OPERATION, "get_signature_size only works on P6LowLevelSig PMCs");
+                EXCEPTION_INVALID_OPERATION, "get_llsig_size only works on P6LowLevelSig PMCs");
         goto ADDRESS(handler);
     }
 }
@@ -447,7 +469,7 @@ inline op get_signature_size(out INT, in PMC) :base_core {
 
 /*
 
-=item set_signature_elem(in PMC, in INT, in STR, in INT, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC, in STR)
+=item set_llsig_elem(in PMC, in INT, in STR, in INT, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC, in STR)
 
 Takes $1 (a P6LowLevelSig) and sets the contents of the signature element with
 index $2 as follows:
@@ -465,7 +487,7 @@ index $2 as follows:
 =cut
 
 */
-inline op set_signature_elem(in PMC, in INT, in STR, in INT, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC, in STR) :base_core {
+inline op set_llsig_elem(in PMC, in INT, in STR, in INT, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC, in STR) :base_core {
     if ($1->vtable->base_type == lls_id) {
         struct llsig_element **elements;
         INTVAL num_elements;
@@ -482,7 +504,7 @@ inline op set_signature_elem(in PMC, in INT, in STR, in INT, inout PMC, inout PM
             element->named_names      = $7;
             element->type_captures    = $8;
             element->default_closure  = $9;
-            element->sub_signature    = $10;
+            element->sub_llsig        = $10;
             element->coerce_to        = $11;
 
             /* Also need to do fixups on the nominal type. */
@@ -509,13 +531,13 @@ inline op set_signature_elem(in PMC, in INT, in STR, in INT, inout PMC, inout PM
         }
         else {
             opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
-                    EXCEPTION_INVALID_OPERATION, "signature element out of range in set_signature_elem");
+                    EXCEPTION_INVALID_OPERATION, "signature element out of range in set_llsig_elem");
             goto ADDRESS(handler);
         }
     }
     else {
         opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
-                EXCEPTION_INVALID_OPERATION, "set_signature_elem only works on P6LowLevelSig PMCs");
+                EXCEPTION_INVALID_OPERATION, "set_llsig_elem only works on P6LowLevelSig PMCs");
         goto ADDRESS(handler);
     }
 }
@@ -523,7 +545,7 @@ inline op set_signature_elem(in PMC, in INT, in STR, in INT, inout PMC, inout PM
 
 /*
 
-=item get_signature_elem(in PMC, in INT, out STR, out INT, out PMC, out PMC, out PMC, out PMC, out PMC, out PMC, out PMC, out STR)
+=item get_llsig_elem(in PMC, in INT, out STR, out INT, out PMC, out PMC, out PMC, out PMC, out PMC, out PMC, out PMC, out STR)
 
 Takes $1 (a P6LowLevelSig) and sets the registers with the contents of the
 signature element with index $2 as follows:
@@ -541,7 +563,7 @@ signature element with index $2 as follows:
 =cut
 
 */
-inline op get_signature_elem(in PMC, in INT, out STR, out INT, out PMC, out PMC, out PMC, out PMC, out PMC, out PMC, out STR) :base_core {
+inline op get_llsig_elem(in PMC, in INT, out STR, out INT, out PMC, out PMC, out PMC, out PMC, out PMC, out PMC, out STR) :base_core {
     if ($1->vtable->base_type == lls_id) {
         struct llsig_element **elements;
         INTVAL num_elements;
@@ -558,19 +580,19 @@ inline op get_signature_elem(in PMC, in INT, out STR, out INT, out PMC, out PMC,
             $7  = element->named_names;
             $8  = element->type_captures;
             $9  = element->default_closure;
-            $10 = element->sub_signature;
+            $10 = element->sub_llsig;
             $11 = element->coerce_to;
             goto NEXT();
         }
         else {
             opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
-                    EXCEPTION_INVALID_OPERATION, "signature element out of range in set_signature_elem");
+                    EXCEPTION_INVALID_OPERATION, "signature element out of range in set_llsig_elem");
             goto ADDRESS(handler);
         }
     }
     else {
         opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
-                EXCEPTION_INVALID_OPERATION, "get_signature_elem only works on P6LowLevelSig PMCs");
+                EXCEPTION_INVALID_OPERATION, "get_llsig_elem only works on P6LowLevelSig PMCs");
         goto ADDRESS(handler);
     }
 }
@@ -578,7 +600,7 @@ inline op get_signature_elem(in PMC, in INT, out STR, out INT, out PMC, out PMC,
 
 /*
 
-=item bind_signature(in PMC, in PMC)
+=item bind_llsig(in PMC, in PMC)
 
 This is emitted into a sub to cause it's Perl 6 signature to be bound. $1 is
 an array of positional arguments (obtained by using :flat) and $2 is a hash of
@@ -588,14 +610,14 @@ refactors are complete, it will take one argument - the CallContext.
 =cut
 
 */
-inline op bind_signature(in PMC) :base_core {
+inline op bind_llsig(in PMC) :base_core {
     PMC *ctx = CURRENT_CONTEXT(interp);
 
     /* If we aren't already bound, enter the appropriate binder. */
     if (!PObj_flag_TEST(P6S_ALREADY_BOUND, ctx)) {
         PMC *lexpad         = Parrot_pcc_get_lex_pad(interp, ctx);
         PMC *sub            = Parrot_pcc_get_sub(interp, ctx);
-        PMC *signature      = VTABLE_getprop(interp, sub, string_from_literal(interp, "$!signature"));
+        PMC *llsig          = VTABLE_getprop(interp, sub, string_from_literal(interp, "$!llsig"));
         INTVAL noms_checked = PObj_flag_TEST(P6S_ALREADY_CHECKED, ctx);
         STRING *error       = NULL;
         INTVAL bind_error;
@@ -608,16 +630,13 @@ inline op bind_signature(in PMC) :base_core {
 
         /* Ensure we actually have a signature; if not, try to lazily generate
          * it. */
-        if (PMC_IS_NULL(signature)) {
-            PMC *p6_code_obj = VTABLE_getprop(interp, sub, string_from_literal(interp, "$!p6type"));
-            PMC *sig_meth    = VTABLE_find_method(interp, p6_code_obj, string_from_literal(interp, "signature"));
-            PMC *result;
-            Parrot_ext_call(interp, sig_meth, "P->P", p6_code_obj, &result);
-            signature = VTABLE_getprop(interp, sub, string_from_literal(interp, "$!signature"));
+        if (PMC_IS_NULL(llsig)) {
+            PMC *sig_meth    = VTABLE_find_method(interp, sub, string_from_literal(interp, "!llsig"));
+            Parrot_ext_call(interp, sig_meth, "P->P", sub, &llsig);
         }
 
         /* Call signature binder. */
-        bind_error = bind_signature_func(interp, lexpad, signature, $1, noms_checked, &error);
+        bind_error = bind_llsig_func(interp, lexpad, llsig, $1, noms_checked, &error);
 
         /* Bind ok? */
         if (!bind_error) {

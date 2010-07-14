@@ -30,7 +30,7 @@ typedef struct llsig_element {
                                * smart-match against each of them. For now, we
                                * always expect an array of blocks. */
     STRING *coerce_to;        /* Name of the type to coerce to; for X we do $val.X. */
-    PMC    *sub_signature;    /* Any nested signature. */
+    PMC    *sub_llsig;        /* Any nested signature. */
     PMC    *default_closure;  /* The default value closure. */
 } llsig_element;
 
@@ -52,12 +52,12 @@ typedef struct llsig_element {
 
 /* A function we want to share to provide the interface to the binder. */
 INTVAL
-Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
+Rakudo_binding_bind_llsig(PARROT_INTERP, PMC *lexpad, PMC *llsig,
                               PMC *capture, INTVAL no_nom_type_check,
                               STRING **error);
 
 
-/* Things Rakudo_binding_bind_signature may return to indicate a problem. */
+/* Things Rakudo_binding_bind_llsig may return to indicate a problem. */
 #define BIND_RESULT_OK       0
 #define BIND_RESULT_FAIL     1
 #define BIND_RESULT_JUNCTION 2

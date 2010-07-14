@@ -100,7 +100,6 @@ BUILTINS_PIR = \
   src/metamodel/GrammarHOW.pir \
   src/builtins/Role.pir \
   src/builtins/ConcreteRole.pir \
-  src/builtins/Abstraction.pir \
   src/builtins/Positional.pir \
   src/builtins/Iterable.pir \
   src/builtins/Iterator.pir \
@@ -118,7 +117,6 @@ BUILTINS_PIR = \
   src/builtins/Str.pir \
   src/builtins/Enum.pir \
   src/builtins/Pair.pir \
-  src/builtins/Callable.pir \
   src/builtins/Code.pir \
   src/builtins/Block.pir \
   src/builtins/Routine.pir \
@@ -164,10 +162,15 @@ CHEATS_PIR = \
   src/cheats/parrot/Protoobject.pir \
   src/cheats/parrot/P6metaclass.pir \
   src/cheats/parrot/P6role.pir \
+  src/cheats/parrot/Sub.pir \
   src/gen/uprop-cheats.pir \
   src/cheats/parrot/register.pir \
 
 CORE_SOURCES = \
+  src/core/Positional.pm \
+  src/core/Associative.pm \
+  src/core/Callable.pm \
+  src/core/Abstraction.pm \
   src/core/traits.pm \
   src/core/metaops.pm \
   src/core/operators.pm \
@@ -176,13 +179,12 @@ CORE_SOURCES = \
   src/cheats/trait-export.pm \
   src/cheats/num.pm \
   src/cheats/eval.pm \
-  src/core/Positional.pm \
-  src/core/Associative.pm \
   src/core/Mu.pm \
   src/core/Bool.pm \
   src/core/Parcel.pm \
   src/core/Any.pm \
   src/core/Any-list.pm \
+  src/core/Code.pm \
   src/core/Cool.pm \
   src/core/Cool-num.pm \
   src/core/Cool-str.pm \
@@ -221,10 +223,9 @@ CORE_SOURCES = \
   src/core/Grammar.pm \
   src/core/Substitution.pm \
   src/core/system.pm \
-  src/cheats/match-bool.pm \
-  src/cheats/setup-io.pm \
+  src/cheats/process.pm \
   src/core/Date.pm \
-  src/core/Temporal.pm \
+  src/core/DateTime.pm \
   src/core/Match.pm \
   src/core/Attribute.pm \
   src/core/CallFrame.pm \
@@ -281,8 +282,8 @@ HARNESS_WITH_FUDGE_JOBS = $(HARNESS_WITH_FUDGE) --jobs
 
 STAGESTATS = @stagestats@
 
-# the default target
-all: $(PERL6_EXE) Test.pir
+# the default target, TODO: make libraries in 'lib' a variable.
+all: $(PERL6_EXE) Test.pir lib/DateTime/strftime.pir
 
 # the install target
 install: all
@@ -291,6 +292,11 @@ install: all
 	$(CP)     Test.pm             $(DESTDIR)$(PERL6_LANG_DIR)/lib
 	$(CP)     Test.pir            $(DESTDIR)$(PERL6_LANG_DIR)/lib
 	$(CP)     lib/*.pm            $(DESTDIR)$(PERL6_LANG_DIR)/lib
+	$(CP)     lib/*.pir           $(DESTDIR)$(PERL6_LANG_DIR)/lib
+	$(MKPATH)                     $(DESTDIR)$(PERL6_LANG_DIR)/lib/DateTime
+	$(CP)     lib/DateTime/*.pm   $(DESTDIR)$(PERL6_LANG_DIR)/lib/DateTime
+	$(CP)     lib/DateTime/*.pir  $(DESTDIR)$(PERL6_LANG_DIR)/lib/DateTime
+
 	$(MKPATH)                     $(DESTDIR)$(PARROT_LIB_DIR)/dynext
 	$(CP)     $(DYNPMC) $(DYNOPS) $(DESTDIR)$(PARROT_LIB_DIR)/dynext
 	$(MKPATH)                     $(DESTDIR)$(PARROT_BIN_DIR)
@@ -312,12 +318,14 @@ $(PERL6_EXE): $(PERL6_PBC)
 $(PERL6_PBC): $(S1_PERL6_PBC) src/gen/core.pm
 	$(PARROT) $(PARROT_ARGS) $(S1_PERL6_PBC) --target=pir $(STAGESTATS) \
 	    src/gen/core.pm > $(CORE_PIR)
+	$(PERL) build/gen_version.pl > src/gen/version.pir
 	$(PARROT) $(PARROT_ARGS) -o $(PERL6_PBC) src/Perl6/Compiler.pir
 
 # the stage-1 compiler
 $(S1_PERL6_PBC): $(PARROT) $(SOURCES)
 	$(PERL) -e "" > $(CORE_PIR)
 	@win32_libparrot_copy@
+	$(PERL) build/gen_version.pl > src/gen/version.pir
 	$(PARROT) $(PARROT_ARGS) -o $(S1_PERL6_PBC) src/Perl6/Compiler.pir
 
 $(PERL6_G): $(NQP_EXE) src/Perl6/Grammar.pm
@@ -396,14 +404,18 @@ $(PMC_DIR)/objectref.pmc : $(PMC_DIR)/objectref_pmc.template build/gen_objectref
 	$(PERL) -I$(PARROT_PERL_LIB) build/gen_objectref_pmc.pl $(PMC_DIR)/objectref_pmc.template \
 		$(PMC_DIR)/objectref.pmc
 
-
 ##  testing targets
 Test.pir: Test.pm perl6.pbc
 	$(PARROT) $(PARROT_ARGS) perl6.pbc $(STAGESTATS) --target=pir --output=Test.pir Test.pm
 
+
+## loadable libraries. This should be refactored into something generic.
+lib/DateTime/strftime.pir: lib/DateTime/strftime.pm perl6.pbc
+	$(PARROT) $(PARROT_ARGS) perl6.pbc $(STAGESTATS) --target=pir --output=lib/DateTime/strftime.pir lib/DateTime/strftime.pm
+
 test    : coretest
 
-fulltest: coretest spectest stresstest
+fulltest: coretest stresstest
 
 coretest: Test.pir $(PERL6_EXE)
 	PARROT=$(PARROT) $(PERL) t/harness t/00-parrot t/01-sanity t/02-embed
@@ -416,6 +428,12 @@ spectest: testable t/spectest.data
 spectest_full: testable
 	$(HARNESS_WITH_FUDGE_JOBS) t/spec
 
+quicktest: testable t/spectest.data
+	$(HARNESS_WITH_FUDGE_JOBS) --tests-from-file=t/spectest.data --long=0
+
+stresstest: testable t/spectest.data
+	$(HARNESS_WITH_FUDGE_JOBS) --tests-from-file=t/spectest.data --stress=1
+
 spectest_checkout : t/spec
 t/spec :
 	svn co "http://svn.pugscode.org/pugs/t/spec" t/spec
@@ -423,8 +441,6 @@ t/spec :
 spectest_update :
 	-cd t/spec && svn up
 
-stresstest: testable t/stresstest.data
-	$(HARNESS_WITH_FUDGE_JOBS) --tests-from-file=t/stresstest.data
 
 rakudo_test_run.tar.gz: testable t/spectest.data
 	- $(HARNESS_WITH_FUDGE_JOBS) --tests-from-file=t/spectest.data --archive rakudo_test_run.tar.gz --parrot_revision @revision@
@@ -432,7 +448,7 @@ rakudo_test_run.tar.gz: testable t/spectest.data
 spectest_smolder: rakudo_test_run.tar.gz
 	curl -F architecture=@cpuarch@ -F platform=@osname@ -F revision=`git log -1 --pretty=format:%H` -F report_file=@rakudo_test_run.tar.gz http://smolder.plusthree.com/app/public_projects/process_add_report/18
 
-testable : $(PERL6_EXE) Test.pir spectest_checkout spectest_update
+testable : all spectest_checkout spectest_update
 
 t/localtest.data:
 	$(PERL) -MExtUtils::Command -e test_f $@

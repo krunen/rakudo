@@ -16,8 +16,7 @@ for executable objects.
 .sub 'onload' :anon :load :init
     .local pmc p6meta, codeproto
     p6meta = get_hll_global ['Mu'], '$!P6META'
-    $P0 = get_hll_global 'Callable'
-    codeproto = p6meta.'new_class'('Code', 'parent'=>'Cool', 'attr'=>'$!do $!multi $!signature $!lazy_sig_init', 'does_role'=>$P0)
+    codeproto = p6meta.'new_class'('Code', 'parent'=>'Cool', 'attr'=>'$!do $!multi')
     $P1 = new ['Role']
     $P1.'name'('invokable')
     p6meta.'compose_role'(codeproto, $P1)
@@ -31,44 +30,9 @@ for executable objects.
 .sub 'new' :method
     .param pmc do
     .param pmc multi
-    .param pmc lazy_sig_init :optional
-    $P0 = getprop '$!p6type', do
-    if null $P0 goto need_create
-    .return ($P0)
-  need_create:
-    $P0 = self.'HOW'()
-    $P0 = getattribute $P0, 'parrotclass'
-    $P0 = new $P0
-    transform_to_p6opaque $P0
-    setattribute $P0, '$!do', do
-    setattribute $P0, '$!multi', multi
-    setattribute $P0, '$!lazy_sig_init', lazy_sig_init
-    if multi != 2 goto proto_done
-    $P1 = box 1
-    setprop $P0, 'proto', $P1
-  proto_done:
-    setprop do, '$!p6type', $P0
-    .return ($P0)
-.end
+    .param pmc lazysig         :optional
 
-
-=item clone(do)
-
-=cut
-
-.sub 'clone' :method
-    push_eh parrot_sub
-    $P0 = getattribute self, '$!do'
-    pop_eh
-    $P0 = clone $P0
-    $P1 = getattribute self, '$!multi'
-    $P2 = getattribute self, '$!lazy_sig_init'
-    $P3 = self.'new'($P0, $P1, $P2)
-    .return ($P3)
-  parrot_sub:
-    pop_eh
-    $P0 = clone self
-    .return ($P0)
+    .tailcall do.'!get_closure'(self, lazysig, multi)
 .end
 
 
@@ -122,21 +86,16 @@ Just calls this block with the supplied parameters.
 =cut
 
 .sub 'multi' :method
-    push_eh parrot_sub
-    $P0 = getattribute self, '$!multi'
-    pop_eh
-    if $P0 goto is_multi
-  not_multi:
-    $P1 = get_hll_global ['Bool'], 'False'
-    .return ($P1)
+    $P0 = getattribute self, '$!do'
+    $P0 = getprop '$!multi', $P0
+    if null $P0 goto not_multi
+    unless $P0 goto not_multi
   is_multi:
     $P1 = get_hll_global ['Bool'], 'True'
     .return ($P1)
-  parrot_sub:
-    pop_eh
-    $I0 = isa self, 'MultiSub'
-    if $I0 goto is_multi
-    goto not_multi
+  not_multi:
+    $P1 = get_hll_global ['Bool'], 'False'
+    .return ($P1)
 .end
 
 
@@ -168,40 +127,12 @@ Gets the signature for the block, or returns Failure if it lacks one.
 =cut
 
 .sub 'signature' :method
-    .local pmc do, ll_sig, lazy_sig
-
-    # Do we have a cached result?
-    $P0 = getattribute self, '$!signature'
-    if null $P0 goto create_signature
-    .return ($P0)
-  create_signature:
-
-    # Look up the signature if the block already has one.
+    .local pmc do, signature
     do = getattribute self, '$!do'
-    ll_sig = getprop '$!signature', do
-    unless null ll_sig goto have_sig
-
-    # No signautre yet, but maybe we have a lazy creator.
-    lazy_sig = getattribute self, '$!lazy_sig_init'
-    if null lazy_sig goto srsly_no_sig
-push_eh lazyerr
-    ll_sig = lazy_sig()
-    setprop do, '$!signature', ll_sig
-    goto have_sig
-  srsly_no_sig:
-    .tailcall '!FAIL'('No signature found')
-
-    # Now we have the signature; need to make it a high level one.
-  have_sig:
-    $P1 = get_hll_global 'Signature'
-    $P1 = $P1.'new'('ll_sig' => ll_sig)
-    setattribute self, '$!signature', $P1
-    .return ($P1)
-  lazyerr:
-  pop_eh
-  say lazy_sig
+    signature = do.'!signature'()
+    .return (signature)
 .end
-
+    
 =item do()
 
 =cut

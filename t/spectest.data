@@ -8,16 +8,18 @@
 #
 # we've regressed on some files for various reasons:
 # 
-# S03-operators/binding-arrays.t - regressed to allow slices
-# S03-operators/binding-hashes.t - regressed to allow slices
 # integration/rule-in-class-Str.t - 'is also' -> augment
 # S12-attributes/mutators.t - we no longer get away with missing rw and Proxy; some bogus passes anyway
 # S16-filehandles/filetest.t - regressed when spec changed (RT #68160)
 # S16-filehandles/unlink.t   - regressed when spec changed (RT #68160)
 # S07-iterators/range-iterator.t - regressed because conforms to obsolete version of spec
 #
-# moved to stresstest:
-# integration/advent2009-day17.t
+# Each file may have one or more markers that deselects the test:
+#     icu    - run tests only if --icu=1      (default is 1)
+#     long   - run tests only if --long=1     (default is 1)
+#     stress - run tests only if --stress=1   (default is 0)
+# See the "make quicktest" and "make stresstest" targets in
+# build/Makefile.in for examples of use.
 
 integration/99problems-01-to-10.t
 integration/99problems-11-to-20.t
@@ -35,12 +37,14 @@ integration/advent2009-day06.t
 integration/advent2009-day07.t
 integration/advent2009-day08.t
 integration/advent2009-day09.t
+integration/advent2009-day10.t
 integration/advent2009-day11.t
 integration/advent2009-day12.t
 integration/advent2009-day13.t
 integration/advent2009-day14.t
 integration/advent2009-day15.t
 integration/advent2009-day16.t
+integration/advent2009-day17.t                             # stress
 integration/advent2009-day18.t
 integration/advent2009-day19.t
 integration/advent2009-day20.t
@@ -50,7 +54,7 @@ integration/code-blocks-as-sub-args.t
 integration/error-reporting.t
 integration/lexical-array-in-inner-block.t
 integration/lexicals-and-attributes.t
-# integration/man-or-boy.t
+integration/man-or-boy.t
 integration/method-calls-and-instantiation.t
 integration/no-indirect-new.t
 # integration/packages.t
@@ -160,8 +164,11 @@ S03-operators/autoincrement-range.t                        # icu
 S03-operators/autoincrement.t
 S03-operators/autovivification.t
 S03-operators/basic-types.t
-# S03-operators/binding-closure.t
-# S03-operators/binding-scalars.t
+S03-operators/binding-arrays.t
+S03-operators/binding-closure.t
+S03-operators/binding-hashes.t
+S03-operators/binding-ro.t
+S03-operators/binding-scalars.t
 S03-operators/bit.t
 S03-operators/boolean-bitwise.t
 S03-operators/brainos.t
@@ -282,7 +289,7 @@ S05-mass/properties-block.t                                # icu
 S05-mass/properties-derived.t                              # icu
 S05-mass/properties-general.t                              # icu
 S05-mass/properties-script.t                               # icu
-S05-mass/rx.t
+S05-mass/rx.t                                              # long
 S05-mass/recursive.t
 S05-mass/stdrules.t
 S05-match/arrayhash.t
@@ -373,7 +380,8 @@ S06-traits/is-copy.t
 S06-traits/is-rw.t
 # S06-traits/misc.t
 S09-autovivification/autoincrement.t
-# S09-subscript_slice/slice.t
+S09-autovivification/autovivification.t
+S09-subscript_slice/slice.t
 S09-typed-arrays/arrays.t
 S09-typed-arrays/hashes.t
 S10-packages/basic.t
@@ -405,7 +413,7 @@ S12-class/lexical.t
 # S12-class/namespaced.t
 S12-class/open.t
 # S12-class/parent_attributes.t
-# S12-class/rw.t
+S12-class/rw.t
 S12-class/self-inheritance.t
 S12-class/stubs.t
 S12-construction/autopairs.t
@@ -418,7 +426,7 @@ S12-enums/anonymous.t
 # S12-enums/basic.t
 # S12-enums/thorough.t
 S12-introspection/attributes.t
-# S12-introspection/can.t
+S12-introspection/can.t
 S12-introspection/meta-class.t
 S12-introspection/methods.t
 S12-introspection/parents.t
@@ -428,7 +436,7 @@ S12-methods/calling_sets.t
 S12-methods/calling_syntax.t
 S12-methods/chaining.t
 S12-methods/class-and-instance.t
-# S12-methods/default-trait.t
+S12-methods/default-trait.t
 S12-methods/defer-call.t
 S12-methods/defer-next.t
 S12-methods/how.t
@@ -564,7 +572,7 @@ S32-str/p5chop.t
 S32-str/pos.t
 S32-str/rindex.t
 S32-str/samecase.t                                         # icu
-# S32-str/split-simple.t
+S32-str/split-simple.t
 S32-str/split-simple2.t   # CHEAT!  simplified version of split-simple.t
 S32-str/split.t
 S32-str/sprintf.t
@@ -576,18 +584,19 @@ S32-str/uc.t                                               # icu
 S32-str/words.t                                            # icu
 S32-temporal/Date.t
 S32-temporal/DateTime.t
+S32-temporal/DateTime-strftime.t
 S32-trig/e.t
 # S32-trig/pi.t
-S32-trig/sin.t
-S32-trig/cos.t
-S32-trig/tan.t
-S32-trig/sec.t
-S32-trig/cosec.t
-S32-trig/cotan.t
-S32-trig/atan2.t
-S32-trig/sinh.t
-S32-trig/cosh.t
-S32-trig/tanh.t
-S32-trig/sech.t
-S32-trig/cosech.t
-S32-trig/cotanh.t
+S32-trig/sin.t                                             # long
+S32-trig/cos.t                                             # long
+S32-trig/tan.t                                             # long
+S32-trig/sec.t                                             # long
+S32-trig/cosec.t                                           # long
+S32-trig/cotan.t                                           # long
+S32-trig/atan2.t                                           # long
+S32-trig/sinh.t                                            # long
+S32-trig/cosh.t                                            # long
+S32-trig/tanh.t                                            # long
+S32-trig/sech.t                                            # long
+S32-trig/cosech.t                                          # long
+S32-trig/cotanh.t                                          # long

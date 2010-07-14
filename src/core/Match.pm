@@ -1,4 +1,15 @@
 class Match is Regex::Match is Cool does Positional does Associative {
+    method create(:$from, :$to, :$orig) {
+        my $new = self.bless(*);
+        pir::setattribute__vpsp($new, '$!from',   $from);
+        pir::setattribute__vpsp($new, '$!to',     $to);
+        pir::setattribute__vpsp($new, '$!target', $orig);
+
+        # TODO: handle :@positional, :%named
+
+        $new;
+    }
+
     method ast() {
         my $x = self.Regex::Match::ast;
         pir::isa__IPs($x, 'Undef') ?? Any !! $x;
@@ -8,6 +19,13 @@ class Match is Regex::Match is Cool does Positional does Associative {
         ~self.Regex::Match::Str;
     }
 
+    method Bool() {
+        $.from < $.to;
+    }
+
+    method defined() {
+        $.from < $.to;
+    }
 
     method at_key($key) {
         Q:PIR {
@@ -40,11 +58,11 @@ class Match is Regex::Match is Cool does Positional does Associative {
 
     multi method hash() {
         # nextsame() dies here with 'Null PMC access in clone()'
-        CREATE_HASH_FROM_LOW_LEVEL(self.Regex::Match::hash);
+        CREATE_HASH_FROM_LOW_LEVEL(pir::descalarref__PP(self).Regex::Match::hash);
     }
 
     multi method list() {
-        list(self.Regex::Match::list);
+        Seq.new(pir::descalarref__PP(self).Regex::Match::list);
     }
 
     multi method caps() {
@@ -96,9 +114,8 @@ class Match is Regex::Match is Cool does Positional does Associative {
             take "$sp to   => $.to,\n";
             if @(self) {
                 take "$sp positional => [\n";
-                # work around RT #64952
-                for ^self.list {
-                    self!_perl_quant(self.[$_], $indent);
+                for self.flat {
+                    self!_perl_quant($_, $indent);
                     take ",\n";
                 }
                 take "$sp  ],\n";

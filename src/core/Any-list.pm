@@ -1,3 +1,4 @@
+role Hash { ... }
 class Range { ... }
 
 augment class Any {
@@ -276,6 +277,69 @@ augment class Any {
 
     multi method pairs() {
         self.kv.map(-> $key, $value { $key => $value; });
+    }
+
+    our multi method postcircumfix:<[ ]>() { self.list }
+
+    our multi method postcircumfix:<[ ]>(&block) { self[&block(self.elems)]; }
+
+    our multi method postcircumfix:<[ ]>(@pos) {
+        my $result = pir::new__ps('ResizablePMCArray');
+        for @pos {
+            pir::push($result, self[$_])
+        }
+        Q:PIR {
+            $P0 = find_lex '$result'
+            %r = '&infix:<,>'($P0 :flat)
+        }
+    }
+
+    our multi method postcircumfix:<[ ]>($pos) {
+        fail "Cannot use negative index $pos on {self.WHO}" if $pos < 0;
+        self.at_pos($pos)
+    }
+
+    method at_pos($pos) {
+        if self.defined {
+            fail ".[$pos] out of range for type {self.WHAT}" if $pos != 0;
+            return self;
+        }
+        my $z = Any!butWHENCE(
+                    { self.defined || &infix:<=>(self, Array.new);
+                      pir::set__vQiP(self!fill($pos+1), $pos, $z);
+                    }
+                );
+    }
+
+    our multi method postcircumfix:<{ }>() {
+        self.values()
+    }
+
+    our multi method postcircumfix:<{ }>(@keys) {
+        my $result = pir::new__ps('ResizablePMCArray');
+        for @keys {
+            pir::push($result, self{$_})
+        }
+        Q:PIR {
+            $P0 = find_lex '$result'
+            %r = '&infix:<,>'($P0 :flat)
+        }
+    }
+
+    our multi method postcircumfix:<{ }>($key) { self.at_key($key) }
+
+    method at_key($key) {
+        fail "postcircumfix:<{ }> not defined for type {self.WHAT}"
+            if self.defined;
+        my $z = Any!butWHENCE(
+                    { self.defined || &infix:<=>(self, Hash.new);
+                      pir::set__vQsP($!storage, $key, $z);
+                    }
+                );
+    }
+
+    method !butWHENCE(&by) {
+        pir::setprop__0PsP(pir::clone__PP(pir::descalarref__PP(self)), 'WHENCE', &by);
     }
 }
 

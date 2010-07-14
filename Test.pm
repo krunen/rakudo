@@ -71,13 +71,10 @@ multi sub is(Mu $got, Mu $expected, $desc) is export {
     my $test = $got eq $expected;
     proclaim(?$test, $desc);
     if !$test {
-        my $got_perl      = try { $got.perl };
-        my $expected_perl = try { $expected.perl };
-        if $got_perl.defined && $expected_perl.defined {
-            diag "     got: $got_perl";
-            diag "expected: $expected_perl";
-        }
+        diag "     got: '$got'";
+        diag "expected: '$expected'";
     }
+    $test;
 }
 
 multi sub is(Mu $got, Mu $expected) is export { is($got, $expected, ''); }
@@ -129,17 +126,19 @@ multi sub skip_rest($reason) is export {
     skip($num_of_tests_planned - $num_of_tests_run, $reason);
 }
 
-sub diag($message) is export { say '# '~$message; }
+sub diag($message) is export {
+    say $message.subst(rx/^^/, '# ', :g);
+}
 
 
 multi sub flunk($reason) is export { proclaim(0, "flunk $reason")}
 
 
-multi sub isa_ok(Mu $var,$type) is export {
+multi sub isa_ok(Mu $var, Mu $type) is export {
     ok($var.isa($type), "The object is-a '$type'")
         or diag('Actual type: ' ~ $var.WHAT);
 }
-multi sub isa_ok(Mu $var,$type, $msg) is export {
+multi sub isa_ok(Mu $var, Mu $type, $msg) is export {
     ok($var.isa($type), $msg)
         or diag('Actual type: ' ~ $var.WHAT);
 }

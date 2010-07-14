@@ -51,6 +51,14 @@ method finish($block) {
         PAST::Op.new( :pasttype('callmethod'), :name('HOW'), $obj_reg )
     ));
 
+    # Traits.
+    if self.traits {
+        for @(self.traits) {
+            $_.unshift($obj_reg);
+            $decl.push($_);
+        }
+    }
+
     # Meta Methods.
     my %meta_methods := $!meta_methods;
     for %meta_methods {
@@ -68,11 +76,7 @@ method finish($block) {
             :pasttype('callmethod'),
             :name('add_method'),
             $meta_reg, $obj_reg, ~$_, 
-            PAST::Op.new(
-                :pasttype('callmethod'),
-                :name('clone'),
-                %methods{~$_}<code_ref>
-            )
+             PAST::Op.new( :pasttype('callmethod'), :name('clone'), %methods{~$_}<code_ref> )
         ));
     }
 
@@ -84,9 +88,11 @@ method finish($block) {
             :name('new'),
             PAST::Var.new( :name('Attribute'),   :namespace(''), :scope('package') ),
             PAST::Val.new( :value($_<name>),     :named('name') ),
-            PAST::Val.new( :value($_<accessor>), :named('has_accessor') ),
-            PAST::Val.new( :value($_<rw>),       :named('rw') )
+            PAST::Val.new( :value($_<accessor>), :named('has_accessor') )
         );
+        if pir::defined($_<rw>) {
+            $attr.push(PAST::Val.new( :value($_<rw>), :named('rw') ));
+        }
         if $_<build> {
             $_<build>.named('build');
             $attr.push($_<build>);
@@ -98,21 +104,13 @@ method finish($block) {
         ));
     }
 
-    # Traits.
-    if self.traits {
-        for @(self.traits) {
-            $_.unshift($obj_reg);
-            $decl.push($_);
-        }
-    }
-
     # Call compose to create the role object.
     $decl.push(PAST::Op.new( :pasttype('callmethod'), :name('compose'), $meta_reg, $obj_reg ));
 
     # We need the block to get the signature, or a default one, plus the
     # decl code as a body.
     my $sig := pir::defined__IP($!signature) ?? $!signature !! Perl6::Compiler::Signature.new();
-    my $lazy_sig_block_name := Perl6::Actions::add_signature($block, $sig, 1);
+    Perl6::Actions::add_signature($block, $sig, 1);
     $block.push($decl);
     $block.blocktype('declaration');
     $block.nsentry('');
@@ -142,7 +140,7 @@ method finish($block) {
             PAST::Op.new(
                 :pasttype('callmethod'), :name('!add_variant'),
                 PAST::Var.new( :name('master_role'), :scope('register') ),
-                Perl6::Actions::create_code_object(PAST::Val.new( :value($block) ), 'Sub', 1, $lazy_sig_block_name)
+                Perl6::Actions::block_closure(Perl6::Actions::blockref($block), 'Sub', 1)
             )
         );
         
@@ -192,7 +190,7 @@ method finish($block) {
             ),
             PAST::Op.new( :pasttype('callmethod'), :name('!add_variant'),
                 PAST::Var.new( :name('tmp_role'), :scope('register') ),
-                Perl6::Actions::create_code_object($block, 'Sub', 1, $lazy_sig_block_name)
+                Perl6::Actions::block_closure($block, 'Sub', 1)
             ),
             PAST::Var.new( :name('tmp_role'), :scope('register') )
         );

@@ -76,6 +76,7 @@ and so forth.
     Method = get_hll_global 'Method'
     $I0 = isa Method, 'NameSpace'
     unless $I0 goto method_check_done
+    die "Attempt to create role when Method not defined"
     null Method
   method_check_done:
     meths = parrotrole.'methods'()
@@ -84,12 +85,14 @@ and so forth.
     unless meth_iter goto it_loop_end
     $S0 = shift meth_iter
     $P0 = meths[$S0]
+    if null Method goto unwrapped
+    $P1 = $P0.'!get_closure'(Method)
+    goto have_method
+  unwrapped:
     $P1 = clone $P0
-    $P2 = getprop '$!signature', $P0
-    setprop $P1, '$!signature', $P2
-    if null Method goto skip_wrap
-    $P1 = Method.'new'($P1, 0, '')
-  skip_wrap:
+    $P2 = prophash $P0
+    x_setprophash $P1, $P2
+  have_method:
     how.'add_method'(role, $S0, $P1)
     goto it_loop
   it_loop_end:

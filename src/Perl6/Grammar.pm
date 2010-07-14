@@ -273,16 +273,15 @@ token comp_unit {
     :my $*IN_DECL;                             # what declaration we're in
     :my $*IMPLICIT;                            # whether we allow an implicit param
     :my $*MONKEY_TYPING := 0;                  # whether augment/supersede are allowed
+    :my $*FORBID_PIR := 0;                     # whether pir::op and Q:PIR { } are disallowed
     :my $*SETTING_MODE := 0;                   # are we compiling the SETTING
     :my $*LEFTSIGIL;                           # sigil of LHS for item vs list assignment
     :my $*SCOPE := '';                         # which scope declarator we're under
     :my $*MULTINESS := '';                     # which multi declarator we're under
     :my $*QSIGIL := '';                        # sigil of current interpolation
     :my $*TYPENAME := '';
-    <.newpad>
-    <.outerlex>
-    <.finishpad>
-    {*} #= open
+    :my $*UNITPAST;
+    <.unitstart>
     <statementlist>
     [ $ || <.panic: 'Confused'> ]
 }
@@ -356,8 +355,8 @@ token blockoid {
     <?ENDSTMT>
 }
 
+token unitstart { <?> }
 token newpad { <?> }
-token outerlex { <?> }
 token finishpad { <?> }
 
 proto token terminator { <...> }
@@ -458,6 +457,7 @@ token statement_control:sym<use> {
     | <version>
     | <module_name> [ <.spacey> <arglist> ]?
     ]
+    <.ws>
 }
 
 token statement_control:sym<given> {
@@ -1718,7 +1718,7 @@ token prefix:sym<abs>     { <sym> » <O('%named_unary')> }
 token prefix:sym<defined> { <sym> » <O('%named_unary')> }
 
 token infix:sym«==»   { <sym>  <O('%chaining')> }
-token infix:sym«!=»   { <sym> <?before \s> <O('%chaining')> }
+token infix:sym«!=»   { <sym> <?before \s|']'> <O('%chaining')> }
 token infix:sym«<=»   { <sym>  <O('%chaining')> }
 token infix:sym«>=»   { <sym>  <O('%chaining')> }
 token infix:sym«<»    { <sym>  <O('%chaining')> }
@@ -1780,7 +1780,6 @@ method bindish_check($/) {
 
 token infix:sym<::=> {
     <sym>  <O('%item_assignment')>
-    <.panic: "::= binding not yet implemented">
 }
 
 token infix:sym<.=> { <sym> <O('%item_assignment, :nextterm<dottyopish>')> }

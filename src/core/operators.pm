@@ -281,8 +281,23 @@ our multi prefix:<|>(%h) { %h.Capture }
 our multi prefix:<|>(Capture $c) { $c }
 our multi prefix:<|>(Mu $anything) { Capture.new($anything) }
 
-our multi infix:<:=>(Mu $a, Mu $b) {
-    die ":= binding of variables not yet implemented";
+our multi infix:<:=>(Mu \$target, Mu \$source) {
+    #Type Checking. The !'s avoid putting actual binding in a big nest.
+    if !pir::isnull(pir::getprop__PsP('type', $target)) {
+        if !pir::getprop__PsP('type', $target).ACCEPTS($source) {
+            die("You cannot bind a variable of type {$source.WHAT} to a variable of type {$target.WHAT}.");
+        }
+    }
+
+    if !pir::isnull(pir::getprop__PsP('WHENCE', pir::descalarref__PP($target)))
+        { pir::getprop__PsP('WHENCE', pir::descalarref__PP($target)).() }
+
+    #and now, for the actual process
+    pir::setprop__0PsP(
+        pir::copy__0PP($target, pir::new__PsP('ObjectRef', $source)),
+        'rw',
+        pir::getprop__PsP('rw', $source)
+    );
 }
 
 our multi infix:<:=>(Signature $s, Parcel \$p) {
@@ -291,6 +306,14 @@ our multi infix:<:=>(Signature $s, Parcel \$p) {
 
 our multi infix:<:=>(Signature $s, Mu \$val) {
     $s!BIND(Capture.new($val));
+}
+
+our multi infix:<::=>(Mu \$target, Mu \$source) {
+    #since it's only := with setting readonly, let's avoid recoding.
+    $target := $source;
+    #XX pay attention to this little guy, we don't quite understand or are
+    #able to implement the full details of ::=
+    pir::delprop__0Ps($target, 'rw');
 }
 
 # XXX Wants to be a macro when we have them.
@@ -375,24 +398,15 @@ our multi sub infix:<...>(@lhs is copy, $rhs) {
             when 1 {
                 $next = succ-or-pred(@lhs[0], $rhs)
             }
-            when 2 {
-                my $diff = @lhs[1] - @lhs[0];
-                if $diff == 0 {
-                    $next = succ-or-pred2(@lhs[0], @lhs[1], $rhs)
-                } else {
-                    return Nil if is-on-the-wrong-side(@lhs[0] , @lhs[*-2] , @lhs[*-1] , $rhs);
-                    $next = { $_ + $diff };
-                }
-            }
             default {
                 my $diff = @lhs[*-1] - @lhs[*-2];
                 if $diff == 0 {
                     $next = succ-or-pred2(@lhs[*-2], @lhs[*-1], $rhs)
-                } elsif @lhs[*-2] - @lhs[*-3] == $diff {
+                } elsif @lhs.elems == 2 || @lhs[*-2] - @lhs[*-3] == $diff {
                     return Nil if is-on-the-wrong-side(@lhs[0] , @lhs[*-2] , @lhs[*-1] , $rhs);
                     $next = { $_ + $diff };
                 } elsif @lhs[*-2] / @lhs[*-3] == @lhs[*-1] / @lhs[*-2] {
-                    $is-geometric-switching-sign = Bool::True if (@lhs[*-2] * @lhs[*-1] < 0);
+                    $is-geometric-switching-sign = (@lhs[*-2] * @lhs[*-1] < 0);
                     return Nil if is-on-the-wrong-side(@lhs[0] , @lhs[*-2] , @lhs[*-1] , $rhs) && !$is-geometric-switching-sign;
                     $next = { $_ * (@lhs[*-2] / @lhs[*-3]) };
                 } else {

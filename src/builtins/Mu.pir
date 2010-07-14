@@ -48,8 +48,8 @@ like this.
 
     # Make a clone.
     .local pmc result
-    self = deobjectref self
-    result = clone self
+    $P0 = descalarref self
+    result = clone $P0
 
     # Set any new attributes.
     .local pmc p6meta, parrotclass, attributes, it
@@ -170,7 +170,7 @@ like this.
     if $I0 goto parents_loop
     .local pmc parentproto
     $P0 = getprop 'metaclass', $P0
-    parentproto = $P0.'WHAT'()
+    parentproto = getattribute $P0, 'protoobject'
     build_method = find_method_null_ok parentproto, 'BUILD'
     if null build_method goto parents_loop
     .lex '$*CLASS', parentproto

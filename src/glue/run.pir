@@ -21,39 +21,8 @@ of the compilation unit.
  .include 'sysinfo.pasm'
 .include 'iglobals.pasm'
 
-.sub 'IN_EVAL'
-    .local pmc interp
-    .local int level
-    .local int result
-    .local pmc eval
-
-    result = 0
-    level  = 0
-    interp = getinterp
-    eval = get_hll_global '&eval'
-    eval = getattribute eval, '$!do'
-
-    # interp[sub;$to_high_level] throws an exception
-    # so when we catch one, we're done walking the call chain
-    push_eh done
-  loop:
-    inc level
-    $P0 = interp['sub'; level]
-    if null $P0 goto done
-    eq_addr $P0, eval, has_eval
-    goto loop
-
-  has_eval:
-    inc result
-
-  done:
-    $P0 = box result
-    .return($P0)
-.end
-
-.sub '!UNIT_START'
-    .param pmc mainline
-    .param pmc args            :slurpy
+.sub '!GLOBAL_VARS'
+    .param pmc args
 
     .local string info
     .local pmc true
@@ -64,26 +33,19 @@ of the compilation unit.
     $P0 = info
     set_hll_global ['PROCESS'], '$EXECUTABLE_NAME', $P0
 
-    # Ignore the args when executed as a library (not main program)
-    unless args goto unit_start_0
-
-    # args    is a ResizablePMCArray containing only one entry
-    # args[0] is also a ResizablePMCArray, of String entries, containing 
-    #         the program name or '-e' in args[0][0], followed by
-    #         optional command line arguments in args[0][1] etc.
-    $P0 = args[0]
-    # Ignore the args when executed as a library (not main program)
-    unless $P0 goto unit_start_0
-
     # The first args string belongs in $*PROGRAM_NAME
-    $P1 = shift $P0      # the first arg is the program name
+    args = clone args
+    if args goto have_args
+    unshift args, 'interactive'
+  have_args:
+    $P1 = shift args      # the first arg is the program name
     set_hll_global '$PROGRAM_NAME', $P1
 
     # The remaining args strings belong in @*ARGS
     $P1 = new ['Parcel']
     splice $P1, $P0, 0, 0
     $P2 = new ['Array']
-    $P2.'!STORE'($P1)
+    $P2.'!STORE'(args)
     set_hll_global '@ARGS', $P2
     setprop $P2, "rw", true
 
@@ -92,35 +54,44 @@ of the compilation unit.
     $P3 = $P3.'new'('args'=>$P2)
     set_hll_global '$ARGFILES', $P3
 
-    ##  set up %*VM
-    load_bytecode 'config.pbc'
-    .local pmc vm, interp, config
-    interp = getinterp
-    config = interp[.IGLOBALS_CONFIG_HASH]
-    config = new ['Perl6Scalar'], config
-    config = 'hash'(config :flat)
-    vm = 'hash'('config' => config)
-    set_hll_global ['PROCESS'], "%VM", vm
-
-  unit_start_0:
-
     # Turn the env PMC into %*ENV (just read-only so far)
     .local pmc env
     env = root_new ['parrot';'Env']
     $P2 = '&CREATE_HASH_FROM_LOW_LEVEL'(env)
     set_hll_global '%ENV', $P2
+.end
 
-    # INIT time
+
+.sub '!UNIT_START'
+    .param pmc unit
+    .param pmc args            :optional
+
+    # if unit already has an outer_ctx, this is an eval
+    .local pmc outer_ctx
+    $P0 = getinterp
+    $P0 = $P0["context";1]
+    outer_ctx = getattribute $P0, "outer_ctx"
+    unless null outer_ctx goto eval_start
+    # if no args were supplied, it's a module load via :load
+    if null args goto module_start
+    # if any args were supplied, it's a mainline start
+    if args goto mainline_start
+    # if we're in interactive mode, it's a mainline start
+    $P0 = find_dynamic_lex '$*CTXSAVE'
+    if null $P0 goto module_start
+    $I0 = can $P0, "ctxsave"
+    unless $I0 goto module_start
+  mainline_start:
+    '!GLOBAL_VARS'(args)
     '!fire_phasers'('INIT')
-    
-    # Give it to the setting installer, so we run it within the lexical
-    # scope of the current setting. Don't if we're in eval, though.
-    $P0 = find_dynamic_lex '$*IN_EVAL'
-    if null $P0 goto in_setting
-    unless $P0 goto in_setting
-    $P0 = mainline()
+    $P0 = '!YOU_ARE_HERE'(unit, 1)
     .return ($P0)
-  in_setting:
-    $P0 = '!YOU_ARE_HERE'(mainline)
+  module_start:
+    '!fire_phasers'('INIT')
+    $P0 = '!YOU_ARE_HERE'(unit, 0)
+    .return ($P0)
+  eval_start:
+    '!fire_phasers'('INIT')
+    $P0 = unit(0)
     .return ($P0)
 .end

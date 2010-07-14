@@ -48,7 +48,6 @@ static STRING *isa_str;
 static STRING *does_str;
 static STRING *item_str;
 static STRING *Junction_str;
-static STRING *MAKE_WHATEVER_CLOSURE_str;
 static STRING *match_against_str;
 static STRING *metaclass_str;
 static STRING *methodname_str;
@@ -68,10 +67,8 @@ static STRING *postcircumfix_str;
 static STRING *proxy_str;
 static STRING *pun_helper_str;
 static STRING *select_str;
-static STRING *Sub_str;
 static STRING *Submethod_str;
 static STRING *WHAT_str;
-static STRING *Whatever_str;
 
 static PMC *do_handles(PARROT_INTERP, PMC *cur_class, PMC *handlers, STRING *name) {
     STRING *match_against = match_against_str;
@@ -182,9 +179,13 @@ PMC *look_for_method(PARROT_INTERP, PMC *search_list, INTVAL *start_pos, STRING 
                 int j, k, found;
 
                 /* Does this class have the is hidden property? */
-                PMC *hidden = VTABLE_get_attr_str(interp, my_metaclass, CONST_STRING(interp, "$!hidden"));
-                if (!PMC_IS_NULL(hidden) && VTABLE_get_bool(interp, hidden))
-                    continue;
+                PMC *hidden_meth = VTABLE_find_method(interp, my_metaclass, CONST_STRING(interp, "hidden"));
+                if (!PMC_IS_NULL(hidden_meth)) {
+                    PMC *result = PMCNULL;
+                    Parrot_ext_call(interp, hidden_meth, "Pi->P", my_metaclass, &result);
+                    if (VTABLE_get_bool(interp, result))
+                        continue;
+                }
 
                 /* Does anything before it hide it? */
                 found = 0;
@@ -290,7 +291,6 @@ pmclass P6opaque extends Object dynpmc group perl6_group auto_attrs {
         does_str                     = CONST_STRING(interp, "does");
         item_str                     = CONST_STRING(interp, "item");
         Junction_str                 = CONST_STRING(interp, "Junction");
-        MAKE_WHATEVER_CLOSURE_str    = CONST_STRING(interp, "!MAKE_WHATEVER_CLOSURE");
         match_against_str            = CONST_STRING(interp, "match_against");
         metaclass_str                = CONST_STRING(interp, "metaclass");
         methodname_str               = CONST_STRING(interp, "methodname");
@@ -310,10 +310,8 @@ pmclass P6opaque extends Object dynpmc group perl6_group auto_attrs {
         proxy_str                    = CONST_STRING(interp, "proxy");
         pun_helper_str               = CONST_STRING(interp, "!pun_helper");
         select_str                   = CONST_STRING(interp, "!select");
-        Sub_str                      = CONST_STRING(interp, "Sub");
         Submethod_str                = CONST_STRING(interp, "Submethod");
         WHAT_str                     = CONST_STRING(interp, "WHAT");
-        Whatever_str                 = CONST_STRING(interp, "Whatever");
     }
 
 /*
@@ -345,24 +343,7 @@ more.)
         for (i = 0; i < num_attrs; i++) {
             PMC * const original_data = VTABLE_get_pmc_keyed_int(INTERP, my_guts->attrib_store, i);
             PMC * const new_data      = VTABLE_get_pmc_keyed_int(INTERP, clone_guts->attrib_store, i);
-
-            /* If it's a sub, we need a separate hash, so copy each property over. */
-            if (!PMC_IS_NULL(original_data) && VTABLE_isa(interp, original_data, Sub_str)) {
-                PMC * const meta          = VTABLE_getprops(interp, original_data);
-                if (!PMC_IS_NULL(meta)) {
-                    PMC * const iter = VTABLE_get_iter(interp, meta);
-                    while (VTABLE_get_bool(interp, iter)) {
-                        STRING * const key = VTABLE_shift_string(interp, iter);
-                        PMC * const value  = VTABLE_get_pmc_keyed_str(interp, meta, key);
-                        VTABLE_setprop(interp, new_data, key, value);
-                    }
-                }
-            }
-
-            /* Otherwise, they can share. */
-            else {
-                PMC_metadata(new_data) = PMC_metadata(original_data);
-            }
+            PMC_metadata(new_data) = PMC_metadata(original_data);
         }
 
         return clone;
@@ -387,34 +368,9 @@ back some kind of iterator to let us get all of the possible candidates.
         INTVAL                     pos    = 0;
         PMC                      * method;
 
-        /* If we're calling a method on Whatever, we need to generate a closure
-         * instead. XXX It sucks that every method invocation pays for this, so
-         * we really must find something better to do. */
-        if (VTABLE_isa(interp, SELF, Whatever_str) &&
-                !Parrot_str_equal(interp, name, new_str) &&
-                !Parrot_str_equal(interp, name, bless_str) &&
-                !Parrot_str_equal(interp, name, CREATE_str) &&
-                !Parrot_str_equal(interp, name, BUILD_str) &&
-                !Parrot_str_equal(interp, name, BUILDALL_str) &&
-                !Parrot_str_equal(interp, name, WHAT_str) &&
-                !Parrot_str_equal(interp, name, HOW_str) &&
-                !Parrot_str_equal(interp, name, ACCEPTS_str) &&
-                !Parrot_str_equal(interp, name, isa_str) &&
-                !Parrot_str_equal(interp, name, does_str) &&
-                !Parrot_str_equal(interp, name, item_str) &&
-                !Parrot_str_equal(interp, name, defined_str)) {
-            /* Look up closure maker, clone it, attach name and return that. */
-            PMC *sub = Parrot_ns_find_namespace_global(interp, Parrot_get_ctx_HLL_namespace(interp),
-                    MAKE_WHATEVER_CLOSURE_str);
-            PMC *boxed_name = pmc_new(interp, enum_class_String);
-            VTABLE_set_string_native(interp, boxed_name, name);
-            method = VTABLE_clone(interp, sub);
-            VTABLE_setprop(interp, method, name_str, boxed_name);
-        }
-
         /* If it's a role and the method name is not on the no-pun list, we
          * should pun it. */
-        else if (VTABLE_isa(interp, SELF, Perl6Role_str) &&
+        if (VTABLE_isa(interp, SELF, Perl6Role_str) &&
                 !Parrot_str_equal(interp, name, WHAT_str) &&
                 !Parrot_str_equal(interp, name, HOW_str) &&
                 !Parrot_str_equal(interp, name, ACCEPTS_str) &&

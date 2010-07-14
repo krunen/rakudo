@@ -370,7 +370,7 @@ Rakudo_binding_bind_one_param(PARROT_INTERP, PMC *lexpad, llsig_element *sig_inf
     }
 
     /* If it has a sub-signature, bind that. */
-    if (!PMC_IS_NULL(sig_info->sub_signature)) {
+    if (!PMC_IS_NULL(sig_info->sub_llsig)) {
         /* Turn value into a capture, unless we already have one. */
         PMC *capture = PMCNULL;
         INTVAL result;
@@ -388,7 +388,7 @@ Rakudo_binding_bind_one_param(PARROT_INTERP, PMC *lexpad, llsig_element *sig_inf
         }
 
         /* Recurse into signature binder. */
-        result = Rakudo_binding_bind_signature(interp, lexpad, sig_info->sub_signature,
+        result = Rakudo_binding_bind_llsig(interp, lexpad, sig_info->sub_llsig,
                 capture, no_nom_type_check, error);
         if (result != BIND_RESULT_OK)
         {
@@ -438,6 +438,10 @@ Rakudo_binding_handle_optional(PARROT_INTERP, llsig_element *sig_info, PMC *lexp
     /* Did the value already get initialized to something? (We can avoid re-creating a
      * PMC if so.) */
     else if (!PMC_IS_NULL(cur_lex = VTABLE_get_pmc_keyed_str(interp, lexpad, sig_info->variable_name))) {
+        /* Yes; if $ sigil then we want to bind set value in it to be the
+         * type object of the default type. */
+        if (!(sig_info->flags & (SIG_ELEM_ARRAY_SIGIL | SIG_ELEM_HASH_SIGIL)))
+            VTABLE_set_pmc(interp, cur_lex, sig_info->nominal_type);
         return cur_lex;
     }
 
@@ -450,7 +454,7 @@ Rakudo_binding_handle_optional(PARROT_INTERP, llsig_element *sig_info, PMC *lexp
             return Rakudo_binding_create_hash(interp, pmc_new(interp, enum_class_Hash));
         }
         else {
-            return pmc_new(interp, pmc_type(interp, string_from_literal(interp, "Perl6Scalar")));
+            return pmc_new_init(interp, pmc_type(interp, string_from_literal(interp, "Perl6Scalar")), sig_info->nominal_type);
         }
     }
 }
@@ -462,7 +466,7 @@ Rakudo_binding_handle_optional(PARROT_INTERP, llsig_element *sig_info, PMC *lexp
  * is a failure and BIND_RESULT_JUNCTION if the failure was because of a
  * Junction being passed (meaning we need to auto-thread). */
 INTVAL
-Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
+Rakudo_binding_bind_llsig(PARROT_INTERP, PMC *lexpad, PMC *llsig,
                               PMC *capture, INTVAL no_nom_type_check,
                               STRING **error) {
     INTVAL        i;
@@ -490,18 +494,18 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
     /* Check that we have a valid signature and pull the bits out of it. */
     if (!lls_id)
         setup_binder_statics(interp);
-    if (signature->vtable->base_type != lls_id)
+    if (llsig->vtable->base_type != lls_id)
         Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
-                "Internal Error: Rakudo_binding_bind_signature passed invalid signature");
-    GETATTR_P6LowLevelSig_elements(interp, signature, elements);
-    GETATTR_P6LowLevelSig_num_elements(interp, signature, num_elements);
-    GETATTR_P6LowLevelSig_named_to_pos_cache(interp, signature, named_to_pos_cache);
+                "Internal Error: Rakudo_binding_bind_llsig passed invalid signature");
+    GETATTR_P6LowLevelSig_elements(interp, llsig, elements);
+    GETATTR_P6LowLevelSig_num_elements(interp, llsig, num_elements);
+    GETATTR_P6LowLevelSig_named_to_pos_cache(interp, llsig, named_to_pos_cache);
 
     /* Build nameds -> position hash for named positional arguments,
      * if it was not yet built. */
     if (PMC_IS_NULL(named_to_pos_cache)) {
         named_to_pos_cache = pmc_new(interp, enum_class_Hash);
-        SETATTR_P6LowLevelSig_named_to_pos_cache(interp, signature, named_to_pos_cache);
+        SETATTR_P6LowLevelSig_named_to_pos_cache(interp, llsig, named_to_pos_cache);
         for (i = 0; i < num_elements; i++) {
             /* If we find a named argument, we're done with the positionals. */
             if (!PMC_IS_NULL(elements[i]->named_names))
@@ -554,7 +558,7 @@ Rakudo_binding_bind_signature(PARROT_INTERP, PMC *lexpad, PMC *signature,
     }
     else {
         Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
-                "Internal Error: Rakudo_binding_bind_signature passed invalid Capture");
+                "Internal Error: Rakudo_binding_bind_llsig passed invalid Capture");
     }
 
     /* First, consider named arguments, to see if there are any that we will
