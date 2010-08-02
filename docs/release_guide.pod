@@ -29,12 +29,12 @@ part of monthly Parrot releases.
   2010-04-22   Rakudo #28 "Moscow"             (moritz)
   2010-05-20   Rakudo #29 "Erlangen"           (colomon)
   2010-06-17   Rakudo #30 "Kiev"               (masak)
+  2010-07-22   Rakudo #31 "Atlanta"            (Coke)
 
 =head2 Planned 2010 releases
 
 Dates are based on Parrot's expected release schedule.
 
-  2010-07-22   Rakudo #31 "Atlanta"            (Coke)
   2010-08-19   Rakudo #32                      (mathw)
   2010-09-23   Rakudo #33                      -vacant-
   2010-10-21   Rakudo #34                      -vacant-
@@ -130,6 +130,13 @@ some small details about the choice of release name.  (If the
 details are a bit lengthy, this can often best be done as a separate
 section at the bottom of the announcement.)
 
+=begin note
+
+Per pmichaud, the script described in the next step is currently
+broken, so we can't run it for the announcement.
+
+=end note
+
 The release announcement has a bullet for passing spectests and the
 percentage of the available spectest suite that's passing.  To get
 the number of available tests, look at "docs/spectest-progress.csv".
@@ -169,7 +176,6 @@ Make sure everything compiles and runs from a known clean state:
   $ perl Configure.pl --gen-parrot
   $ make
   $ make test
-  $ make spectest
   $ make stresstest
 
 Continue adjusting things until make spectest passes as expected.
@@ -217,7 +223,7 @@ L<http://github.com/rakudo/rakudo/downloads>.
 
 Publish the release announcement (from #5) to appropriate
 locations, including rakudo.org, use.perl, perl6-language,
-perl6-announce, perl6-users, and others.
+perl6-announce, perl6-users, perl6-compiler, and others.
 
 =item 14.
 

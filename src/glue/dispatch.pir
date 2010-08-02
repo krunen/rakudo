@@ -116,11 +116,14 @@ a failure if there is none.
     .local pmc exception
     .get_results (exception)
     pop_eh
-    if exception == "No candidates found to invoke" goto error
+    $S0 = exception
+    $S0 = substr $S0, 0, 29
+    if $S0 == "No candidates found to invoke" goto error
     rethrow exception
 
   error:
-    .tailcall '&Nil'()
+    $P0 = get_hll_global 'Nil'
+    .return ($P0)
 .end
 
 
@@ -183,7 +186,9 @@ Implements the .* operator. Calls one or more matching methods.
     .local pmc exception
     .get_results (exception)
     pop_eh
-    if exception == "No candidates found to invoke" goto it_loop
+    $S0 = exception
+    $S0 = substr $S0, 0, 29
+    if $S0 == "No candidates found to invoke" goto it_loop
     rethrow exception
   it_loop_end:
 

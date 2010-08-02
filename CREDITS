@@ -53,10 +53,14 @@ D: Keeps us running
 E: ask@develooper.com
 
 N: Audrey Tang
-U: audreyt
-U: autrijus
+U: au
 E: audreyt@audreyt.org
 D: Pugs, a Perl6->Parrot implementation.
+
+N: Вячеслав Матюхин
+U: mmcleric
+E: me@berekuk.ru
+D: Whatever-currying, colonpair fixes
 
 N: Bernhard Schmalhofer
 U: bernhard
@@ -164,6 +168,13 @@ N: Gregor N. Purdy
 E: gregor@focusresearch.com
 S: Sunnyvale, CA
 
+U: ingy
+N: Ingy döt Net
+E: ingy@ingy.net
+W: http://ingy.net/
+S: Seattle, WA, USA
+D: Make is() work like Perl 5; add .pm6 to extensions searched.
+
 N: James E Keenan (Jim)
 E: jkeenan@cpan.org
 U: jkeenan
@@ -222,6 +233,10 @@ E: tewk@tewk.com
 N: Klaas-Jan Stol
 U: kjs
 E: parrotcode@gmail.com
+
+N: Kodi Arfer
+U: Kodi
+W: http://arfer.net
 
 N: Kyle Hasselbacher
 E: kyleha@gmail.com
@@ -328,6 +343,12 @@ N: Stephen Weeks
 U: tene
 D: Minor Rakudo patches
 E: tene@allalone.org
+
+N: Timothy Totten
+U: novus
+D: Temporal (DateTime/Date) modifications
+E: supernovus@gmail.com
+W: http://huri.net/
 
 N: Tyler Curtis
 U: tcurtis

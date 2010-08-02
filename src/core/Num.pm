@@ -45,6 +45,10 @@ augment class Num does Real {
 
     method Num() { self; }
 
+    method isNaN() {
+        self != self;
+    }
+
     method ln(Num $x:) {
         pir::ln__Nn($x);
     }
@@ -73,6 +77,10 @@ augment class Num does Real {
             when -Inf { -Inf }
             pir::box__PI(pir::ceil__IN($x));
         }
+    }
+
+    method rand(Num $x:) {
+        pir::box__PN(pir::rand__NN($x))
     }
 
     method sin(Num $x: $base = Radians) {

@@ -39,7 +39,8 @@ all others are at the end.
 =item !fire_phasers(bank)
 
 Fire all of the phasers in C<bank>, removing them as we go
-and firing them if they haven't been fired yet.
+and firing them if they haven't been fired yet. Also store
+the values that they evaluate to.
 
 =cut
 
@@ -54,7 +55,7 @@ and firing them if they haven't been fired yet.
     pbank = phash[bank]
     if null pbank goto fire_done
 
-    .local pmc fhash
+    .local pmc fhash, result
     $P0 = get_root_namespace ['parrot';'Hash']
     fhash = vivify our, '%!PHASERS_FIRED', $P0
   fire_bank:
@@ -64,31 +65,34 @@ and firing them if they haven't been fired yet.
     $S0 = phaser.'get_subid'()
     $P0 = fhash[$S0]
     unless null $P0 goto fire_bank
-    phaser()
-    fhash[$S0] = phaser
+    result = phaser()
+    fhash[$S0] = result
     goto fire_bank
 
   fire_done:
 .end
 
 
-=item !begin_unless_begun(id, block)
+=item !get_phaser_result
 
-Runs a BEGIN block, unless it was already run during the parse, in which case
-we don't bother. If we do have to run it, we put in place the computed value.
+Gets the result value that a phaser produced.
 
 =cut
 
-.sub '!begin_unless_begun'
-    .param string id
-    .param pmc block
-    $P0 = get_hll_global ['Perl6';'Actions'], '%BEGINDONE'
-    $P1 = $P0[id]
-    unless null $P1 goto begun
-    $P1 = block()
-    $P0[id] = $P1
-  begun:
-    .return ($P1)
+.sub '!get_phaser_result'
+    .param string subid
+    
+    .local pmc our, fhash, result
+    our = get_hll_namespace
+    $P0 = get_root_namespace ['parrot';'Hash']
+    fhash = vivify our, '%!PHASERS_FIRED', $P0
+    result = fhash[subid]    
+    if null result goto phaser_failed_to_fire_captain
+    .return (result)
+
+  phaser_failed_to_fire_captain:
+    result = get_hll_global 'Any'
+    .return (result)
 .end
 
 =back

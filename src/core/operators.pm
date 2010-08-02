@@ -11,16 +11,6 @@ our multi infix:<~~>(Mu $topic, Regex $matcher) {
     };
 }
 
-class Substitution { ... }
-our multi infix:<~~>(Mu $topic is rw, Substitution $matcher) {
-    $matcher.ACCEPTS($topic)
-}
-
-
-our multi infix:<!~~>(Mu $topic, Mu $matcher) {
-    $matcher.REJECTS($topic)
-}
-
 our multi prefix:<?>(Mu $a) {
     pir::can($a, 'Bool')
     ?? $a.Bool
@@ -136,35 +126,35 @@ our sub undefine(Mu \$x) {
     $x = $undefined;
 }
 
-our multi infix:<does>(Mu \$do-it-to-me, Role $r) {
-    &infix:<does>($do-it-to-me, $r!select)
+our multi infix:<does>(Mu \$doee, Role $r) {
+    &infix:<does>($doee, $r!select)
 }
 
-our multi infix:<does>(Mu \$do-it-to-me, ConcreteRole $r) {
-    my $applicator = $r.^applier_for($do-it-to-me);
-    $applicator.apply($do-it-to-me, [$r]);
-    $do-it-to-me
+our multi infix:<does>(Mu \$doee, ConcreteRole $r) {
+    my $applicator = $r.^applier_for($doee);
+    $applicator.apply($doee, [$r]);
+    $doee
 }
 
-our multi infix:<does>(Mu \$do-it-to-me, Parcel $roles) {
+our multi infix:<does>(Mu \$doee, Parcel $roles) {
     my $*SCOPE = 'my';
     my $mr = RoleHOW.new();
     for @($roles) -> $r {
         $mr.^add_composable($r);
     }
     my $r = $mr.^compose();
-    $do-it-to-me does $r;
+    $doee does $r;
 }
 
-our multi infix:<does>(Mu \$do-it-to-me, \$value) {
+our multi infix:<does>(Mu \$doee, \$value) {
     # Need to manufacture a role here.
     my $r = RoleHOW.new();
     $r.^add_method($value.WHAT.perl, method () { $value });
-    $do-it-to-me does $r.^compose()
+    $doee does $r.^compose()
 }
 
-our multi infix:<but>(Mu \$do-it-to-me, \$r) {
-    $do-it-to-me.clone() does $r
+our multi infix:<but>(Mu \$doee, \$r) {
+    $doee.clone() does $r
 }
 
 our multi infix:<before>($a, $b) {
@@ -272,9 +262,16 @@ our multi infix:<ge>($a, $b) {
 }
 
 # XXX Lazy version would be nice in the future too.
-our multi infix:<xx>(Mu \$item, $n) {
-    (1..$n).map( { $item } )
+class Whatever { ... }
+
+our multi infix:<xx>(Mu \$item, Whatever) {
+    (1..*).map( { $item } )
 }
+
+our multi infix:<xx>(Mu \$item, $n) {
+    (1..+$n).map( { $item } )
+}
+
 
 our multi prefix:<|>(@a) { @a.Capture }
 our multi prefix:<|>(%h) { %h.Capture }
@@ -331,8 +328,6 @@ our multi sub item($item) {
     $item
 }
 
-class Whatever { ... }
-
 our multi sub infix:<...>(Code $lhs, $rhs) {
     my $limit;
     $limit = $rhs if !($rhs ~~ Whatever);
@@ -373,16 +368,13 @@ our multi sub infix:<...>(@lhs is copy, $rhs) {
         }
     }
 
-    my sub is-on-the-wrong-side($first , $before_last , $last , $limit) {
-        if $first ~~ Numeric && $before_last ~~ Numeric && $last ~~ Numeric && $limit ~~ Numeric {
-            return Bool::True if ($before_last > $last && $limit > $first);
-            return Bool::True if ($before_last < $last && $limit < $first);
+    my sub is-on-the-wrong-side($first , $second , $third , $limit , $is-geometric-switching-sign) {
+        return Bool::False if $limit ~~ Whatever;
+        if $is-geometric-switching-sign {
+            ($second.abs >= $third.abs && $limit.abs > $first.abs) || ($second.abs <= $third.abs && $limit.abs < $first.abs);
+        } else {
+            ($second >= $third && $limit > $first) || ($second <= $third && $limit < $first);
         }
-        if $first  ~~ Str && $before_last  ~~ Str && $last  ~~ Str && $limit  ~~ Str {
-            return Bool::True if ($before_last gt $last && $limit gt $first);
-            return Bool::True if ($before_last lt $last && $limit lt $first);
-        }
-        return Bool::False
     }
 
     my $limit;
@@ -403,12 +395,16 @@ our multi sub infix:<...>(@lhs is copy, $rhs) {
                 if $diff == 0 {
                     $next = succ-or-pred2(@lhs[*-2], @lhs[*-1], $rhs)
                 } elsif @lhs.elems == 2 || @lhs[*-2] - @lhs[*-3] == $diff {
-                    return Nil if is-on-the-wrong-side(@lhs[0] , @lhs[*-2] , @lhs[*-1] , $rhs);
+                    return Nil if is-on-the-wrong-side(@lhs[0] , @lhs[*-2] , @lhs[*-1] , $rhs , Bool::False);
                     $next = { $_ + $diff };
                 } elsif @lhs[*-2] / @lhs[*-3] == @lhs[*-1] / @lhs[*-2] {
                     $is-geometric-switching-sign = (@lhs[*-2] * @lhs[*-1] < 0);
-                    return Nil if is-on-the-wrong-side(@lhs[0] , @lhs[*-2] , @lhs[*-1] , $rhs) && !$is-geometric-switching-sign;
-                    $next = { $_ * (@lhs[*-2] / @lhs[*-3]) };
+                    return Nil if is-on-the-wrong-side(@lhs[*-3] , @lhs[*-2] , @lhs[*-1] , $rhs , $is-geometric-switching-sign) ;
+                    my $factor = @lhs[*-2] / @lhs[*-3];
+                    if $factor ~~ ::Rat && $factor.denominator == 1 {
+                        $factor = $factor.Int;
+                    }
+                    $next = { $_ * $factor };
                 } else {
                     fail "Unable to figure out pattern of series";
                 }
@@ -420,28 +416,35 @@ our multi sub infix:<...>(@lhs is copy, $rhs) {
 
     gather {
         my @args;
-        my $j;
+        my $previous;
         my $top = $arity min @lhs.elems;
-        for @lhs.kv -> $i, $v {
-            $j = $v;
-            take $v;
-            @args.push($v) if $i >= @lhs.elems - $top;
-        }
+        my $lhs-orig-count = @lhs.elems ;
+        my $count=0;
 
-        if !$limit.defined || $limit cmp $j != 0 {
+        if @lhs || !$limit.defined || $limit cmp $previous != 0 {
             loop {
-                my $i = $next.(|@args) // last;
-                my $j = $i;
+                @args.push(@lhs[0]) if @lhs && $count >= $lhs-orig-count - $top;
+                my $current = @lhs.shift()  // $next.(|@args) // last;
 
                 my $cur_cmp = 1;
                 if $limit.defined {
-                    $cur_cmp = $limit cmp $j;
-                    last if (@args[*-1] cmp $limit) == $cur_cmp && !$is-geometric-switching-sign;
+                    $cur_cmp = $limit cmp $current;
+                    if $previous.defined {
+                        my $previous_cmp = $previous cmp $limit;
+                        if ($is-geometric-switching-sign) {
+                            $cur_cmp = $limit.abs cmp $current.abs;
+                            $previous_cmp = $previous.abs cmp $limit.abs;
+                        }
+                        last if @args && $previous_cmp == $cur_cmp ;
+                    }
                 }
-                take $j;
+                $previous = $current;
+                take $current ;
+                $count++;
+
                 last if $cur_cmp == 0;
 
-                @args.push($j);
+                @args.push($previous) if $count > $lhs-orig-count;
                 while @args.elems > $arity {
                     @args.shift;
                 }

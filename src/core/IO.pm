@@ -3,6 +3,9 @@ class IO is Cool {
     has $!ins;
     has $.autoflush is rw;
 
+    has $.path;
+    has $.stat = ::IO::Stat.new(path => $.path);
+
     multi method close() is export {
         try {
             ?$!PIO.close()
@@ -135,6 +138,38 @@ class IO is Cool {
     multi method t() {
         $!PIO.isatty;
     }
+
+    # file test operations
+    multi method d() {
+        self.e ?? $.stat.isdir !! Bool;
+    }
+    multi method e() {
+        $.stat.exists;
+    }
+    multi method f() {
+        self.e ?? !$.stat.isdir !! Bool;
+    }
+
+    multi method s() {
+        self.e ?? $.stat.size !! Any;
+    }
+
+    multi method l() {
+        my $fn = $.path;
+        ? Q:PIR{
+            .local pmc filename, file
+            filename = find_lex '$fn'
+            $S0 = filename
+
+            file = root_new ['parrot';'File']
+            $I0 = file.'is_link'($S0)
+            %r = box $I0
+        }
+    }
+
+    multi method z() {
+        $.e && $.s == 0;
+    }
 }
 
 multi sub get(IO $filehandle = $*ARGFILES) { $filehandle.get };
@@ -221,13 +256,13 @@ multi sub note(*@args) {
     $*ERR.say(@args);
 }
 
-multi sub dir($path as Str) {
+multi sub dir($path as Str, Mu :$test = none('.', '..')) {
     Q:PIR {
         $P0 = find_lex '$path'
         $P1 = new ['OS']
         $P1 = $P1.'readdir'($P0)
         %r = '&infix:<,>'($P1 :flat)
-    }
+    }.grep($test)
 }
 
 multi sub chdir($path as Str) {

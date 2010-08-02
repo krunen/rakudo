@@ -1,24 +1,45 @@
-    Announce: Rakudo Perl 6 development release #31 ("Atlanta")
+    Announce: Rakudo Perl 6 compiler development release #31 ("Atlanta")
 
-On behalf of the Rakudo development team, I'm pleased to announce the
+On behalf of the Rakudo development team, I'm happy to announce the
 July 2010 development release of Rakudo Perl #31 "Atlanta".
 Rakudo is an implementation of Perl 6 on the Parrot Virtual Machine
 (see <http://www.parrot.org>). The tarball for the July 2010 release
 is available from <http://github.com/rakudo/rakudo/downloads>.
 
-Rakudo Perl follows a monthly release cycle, with each release named
-after a Perl Mongers group. The July 2010 release is code named "Atlanta"
-in recognition of Atlanta.pm and their Perl 5 Phalanx project [1], which
-they selected for its benefits to Perl 6.
+Please note: This is not the Rakudo Star release, which is scheduled
+for July 29, 2010 [1]. The Star release will include the compiler, an
+installer, modules, a book (PDF), and more.
+
+The Rakudo Perl compiler follows a monthly release cycle, with each release
+named after a Perl Mongers group. The July 2010 release is code named
+"Atlanta" in recognition of Atlanta.pm and their Perl 5 Phalanx project [2],
+which they selected for its benefits to Perl 6.
 
 Some of the specific changes and improvements occurring with this
 release include:
 
-* [XXX update]
-* 
-* 
-* [XXX update]Rakudo now passes 33,378 spectests. We estimate that there are about
-  39,900 tests in the test suite, so Rakudo passes about 83% of all tests.
+* Rakudo now properly constructs closures in most instances.
+
+* Undefined objects can now autovivify into arrays or hashes when
+  subscripted with .[ ] or .{ } .
+
+* Arrays can now handle infinite ranges.
+
+* Generic, multi-level Whatever-currying now works, e.g. (1, 1, *+* ... *).
+
+* The REPL shell now remembers lexical declarations in susbsequent lines.
+
+* The open() subroutine now returns a Failure instead of throwing
+  a fatal exception.
+
+* Rakudo now provides $*ARGFILES for reading from files specified
+  on the command line.
+
+* Added $*PERL, moved %*VM to $*VM.
+
+* Simple binding operators := and ::= now work.
+
+* Simple feed operators <== and ==> now work.
 
 For a more detailed list of changes see "docs/ChangeLog".
 
@@ -27,10 +48,12 @@ making Rakudo Perl possible, as well as those people who worked on parrot, the
 Perl 6 test suite and the specification.
 
 The following people contributed to this release:
-Patrick R. Michaud, Moritz Lenz, Jonathan Worthington, Solomon Foster,
-Patrick Abi Salloum, Carl Mäsak, Martin Berends, Will "Coke" Coleda,
-Vyacheslav Matjukhin, snarkyboojum, chromatic, Tyler Curtis, Lars Dɪᴇᴄᴋᴏᴡ,
-Bruce Gray, Stephen Weeks, Andrew Whitworth
+Patrick R. Michaud, Jonathan Worthington, Moritz Lenz, Solomon Foster,
+Carl Masak, Bruce Gray, Martin Berends, chromatic, Will "Coke" Coleda,
+Matthew (lue), Timothy Totten, maard, Kodi Arfer, TimToady, Stephen Weeks,
+Patrick Abi Salloum, snarkyboojum, Radu Stoica, Vyacheslav Matjukhin,
+Andrew Whitworth, cognominal, Tyler Curtis, Alex Kapranoff, Ingy döt Net,
+Lars Dɪᴇᴄᴋᴏᴡ 迪拉斯, mathw, lue, Вячеслав Матюхин
 
 If you would like to contribute, see <http://rakudo.org/how-to-help>, ask on
 the perl6-compiler@perl.org mailing list, or ask on IRC #perl6 on freenode.
@@ -43,4 +66,5 @@ Parrot monthly release.  Parrot releases the third Tuesday of each month.
 
 Have fun!
 
-[1] http://code.google.com/p/atlanta-pm-code/
+[1] http://rakudo.org/node/73
+[2] http://code.google.com/p/atlanta-pm-code/

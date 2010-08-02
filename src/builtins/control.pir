@@ -11,6 +11,35 @@ src/builtins/control.pir - control flow related functions
 .include 'except_types.pasm'
 .include 'except_severity.pasm'
 
+=item !control(type, value)
+
+Basic function for throwing an exception of C<type> with
+C<value> as the payload.  C<value> is assumed to be a 
+ResizablePMCArray (e.g., from a :slurpy argument), which 
+is then converted into an appropriate Parcel depending 
+on the number of elements.
+
+=cut
+
+.sub '!control' :anon
+    .param pmc type
+    .param pmc value
+    $I0 = elements value
+    if $I0 != 1 goto many
+    value = value[0]
+    goto done
+  many:
+    value = '&infix:<,>'(value :flat)
+  done:
+    .local pmc ex
+    ex = root_new ['parrot';'Exception']
+    setattribute ex, 'type', type
+    setattribute ex, 'payload', value
+    $P0 = box .EXCEPT_NORMAL
+    setattribute ex, 'severity', $P0
+    throw ex
+.end
+
 =item die
 
 =cut
@@ -20,6 +49,8 @@ src/builtins/control.pir - control flow related functions
     .local string message
     .local pmc p6ex
     .local pmc ex
+    
+    .annotate 'invizible_frame', 1
 
     message = join '', list
     if message > '' goto have_message
@@ -34,6 +65,8 @@ src/builtins/control.pir - control flow related functions
     set_global '$!', p6ex
     throw ex
     .return ()
+
+    .annotate 'invizible_frame', 0
 .end
 
 =item exit
@@ -50,29 +83,31 @@ src/builtins/control.pir - control flow related functions
     exit status
 .end
 
-=item return
+
+=item return, last, next, redo
 
 =cut
 
 .sub '&return'
     .param pmc retvals :slurpy
-    .local pmc ex, retval
-    ex = root_new ['parrot';'Exception']
-    ex['type'] = .CONTROL_RETURN
-    $I0 = elements retvals
-    if $I0 == 0 goto nil
-    if $I0 > 1 goto many
-    retval = retvals[0]
-    goto done
-  nil:
-    retval = '&Nil'()
-    goto done
-  many:
-    retval = '&infix:<,>'(retvals :flat)
-  done:
-    setattribute ex, 'payload', retval
-    throw ex
+    .tailcall '!control'(.CONTROL_RETURN, retvals)
 .end
+
+.sub '&last'
+    .param pmc retvals :slurpy
+    .tailcall '!control'(.CONTROL_LOOP_LAST, retvals)
+.end
+
+.sub '&next'
+    .param pmc retvals :slurpy
+    .tailcall '!control'(.CONTROL_LOOP_NEXT, retvals)
+.end
+
+.sub '&redo'
+    .param pmc retvals :slurpy
+    .tailcall '!control'(.CONTROL_LOOP_REDO, retvals)
+.end
+
 
 =item warn
 
@@ -83,6 +118,8 @@ src/builtins/control.pir - control flow related functions
     .local string message
     .local pmc p6ex
     .local pmc ex
+
+    .annotate 'invizible_frame', 1
 
     message = join '', list
     if message > '' goto have_message
@@ -97,6 +134,8 @@ src/builtins/control.pir - control flow related functions
     set_global '$!', p6ex
     throw ex
     .return ()
+
+    .annotate 'invizible_frame', 0
 .end
 
 =item fail
@@ -167,51 +206,6 @@ src/builtins/control.pir - control flow related functions
     throw e
 .end
 
-=item next
-
-=cut
-
-.sub '&next'
-    .local pmc e, p6ex
-    e = root_new ['parrot';'Exception']
-    e['severity'] = .EXCEPT_NORMAL
-    e['type'] = .CONTROL_LOOP_NEXT
-    p6ex = new ['Perl6Exception']
-    setattribute p6ex, '$!exception', e
-    set_global '$!', p6ex
-    throw e
-.end
-
-=item redo
-
-=cut
-
-.sub '&redo'
-    .local pmc e, p6ex
-    e = root_new ['parrot';'Exception']
-    e['severity'] = .EXCEPT_NORMAL
-    e['type'] = .CONTROL_LOOP_REDO
-    p6ex = new ['Perl6Exception']
-    setattribute p6ex, '$!exception', e
-    set_global '$!', p6ex
-    throw e
-.end
-
-=item last
-
-=cut
-
-.sub '&last'
-    .local pmc e, p6ex
-    e = root_new ['parrot';'Exception']
-    e['severity'] = .EXCEPT_NORMAL
-    e['type'] = .CONTROL_LOOP_LAST
-    p6ex = new ['Perl6Exception']
-    setattribute p6ex, '$!exception', e
-    set_global '$!', p6ex
-    throw e
-.end
-
 =item take
 
 =cut
@@ -231,7 +225,7 @@ src/builtins/control.pir - control flow related functions
     values = values[0]
     goto done
   nil:
-    values = '&Nil'()
+    values = get_hll_global 'Nil'
     goto done
   many:
     values = '&infix:<,>'(values :flat)
@@ -380,6 +374,7 @@ find nothing more to call.
     get_next_candidate_info clist, $P0, $P1
     clist.'trim_candidate_list'()
 .end
+
 
 =back
 

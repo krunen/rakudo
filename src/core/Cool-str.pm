@@ -131,7 +131,7 @@ augment class Cool {
             return Mu;
         }
 
-        pir::substr(self, $start, $len);
+        ~pir::substr(self, $start, $len);
     }
 
     multi method trans(*@changes) {
@@ -253,7 +253,7 @@ augment class Cool {
                            :g(:$global),
                            :pos(:$p),
                            :$x,
-                           :$nth,
+                           :st(:nd(:rd(:th(:$nth)))),
                            :ov(:$overlap)) {
         if $continue ~~ Bool {
             note ":c / :continue requires a position in the string";
@@ -382,8 +382,12 @@ augment class Cool {
         self.trim-leading.trim-trailing;
     }
 
-    multi method words(Int $limit = *) {
-        self.comb( / \S+ /, $limit );
+    multi method words(Str $input: Int $limit = *) {
+        $input.comb( / \S+ /, $limit );
+    }
+
+    our multi method lines(Str $input: Int $limit = Inf) {
+        $input.comb( / ^^ \N* /, $limit );
     }
 
     our Str multi method uc() {
@@ -400,6 +404,10 @@ augment class Cool {
             $result = pir::sprintf__SSP(~self, (|@args)!PARROT_POSITIONALS);
         }
         $! ?? fail( "Insufficient arguments supplied to sprintf") !! $result
+    }
+
+    method IO() {
+        ::IO.new(path => ~self);
     }
 }
 

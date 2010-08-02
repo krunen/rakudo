@@ -10,8 +10,6 @@
 # 
 # integration/rule-in-class-Str.t - 'is also' -> augment
 # S12-attributes/mutators.t - we no longer get away with missing rw and Proxy; some bogus passes anyway
-# S16-filehandles/filetest.t - regressed when spec changed (RT #68160)
-# S16-filehandles/unlink.t   - regressed when spec changed (RT #68160)
 # S07-iterators/range-iterator.t - regressed because conforms to obsolete version of spec
 #
 # Each file may have one or more markers that deselects the test:
@@ -79,7 +77,7 @@ S02-builtin_data_types/hash_ref.t
 S02-builtin_data_types/hash.t
 S02-builtin_data_types/infinity.t
 S02-builtin_data_types/lists.t
-# S02-builtin_data_types/mixed_multi_dimensional.t
+S02-builtin_data_types/mixed_multi_dimensional.t
 S02-builtin_data_types/multi_dimensional_array.t
 S02-builtin_data_types/nan.t
 S02-builtin_data_types/nested_arrays.t
@@ -144,6 +142,7 @@ S02-whitespace_and_comments/pod-in-multi-line-exprs.t
 S02-whitespace_and_comments/sub-block-parsing.t
 S02-whitespace_and_comments/unicode-whitespace.t
 S02-whitespace_and_comments/unspace.t
+S03-feeds/basic.t
 S03-junctions/associative.t
 S03-junctions/autothreading.t
 S03-junctions/boolean-context.t
@@ -192,6 +191,7 @@ S03-operators/not.t
 S03-operators/numeric-context.t
 S03-operators/precedence.t
 S03-operators/range-basic.t
+S03-operators/range-int.t                       # stress
 S03-operators/range.t
 S03-operators/reduce-le1arg.t
 S03-operators/relational.t
@@ -331,7 +331,7 @@ S06-advanced_subroutine_features/callframe.t
 S06-advanced_subroutine_features/lexical-subs.t
 S06-advanced_subroutine_features/recurse.t
 S06-advanced_subroutine_features/return.t
-# S06-advanced_subroutine_features/wrap.t
+S06-advanced_subroutine_features/wrap.t
 S06-currying/assuming-and-mmd.t
 S06-currying/named.t
 S06-multi/lexical-multis.t
@@ -340,7 +340,7 @@ S06-multi/syntax.t
 S06-multi/type-based.t
 S06-multi/value-based.t
 S06-multi/unpackability.t
-# S06-operator-overloading/imported-subs.t
+S06-operator-overloading/imported-subs.t
 S06-operator-overloading/methods.t
 S06-operator-overloading/sub.t
 # S06-operator-overloading/workout.t
@@ -432,6 +432,7 @@ S12-introspection/methods.t
 S12-introspection/parents.t
 S12-introspection/roles.t
 S12-introspection/walk.t
+S12-methods/attribute-params.t
 S12-methods/calling_sets.t
 S12-methods/calling_syntax.t
 S12-methods/chaining.t
@@ -452,7 +453,7 @@ S12-methods/syntax.t
 S12-methods/topic.t
 S12-methods/typed-attributes.t
 S12-methods/what.t
-# S12-subset/multi-dispatch.t
+S12-subset/multi-dispatch.t
 # S12-subset/subtypes.t
 S13-type-casting/methods.t
 S13-overloading/typecasting-long.t
@@ -476,10 +477,12 @@ S14-roles/submethods.t
 # S14-traits/package.t
 # S14-traits/routines.t
 # S14-traits/variables.t
+S16-filehandles/filetest.t
 S16-filehandles/io.t
 S16-filehandles/io_in_for_loops.t
 S16-filehandles/io_in_while_loops.t
 S16-filehandles/open.t
+S16-filehandles/unlink.t
 # S16-io/bare-say.t
 S16-io/basic-open.t
 S16-io/say.t
@@ -511,6 +514,7 @@ S32-array/rotate.t
 S32-array/shift.t
 S32-array/splice.t
 S32-array/unshift.t
+S32-basics/warn.t
 # S32-container/zip.t
 S32-hash/exists.t
 S32-hash/delete.t
@@ -582,9 +586,9 @@ S32-str/ucfirst.t                                          # icu
 S32-str/uc.t                                               # icu
 # S32-str/unpack.t
 S32-str/words.t                                            # icu
+S32-temporal/calendar.t
 S32-temporal/Date.t
 S32-temporal/DateTime.t
-S32-temporal/DateTime-strftime.t
 S32-trig/e.t
 # S32-trig/pi.t
 S32-trig/sin.t                                             # long

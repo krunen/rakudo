@@ -1,9 +1,7 @@
 role Numeric {
     method ACCEPTS($other) {
-        my @a = self.reals;
-        my @b = (+$other).reals;
-        if @a.grep("NaN").elems > 0 {
-            @b.grep("NaN").elems > 0;
+        if self.isNaN {
+            $other.isNaN;
         } else {
             $other == self;
         }
@@ -41,6 +39,10 @@ role Numeric {
     method reals() {
         note "$.WHAT() needs a version of .reals";
         fail "$.WHAT() needs a version of .reals";
+    }
+
+    method isNaN() {
+        ?(self.reals.grep({.isNaN}));
     }
 
     method succ(Numeric $x:) {
@@ -130,6 +132,10 @@ role Numeric {
     method unpolar(Numeric $mag: Numeric $angle) {
         note "unpolar is only defined for Reals, you have a $.WHAT()";
         fail "unpolar is only defined for Reals, you have a $.WHAT()";
+    }
+
+    method rand(Numeric $x:) {
+        $x.Real.rand;
     }
 
     method sin(Numeric $x: $base = Radians) {
@@ -295,4 +301,8 @@ multi sub infix:«<=»(Numeric $a, Numeric $b) {
 
 multi sub infix:«>=»(Numeric $a, Numeric $b) {
     ($a <=> $b) != -1;
+}
+
+multi sub srand(Numeric $seed) {
+    srand($seed.Real);
 }

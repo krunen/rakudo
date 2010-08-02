@@ -25,7 +25,26 @@ augment class Int does Real {
     our Num method Num() {
         pir::box__PN(pir::set__NP(self));
     }
+
+    method sign(Int $x:) {
+        $x.notdef ?? Mu !! $x <=> 0;
+    }
 }
+
+multi sub infix:«==»(Int $a, Int $b) {
+    pir::iseq__III( $a, $b) ?? True !! False
+}
+
+multi sub infix:«!=»(Int $a, Int $b) {
+    pir::iseq__III( $a, $b) ?? False !! True # note reversed
+}
+
+multi sub infix:«<»(Int $a, Int $b) {
+    pir::islt__III( $a, $b) ?? True !! False
+}
+
+# Should pull along the other Int comparison operators at some point,
+# but this is a great start.
 
 our multi sub prefix:<->(Int $a) {
     upgrade_to_num_if_needed(pir::neg__NN($a))
@@ -44,11 +63,7 @@ our multi sub infix:<*>(Int $a, Int $b) {
 }
 
 our multi sub infix:<div>(Int $a, Int $b) {
-    my $result = pir::box__PI(pir::div__III($a, $b));
-    if $a.sign * $b.sign < 0 && $result * $b != $a {
-        $result--;
-    }
-    $result;
+    upgrade_to_num_if_needed(pir::fdiv__NNN($a, $b));
 }
 
 our multi sub infix:<%>(Int $a, Int $b) {
