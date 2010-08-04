@@ -77,9 +77,12 @@ method comp_unit($/, $key?) {
     ));
 
     $unit.loadinit.unshift(
-        PAST::Op.new(
-            :name('!UNIT_OUTER'),
-            PAST::Var.new( :name('block'), :scope('register') )
+        PAST::Op.new( :pasttype<inline>,
+            :inline('    $P0 = find_name "!UNIT_OUTER"',
+                    '    unless null $P0 goto have_perl6',
+                    '    load_language "perl6"',
+                    '  have_perl6:',
+                    '    "!UNIT_OUTER"(block)')
         )
     );
 
@@ -2653,6 +2656,36 @@ method quotepair($/) {
     make $*value;
 }
 
+method setup_quotepairs($/) {
+    my %h;
+    for @*REGEX_ADVERBS {
+        my $key := $_.ast.named;
+        my $value := $_.ast;
+        if $value ~~ PAST::Val {
+            $value := $value.value;
+        } else {
+            if    $key eq 'i' || $key eq 'ignorecase'
+               || $key eq 's' || $key eq 'sigspace' {
+                $/.CURSOR.panic('Value of adverb :' ~ $key ~ ' must be known at compile time');
+            }
+        }
+        %h{$key} := $value;
+    }
+
+    my @MODIFIERS := Q:PIR {
+        %r = get_hll_global ['Regex';'P6Regex';'Actions'], '@MODIFIERS'
+    };
+    @MODIFIERS.unshift(%h);
+}
+
+method cleanup_modifiers($/) {
+    my @MODIFIERS := Q:PIR {
+        %r = get_hll_global ['Regex';'P6Regex';'Actions'], '@MODIFIERS'
+    };
+    @MODIFIERS.shift();
+
+}
+
 method quote:sym<apos>($/) { make $<quote_EXPR>.ast; }
 method quote:sym<dblq>($/) { make $<quote_EXPR>.ast; }
 method quote:sym<qq>($/)   { make $<quote_EXPR>.ast; }
@@ -2691,7 +2724,7 @@ method quote:sym<m>($/) {
 
 our %SUBST_ALLOWED_ADVERBS;
 INIT {
-    my $mods := 'g global samecase x c continue p pos nth th st nd rd';
+    my $mods := 'g global samecase x c continue p pos nth th st nd rd i ignorecase s sigspace';
     for pir::split__PSS(' ', $mods) {
         %SUBST_ALLOWED_ADVERBS{$_} := 1;
     }
