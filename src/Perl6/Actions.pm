@@ -2648,6 +2648,22 @@ method typename($/) {
     make $past;
 }
 
+our %SUBST_ALLOWED_ADVERBS;
+our %SHARED_ALLOWED_ADVERBS;
+INIT {
+    my $mods := 'i ignorecase s sigspace';
+    for pir::split__PSS(' ', $mods) {
+        %SHARED_ALLOWED_ADVERBS{$_} := 1;
+        %SUBST_ALLOWED_ADVERBS{$_}  := 1;
+    }
+
+    $mods := 'g global ii samecase x c continue p pos nth th st nd rd';
+    for pir::split__PSS(' ', $mods) {
+        %SUBST_ALLOWED_ADVERBS{$_} := 1;
+    }
+}
+
+
 method quotepair($/) {
     unless $*value ~~ PAST::Node {
         $*value := PAST::Val.new( :value($*value) );
@@ -2664,10 +2680,12 @@ method setup_quotepairs($/) {
         if $value ~~ PAST::Val {
             $value := $value.value;
         } else {
-            if    $key eq 'i' || $key eq 'ignorecase'
-               || $key eq 's' || $key eq 'sigspace' {
+            if %SHARED_ALLOWED_ADVERBS{$key} {
                 $/.CURSOR.panic('Value of adverb :' ~ $key ~ ' must be known at compile time');
             }
+        }
+        if $key eq 'samecase' || $key eq 'ii' {
+            %h{'i'} := 1;
         }
         %h{$key} := $value;
     }
@@ -2714,6 +2732,8 @@ method quote:sym</ />($/) {
     make block_closure($past, 'Regex', 0);
 }
 method quote:sym<rx>($/) {
+
+    self.handle_and_check_adverbs($/, %SHARED_ALLOWED_ADVERBS, 'rx');
     my $past := Regex::P6Regex::Actions::buildsub($<p6regex>.ast);
     make block_closure($past, 'Regex', 0);
 }
@@ -2722,21 +2742,14 @@ method quote:sym<m>($/) {
     make block_closure($past, 'Regex', 0);
 }
 
-our %SUBST_ALLOWED_ADVERBS;
-INIT {
-    my $mods := 'g global samecase x c continue p pos nth th st nd rd i ignorecase s sigspace';
-    for pir::split__PSS(' ', $mods) {
-        %SUBST_ALLOWED_ADVERBS{$_} := 1;
-    }
-}
-
-method handle_and_check_adverbs($/, %adverbs, $past, $what) {
+method handle_and_check_adverbs($/, %adverbs, $what, $past?) {
     for $<quotepair> {
-        pir::printerr__vS("Found adverb " ~ $_.ast.named ~ "\n");
         unless %adverbs{$_.ast.named} {
             $/.CURSOR.panic("Adverb '" ~ $_.ast.named ~ "' not allowed on " ~ $what);
         }
-        $past.push($_.ast);
+        if $past {
+            $past.push($_.ast);
+        }
     }
 }
 
@@ -2761,7 +2774,7 @@ method quote:sym<s>($/) {
         PAST::Var.new( :name('$_'), :scope('lexical') ),
         $regex, $closure
     );
-    self.handle_and_check_adverbs($/, %SUBST_ALLOWED_ADVERBS, $past, 'substitution');
+    self.handle_and_check_adverbs($/, %SUBST_ALLOWED_ADVERBS, 'substitution', $past);
 
     $past := PAST::Op.new(
         :node($/),

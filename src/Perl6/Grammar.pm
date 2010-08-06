@@ -1416,10 +1416,15 @@ token quote:sym</null/> { '/' \s* '/' <.panic: "Null regex not allowed"> }
 token quote:sym</ />  { '/'<p6regex=.LANG('Regex','nibbler')>'/' <.old_rx_mods>? }
 token quote:sym<rx>   {
     <sym> >> 
+    [ <quotepair> <.ws> ]*
+    :my @*REGEX_ADVERBS;
+    { @*REGEX_ADVERBS := $<quotepair>; }
+    <.setup_quotepairs>
     [
     | '/'<p6regex=.LANG('Regex','nibbler')>'/' <.old_rx_mods>?
     | '{'<p6regex=.LANG('Regex','nibbler')>'}' <.old_rx_mods>?
     ]
+    <.cleanup_modifiers>
 }
 token quote:sym<m> {
     <sym> >>
@@ -1831,7 +1836,12 @@ token infix:sym<===>  { <sym>  <O('%chaining')> }
 token infix:sym<eqv>  { <sym>  <O('%chaining')> }
 token infix:sym<before>  { <sym>  <O('%chaining')> }
 token infix:sym<after>  { <sym>  <O('%chaining')> }
-token infix:sym<~~>   { <sym>  <O('%chaining')> }
+token infix:sym<~~>   { <sym>  <O('%chaining')> <!dumbsmart> }
+
+token dumbsmart {
+    | <?before \h* 'Bool::'? 'True' »>  <.panic("Smartmatch against True always matches; if you mean to test the topic for truthiness, use :so or *.so or ?* instead")>
+    | <?before \h* 'Bool::'? 'False' »> <.panic("Smartmatch against False always fails; if you mean to test the topic for truthiness, use :!so or *.not or !* instead")>
+}
 
 token infix:sym<&&>   { <sym>  <O('%tight_and, :pasttype<if>')> }
 
