@@ -2663,23 +2663,43 @@ method typename($/) {
 
 our %SUBST_ALLOWED_ADVERBS;
 our %SHARED_ALLOWED_ADVERBS;
+our %MATCH_ALLOWED_ADVERBS;
 INIT {
     my $mods := 'i ignorecase s sigspace';
     for pir::split__PSS(' ', $mods) {
         %SHARED_ALLOWED_ADVERBS{$_} := 1;
-        %SUBST_ALLOWED_ADVERBS{$_}  := 1;
     }
 
     $mods := 'g global ii samecase x c continue p pos nth th st nd rd';
     for pir::split__PSS(' ', $mods) {
         %SUBST_ALLOWED_ADVERBS{$_} := 1;
     }
+
+    # TODO: add g global ov overlap  once they actually work
+    $mods := 'x c continue p pos nth th st nd rd';
+    for pir::split__PSS(' ', $mods) {
+        %MATCH_ALLOWED_ADVERBS{$_} := 1;
+    }
 }
 
 
 method quotepair($/) {
     unless $*value ~~ PAST::Node {
-        $*value := PAST::Val.new( :value($*value) );
+        if ($*key eq 'c' || $*key eq 'continue'
+        || $*key eq 'p' || $*key eq 'pos') && $*value == 1 {
+            $*value := PAST::Op.new(
+                :node($/),
+                :pasttype<if>,
+                PAST::Var.new(:name('$/'), :scope('lexical')),
+                PAST::Op.new(:pasttype('callmethod'),
+                    PAST::Var.new(:name('$/'), :scope<lexical>),
+                    :name<to>
+                ),
+                PAST::Val.new(:value(0)),
+            );
+        } else {
+            $*value := PAST::Val.new( :value($*value) );
+        }
     }
     $*value.named(~$*key);
     make $*value;
@@ -2760,9 +2780,10 @@ method quote:sym<m>($/) {
         PAST::Var.new( :name('$_'), :scope('lexical') ),
         $regex
     );
+    self.handle_and_check_adverbs($/, %MATCH_ALLOWED_ADVERBS, 'm', $past);
     $past := PAST::Op.new(
         :node($/),
-        :pasttype('call'), :name('&infix:<=>'),
+        :pasttype('call'), :name('&infix:<:=>'),
         PAST::Var.new(:name('$/'), :scope('lexical')),
         $past
     );
@@ -2772,7 +2793,7 @@ method quote:sym<m>($/) {
 
 method handle_and_check_adverbs($/, %adverbs, $what, $past?) {
     for $<quotepair> {
-        unless %adverbs{$_.ast.named} {
+        unless %SHARED_ALLOWED_ADVERBS{$_.ast.named} || %adverbs{$_.ast.named} {
             $/.CURSOR.panic("Adverb '" ~ $_.ast.named ~ "' not allowed on " ~ $what);
         }
         if $past {
