@@ -790,16 +790,7 @@ token variable {
         | <sigil> <?[<[]> <postcircumfix>
         | $<sigil>=['$'] $<desigilname>=[<[/_!]>]
         | <sigil> <?{ $*IN_DECL }>
-        | <?>
-            {
-                if $*QSIGIL {
-                    return ();
-                }
-                else {
-                    $/.CURSOR.panic("Non-declarative sigil is missing its name");
-                }
-            }
-
+        | <!{ $*QSIGIL }> <.panic("Non-declarative sigil is missing its name")>
         ]
     ]
     [ <?{ $<twigil> && $<twigil>[0] eq '.' }>
@@ -1795,11 +1786,12 @@ token infix:sym<%%>   { <sym>  <O('%multiplicative')> }
 token infix:sym<+&>   { <sym>  <O('%multiplicative')> }
 token infix:sym<~&>   { <sym>  <O('%multiplicative')> }
 token infix:sym<?&>   { <sym>  <O('%multiplicative')> }
+token infix:sym«+<»   { <sym> <!before '<'> <O('%multiplicative')> }
+token infix:sym«+>»   { <sym> <!before '>'> <O('%multiplicative')> }
 
 token infix:sym«<<» { <sym> \s <.obs('<< to do left shift', '+< or ~<')> }
 
 token infix:sym«>>» { <sym> \s <.obs('>> to do right shift', '+> or ~>')> }
-
 
 token infix:sym<+>    { <sym>  <O('%additive')> }
 token infix:sym<->    { <sym> <![>]> <O('%additive')> }
@@ -1807,8 +1799,6 @@ token infix:sym<+|>   { <sym>  <O('%additive')> }
 token infix:sym<+^>   { <sym>  <O('%additive')> }
 token infix:sym<~|>   { <sym>  <O('%additive')> }
 token infix:sym<~^>   { <sym>  <O('%additive')> }
-token infix:sym«+<»   { <sym> <!before '<'> <O('%additive')> }
-token infix:sym«+>»   { <sym> <!before '>'> <O('%additive')> }
 token infix:sym<?|>   { <sym>  <O('%additive')> }
 token infix:sym<?^>   { <sym>  <O('%additive')> }
 

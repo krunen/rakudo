@@ -1,0 +1,63 @@
+    Announce: Rakudo Perl 6 compiler development release #32 ("Pisa")
+
+On behalf of the Rakudo development team, I'm happy to announce the
+August 2010 release of Rakudo Perl #32 "Pisa".  Rakudo is an 
+implementation of Perl 6 on the Parrot Virtual Machine (see 
+<http://www.parrot.org>). The tarball for the August 2010 release
+is available from <http://github.com/rakudo/rakudo/downloads>.
+
+Please note: This announcement is not for the Rakudo Star distribution --
+it's announcing a new release of the compiler only.  For the latest
+Rakudo Star release, see <http://github.com/rakudo/star/downloads>.
+
+The Rakudo Perl compiler follows a monthly release cycle, with each release
+named after a Perl Mongers group. The August 2010 release is code named
+"Pisa" in recognition of its excellent work in organizing
+YAPC::EU 2010, "The Renaissance of Perl" [1,2].  Many Rakudo
+developers presented at the conference, and it was an excellent
+location for a hackathon and planning the next phases of Rakudo
+development.
+
+Some of the specific changes and improvements occurring with this
+release include:
+
+* Due to a specification change, Nil is now undefined, and no longer
+  simply an empty Parcel.
+
+* Many modifiers are now recognized on the outside of regexes and
+  substitutions, for example s:g:samecase/abc/defg/
+
+* Improvements to the performance of integer operations
+
+* Initial implementations of .pack and .unpack methods for the Buf class
+
+* Smartmatching against True or False is now an error. Most people who did
+  this really wanted to look at the return value of .so instead.
+
+For a more detailed list of changes see "docs/ChangeLog".
+
+The development team thanks all of our contributors and sponsors for
+making Rakudo Perl possible, as well as those people who worked on 
+Parrot, the Perl 6 test suite and the specification.
+
+The following people contributed to this release:
+Moritz Lenz, Patrick R. Michaud, Solomon Foster, Will "Coke" Coleda, 
+Carl Mäsak, Jonathan Worthington, Bruce Gray, Patrick Abi Salloum, 
+tylercurtis, Kyle Hasselbacher, Tadeusz Sośnierz, Jonathan Scott Duff, 
+Christopher J. Madsen, Kodi Arfer, Reini Urban, TimToady, felliott, 
+Matt Kraai, Jan Ingvoldstad, szabgab, madsen, Andy Lester, cosimo, 
+Fitz Elliott
+
+If you would like to contribute, see <http://rakudo.org/how-to-help>, ask on
+the perl6-compiler@perl.org mailing list, or ask on IRC #perl6 on freenode.
+
+The next release of Rakudo (#33) is scheduled for September 23, 2010.
+A list of the other planned release dates and code names for 2010 is
+available in the "docs/release_guide.pod" file.  In general, Rakudo
+development releases are scheduled to occur two days after each
+Parrot monthly release.  Parrot releases the third Tuesday of each month.
+
+Have fun!
+
+[1] http://www.perl.it/
+[2] http://conferences.yapceurope.org/ye2010/
