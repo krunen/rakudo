@@ -275,7 +275,7 @@ S05-capture/caps.t
 # S05-capture/named.t
 S05-capture/subrule.t
 S05-grammar/action-stubs.t
-# S05-grammar/inheritance.t
+S05-grammar/inheritance.t
 S05-grammar/methods.t
 # S05-grammar/namespace.t
 S05-grammar/parse_and_parsefile.t
@@ -493,6 +493,7 @@ S16-io/say-and-ref.t
 S16-io/getc.t
 # S16-unfiled/rebindstdhandles.t
 S16-unfiled/slurp.t
+S19-command-line/dash-e.t
 # S28-named-variables/cwd.t
 S28-named-variables/inc.t
 S29-any/cmp.t
