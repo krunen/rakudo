@@ -77,7 +77,7 @@ augment class Any {
     # And use the FIRST: phaser
     multi method min($by = { $^a cmp $^b}) {
         die "Unable to handle non-closure Ordering yet" unless $by ~~ Code;
-        my $cmp = $by.signature.params.elems == 2 ?? $by !! { $by($^a) cmp $by($^b) };
+        my $cmp = $by.arity == 2 ?? $by !! { $by($^a) cmp $by($^b) };
 
         my $min = +Inf;
         my $first-time = Bool::True;
@@ -87,7 +87,7 @@ augment class Any {
                 $first-time = Bool::False;
                 next;
             }
-            if $cmp($_, $min) == -1 {
+            if $cmp($_, $min) < 0 {
                 $min = $_;
             }
         }
@@ -98,7 +98,7 @@ augment class Any {
     # And use the FIRST: phaser
     multi method max($by = { $^a cmp $^b}) {
         die "Unable to handle non-closure Ordering yet" unless $by ~~ Code;
-        my $cmp = $by.signature.params.elems == 2 ?? $by !! { $by($^a) cmp $by($^b) };
+        my $cmp = $by.arity == 2 ?? $by !! { $by($^a) cmp $by($^b) };
 
         my $max = -Inf;
         my $first-time = Bool::True;
@@ -108,7 +108,7 @@ augment class Any {
                 $first-time = Bool::False;
                 next;
             }
-            if $cmp($_, $max) == 1 {
+            if $cmp($_, $max) > 0 {
                 $max = $_;
             }
         }
@@ -119,7 +119,7 @@ augment class Any {
     # And use the FIRST: phaser
     multi method minmax($by = { $^a cmp $^b}) {
         die "Unable to handle non-closure Ordering yet" unless $by ~~ Code;
-        my $cmp = $by.signature.params.elems == 2 ?? $by !! { $by($^a) cmp $by($^b) };
+        my $cmp = $by.arity == 2 ?? $by !! { $by($^a) cmp $by($^b) };
 
         my $min = +Inf;
         my $max = -Inf;
@@ -137,11 +137,11 @@ augment class Any {
                     $first-time = Bool::False;
                     next;
                 }
-                if $cmp($_.min, $min) == -1 {
+                if $cmp($_.min, $min) < 0 {
                     $min = $_;
                     $excludes_min = $_.excludes_min;
                 }
-                if $cmp($_.max, $max) == 1 {
+                if $cmp($_.max, $max) > 0 {
                     $max = $_;
                     $excludes_max = $_.excludes_max;
                 }
@@ -153,11 +153,11 @@ augment class Any {
                 $first-time = Bool::False;
                 next;
             }
-            if $cmp($_, $min) == -1 {
+            if $cmp($_, $min) < 0 {
                 $min = $_;
                 $excludes_min = Bool::False;
             }
-            if $cmp($_, $max) == 1 {
+            if $cmp($_, $max) > 0 {
                 $max = $_;
                 $excludes_max = Bool::False;
             }
@@ -344,7 +344,7 @@ augment class Any {
     our multi method postcircumfix:<{ }>($key) { self.at_key($key) }
 
     method at_key($key) {
-        fail "postcircumfix:<{ }> not defined for type {self.WHAT}"
+        fail "postcircumfix:<\{ \}> not defined for type {self.WHAT}"
             if self.defined;
         my $z = Any!butWHENCE(
                     { self.defined || &infix:<=>(self, Hash.new);

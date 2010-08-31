@@ -786,7 +786,7 @@ token variable {
     ||  [
         | <sigil> <twigil>? <desigilname>
         | <special_variable>
-        | <sigil> $<index>=[\d+]
+        | <sigil> $<index>=[\d+] [ <?{ $*IN_DECL}> <.panic: "Can't declare a numeric variable">]?
         | <sigil> <?[<[]> <postcircumfix>
         | $<sigil>=['$'] $<desigilname>=[<[/_!]>]
         | <sigil> <?{ $*IN_DECL }>
@@ -1154,6 +1154,7 @@ token regex_declarator:sym<regex> {
 
 rule regex_def {
     [
+      { $*IN_DECL := '' }
       <deflongname>?
       <.newpad>
       [ [ ':'?'(' <signature> ')'] | <trait> ]*
