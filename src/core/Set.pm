@@ -30,8 +30,13 @@ class Set does Associative {
     method elems() { +@!elems }
     method exists($elem) { contains(@!elems, $elem) }
 
+    method at_key($key) {
+        contains(@!elems, $key);
+    }
+
     method Num() { +self.elems }
     method Bool() { ?self.elems }
+    method hash() { hash @!elems Z=> True xx * }
 
     multi method union(@otherset) {
         self.new((@!elems, @otherset));
@@ -52,6 +57,13 @@ class Set does Associative {
     }
     multi method difference(@otherset) {
         self.new(grep { !contains(@otherset, $_) }, @!elems);
+    }
+
+    multi method symmetricdifference(%otherset) {
+        self.symmetricdifference(%otherset.keys);
+    }
+    multi method symmetricdifference(@otherset) {
+        self.difference(@otherset).union(Set.new(@otherset).difference(self));
     }
 
     multi method subsetorequal(@otherset) {
@@ -99,6 +111,11 @@ our multi sub  infix:<(-)>(Set $a, %b) { $a.difference(%b) }
 our multi sub  infix:<(-)>(    %a, %b) { Set.new( %a).difference(%b) }
 our multi sub  infix:<(-)>(    @a, %b) { Set.new(|@a).difference(%b) }
 our multi sub  infix:<(-)>(    @a, @b) { Set.new(|@a).difference(@b) }
+
+our multi sub  infix:<(^)>(Set $a, %b) { $a.symmetricdifference(%b) }
+our multi sub  infix:<(^)>(    %a, %b) { Set.new( %a).symmetricdifference(%b) }
+our multi sub  infix:<(^)>(    @a, %b) { Set.new(|@a).symmetricdifference(%b) }
+our multi sub  infix:<(^)>(    @a, @b) { Set.new(|@a).symmetricdifference(@b) }
 
 our multi sub infix:<(<=)>(Set $a, %b) { $a.subsetorequal(%b) }
 our multi sub infix:<(<=)>(    %a, %b) { Set.new( %a).subsetorequal(%b) }

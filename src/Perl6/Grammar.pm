@@ -1496,7 +1496,7 @@ token circumfix:sym<[ ]> { '[' <semilist> ']' }
 token circumfix:sym<ang> {
     <?[<]>
     [ <?before '<STDIN>' > <.obs('<STDIN>', '$*IN.lines')> ]?
-    [ <?before '<>' > <.obs('<>', 'lines() or ()')> ]?
+    [ <?before '<>' > <.obs('<>', 'lines() to read input, (\'\') to represent a null string or () to represent an empty list')> ]?
     <quote_EXPR: ':q', ':w'>
 }
 token circumfix:sym<« »> { <?[«]>  <quote_EXPR: ':qq', ':w'> }
@@ -1910,6 +1910,7 @@ token infix:sym<Z>    { <!before <sym> <infixish> > <sym>  <O('%list_infix')> }
 token infix:sym<X>    { <!before <sym> <infixish> > <sym>  <O('%list_infix')> }
 
 token infix:sym<...>  { <sym>  <O('%list_infix')> }
+token infix:sym<...^> { <sym>  <O('%list_infix')> }
 # token term:sym<...>   { <sym> <args>? <O(|%list_prefix)> }
 
 token infix:sym<=> {
