@@ -1976,6 +1976,14 @@ method term:sym<self>($/) {
     make PAST::Var.new( :name('self'), :node($/) );
 }
 
+method term:sym<now>($/) {
+    make PAST::Op.new( :name('&term:<now>'), :node($/) );
+}
+
+method term:sym<time>($/) {
+    make PAST::Op.new( :name('&term:<time>'), :node($/) );
+}
+
 method term:sym<rand>($/) {
     make PAST::Op.new(:name('&rand'), :node($/) );
 }
@@ -2683,7 +2691,7 @@ our %SUBST_ALLOWED_ADVERBS;
 our %SHARED_ALLOWED_ADVERBS;
 our %MATCH_ALLOWED_ADVERBS;
 INIT {
-    my $mods := 'i ignorecase s sigspace';
+    my $mods := 'i ignorecase s sigspace r ratchet';
     for pir::split__PSS(' ', $mods) {
         %SHARED_ALLOWED_ADVERBS{$_} := 1;
     }

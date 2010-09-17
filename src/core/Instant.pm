@@ -1,6 +1,6 @@
 use v6;
 
-class Instant {
+class Instant does Real {
     has Rat $.x;
       # A linear count of seconds since 1970-01-01T00:00:00Z, plus
       # tai-utc::initial-offset. Thus, $.x matches TAI from 1970
@@ -41,7 +41,10 @@ class Instant {
         ($.x - $offset, False)
     }
 
-    method Str() { self.perl }
+    method Str() {
+        'Instant:' ~ default-formatter
+            ::DateTime.new(self), :subseconds
+    }
 
     method perl() {
         sprintf '(DateTime.new(year => 1970).Instant + %s)',
@@ -101,7 +104,7 @@ our multi sub infix:<->(Instant $a, Real $b) {
     Instant.new: $a.x - $b;
 }
 
-our sub now {
+our sub term:<now>() {
     # FIXME: During a leap second, the returned value is one
     # second greater than it should be.
     Instant.from-posix: pir::time__n

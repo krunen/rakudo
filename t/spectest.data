@@ -76,6 +76,7 @@ S02-builtin_data_types/flattening.t
 S02-builtin_data_types/hash_ref.t
 S02-builtin_data_types/hash.t
 S02-builtin_data_types/infinity.t
+S02-builtin_data_types/instants-and-durations.t
 S02-builtin_data_types/lists.t
 S02-builtin_data_types/mixed_multi_dimensional.t
 S02-builtin_data_types/multi_dimensional_array.t
@@ -198,10 +199,6 @@ S03-operators/reduce-le1arg.t
 S03-operators/relational.t
 S03-operators/repeat.t
 S03-operators/scalar-assign.t
-S03-operators/series-arity0.t
-S03-operators/series-arity2ormore.t
-S03-operators/series-nonnumeric.t
-S03-operators/series.t
 S03-operators/short-circuit.t
 S03-operators/spaceship-and-containers.t
 S03-operators/spaceship.t
@@ -209,6 +206,10 @@ S03-operators/subscript-vs-lt.t
 S03-operators/ternary.t
 S03-operators/so.t
 S03-operators/value_equivalence.t
+S03-series/arity0.t
+S03-series/arity-2-or-more.t
+S03-series/basic.t
+S03-series/nonnumeric.t
 S03-smartmatch/any-any.t
 # S03-smartmatch/any-array-slice.t
 S03-smartmatch/any-array.t
@@ -544,6 +545,7 @@ S32-list/minmax.t
 S32-list/pick.t
 S32-list/reduce.t
 S32-list/reverse.t
+S32-list/roll.t
 S32-list/sort.t
 S32-list/uniq.t
 S32-num/abs.t
@@ -595,6 +597,7 @@ S32-str/words.t                                            # icu
 S32-temporal/calendar.t
 S32-temporal/Date.t
 S32-temporal/DateTime.t
+S32-temporal/DateTime-Instant-Duration.t
 S32-trig/e.t
 # S32-trig/pi.t
 S32-trig/sin.t                                             # long

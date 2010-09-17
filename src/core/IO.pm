@@ -170,6 +170,11 @@ class IO is Cool {
     multi method z() {
         $.e && $.s == 0;
     }
+
+    multi method created() { ::Instant.from-posix($.stat.createtime) }
+    multi method modified() { ::Instant.from-posix($.stat.modifytime) }
+    multi method accessed() { ::Instant.from-posix($.stat.accesstime) }
+    multi method changed() { ::Instant.from-posix($.stat.changetime) }
 }
 
 multi sub get(IO $filehandle = $*ARGFILES) { $filehandle.get };
@@ -214,13 +219,10 @@ sub close($handle) {
 }
 
 sub slurp($filename) {
-    ## Although it's tempting to delegate to IO.slurp above, Parrot
-    ## currently suffers a serious (25x) performance degradation when 
-    ## using readall() on an already-opened FileHandle.  Much faster
-    ## is to use readall($filename), which we do here. See TT #1749.
-    my $PIO = Q:PIR { %r = root_new['parrot';'FileHandle'] };
-    $PIO.encoding('utf8');
-    $PIO.readall($filename);
+    my $handle = open($filename, :r);
+    my $contents = $handle.slurp();
+    $handle.close();
+    $contents
 }
 
 sub unlink($filename) {
