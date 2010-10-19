@@ -460,6 +460,14 @@ token statement_control:sym<use> {
     <.ws>
 }
 
+rule statement_control:sym<require> {
+    <sym>
+    [
+    | <module_name> <EXPR>?
+    | <EXPR>
+    ]
+}
+
 token statement_control:sym<given> {
     <sym> :s <xblock(1)>
 }
@@ -551,6 +559,9 @@ token term:sym<new> {
 
 token fatarrow {
     <key=.identifier> \h* '=>' <.ws> <val=.EXPR('i=')>
+}
+token nofatarrow {
+    <!before \h* '=>'>
 }
 
 token colonpair {
@@ -1238,16 +1249,17 @@ token trait_mod:sym<handles> { <sym>:s <term> }
 
 proto token term { <...> }
 
-token term:sym<YOU_ARE_HERE> { <sym> <.nofun> }
+token term:sym<YOU_ARE_HERE> { <sym> <.nofun> <.nofatarrow> }
 
-token term:sym<self> { <sym> <.nofun> }
+token term:sym<self> { <sym> <.nofun> <.nofatarrow> }
 
-token term:sym<now> { <sym> <.nofun> }
+token term:sym<now> { <sym> <.nofun> <.nofatarrow> }
 
-token term:sym<time> { <sym> <.nofun> }
+token term:sym<time> { <sym> <.nofun> <.nofatarrow> }
 
 token term:sym<rand> {
     <sym> »
+    <.nofatarrow>
     [ <?before '('? \h* [\d|'$']> <.obs('rand(N)', 'N.rand or (1..N).pick')> ]?
     [ <?before '()'> <.obs('rand()', 'rand')> ]?
 }
@@ -1422,11 +1434,22 @@ token quote:sym<rx>   {
     ]
     <.cleanup_modifiers>
 }
+
+method match_with_adverb($v) {
+    my $s := Regex::Match.new();
+    $s.'!make'(PAST::Val.new(:value(1), :named('s')));
+    $s;
+}
+
 token quote:sym<m> {
-    <sym> >>
+    <sym> (s)?>>
     [ <quotepair> <.ws> ]*
     :my @*REGEX_ADVERBS;
-    { @*REGEX_ADVERBS := $<quotepair>; }
+    { @*REGEX_ADVERBS := $<quotepair>;
+      if $/[0] {
+          pir::push__vPP(@*REGEX_ADVERBS, $/.CURSOR.match_with_adverb('s'));
+      }
+    }
     <.setup_quotepairs>
     [
     | '/'<p6regex=.LANG('Regex','nibbler')>'/' <.old_rx_mods>?
@@ -1439,10 +1462,15 @@ token setup_quotepairs { '' }
 token cleanup_modifiers { '' }
 
 token quote:sym<s> {
-    <sym> >>
+    <sym> (s)? >>
     [ <quotepair> <.ws> ]*
     :my @*REGEX_ADVERBS;
-    { @*REGEX_ADVERBS := $<quotepair>; }
+    {
+        @*REGEX_ADVERBS := $<quotepair>;
+        if $/[0] {
+            pir::push__vPP(@*REGEX_ADVERBS, $/.CURSOR.match_with_adverb('s'));
+        }
+    }
     <.setup_quotepairs>
     [
     | '/' <p6regex=.LANG('Regex','nibbler')> <?[/]> <quote_EXPR: ':qq'> <.old_rx_mods>?
@@ -1799,7 +1827,11 @@ token infix:sym«<<» { <sym> \s <.obs('<< to do left shift', '+< or ~<')> }
 token infix:sym«>>» { <sym> \s <.obs('>> to do right shift', '+> or ~>')> }
 
 token infix:sym<+>    { <sym>  <O('%additive')> }
-token infix:sym<->    { <sym> <![>]> <O('%additive')> }
+token infix:sym<->    {
+   # We want to match in '$a >>->> $b' but not 'if $a -> { ... }'.
+    <sym> [<?before '>>'> || <!before '>'>]
+    <O('%additive')>
+}
 token infix:sym<+|>   { <sym>  <O('%additive')> }
 token infix:sym<+^>   { <sym>  <O('%additive')> }
 token infix:sym<~|>   { <sym>  <O('%additive')> }

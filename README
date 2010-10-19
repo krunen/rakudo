@@ -47,7 +47,7 @@ Rakudo Perl 6
         $ cd rakudo
         $ git pull
 
-    Once you have an updated copy of Rakudo, build it as follows:
+    Once you have an up-to-date copy of Rakudo, build it as follows:
 
         $ cd rakudo
         $ perl Configure.pl --gen-parrot
@@ -102,6 +102,9 @@ Rakudo Perl 6
     enters a small interactive mode that allows Perl 6 statements to be
     executed from the command line.
 
+    See the manual page ("docs/running.pod") for more about command-line
+    options.
+
    Build/install problems
     Occasionally, there may be problems when building/installing Rakudo.
     Make sure you have a backup of any custom changes you have done to the
@@ -127,18 +130,18 @@ Rakudo Perl 6
     simple test harness.
 
     Running "make spectest" will import the official Perl 6 test suite from
-    the Pugs repository <http://svn.pugscode.org/pugs/t/spec/> and run all
+    the "roast" repository <http://github.com/perl6/roast/> and run all
     of these tests that are currently known to pass.
 
     If you want to automatically submit the results of your spectest run to
     a central server, use "make spectest_smolder" instead. You need the
     Perl 5 module TAP::Harness::Archive and an active internet connection
     for that. The smoke results are collected at
-    <http://smolder.plusthree.com/app/public_projects/details/18>.
+    <http://smolder.parrot.org/app/projects/smoke_reports/5>
 
     At present we do not have any plans to directly store the official test
     suite as part of the Rakudo/Parrot repository, but will continue to
-    fetch it from the Pugs repository.
+    fetch it from the roast repository.
 
     You can also use "make" to run an individual test from the command line:
 

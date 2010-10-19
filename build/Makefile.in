@@ -257,6 +257,7 @@ CLEANUPS = \
   perl6$(O) \
   perl6_group.* \
   Test.pir \
+  rakudo_test_run.tar.gz \
   $(DYNEXT_DIR)/*$(LOAD_EXT) \
   src/gen/core.pm \
   src/gen/*.pir \
@@ -442,7 +443,7 @@ rakudo_test_run.tar.gz: testable t/spectest.data
 	- $(HARNESS_WITH_FUDGE_JOBS) --tests-from-file=t/spectest.data --archive rakudo_test_run.tar.gz --parrot_revision @revision@
 
 spectest_smolder: rakudo_test_run.tar.gz
-	curl -F architecture=@cpuarch@ -F platform=@osname@ -F revision=`git log -1 --pretty=format:%H` -F report_file=@rakudo_test_run.tar.gz -F username=parrot-autobot -F password=qa_rocks http://smolder.parrot.org/app/projects/process_add_report/5
+	./perl6 -e "run qqx[git log -1 --pretty=format:%H].fmt(qq[curl -F architecture=@cpuarch@ -F platform=@osname@ -F revision=%s -F report_file=@rakudo_test_run.tar.gz -F username=parrot-autobot -F password=qa_rocks http://smolder.parrot.org/app/projects/process_add_report/5])"
 
 testable : all spectest_checkout spectest_update
 
@@ -531,9 +532,8 @@ perlcritic:
 manifest:
 	echo MANIFEST >MANIFEST
 	git ls-files | $(PERL) -ne '/^\./ || print' >>MANIFEST
-	rm -rf t/spec
-	svn export "http://svn.pugscode.org/pugs/t/spec" t/spec
-	find t/spec -type f >>MANIFEST
+	cd t/spec && git clean -xdf
+	find t/spec -type f | grep -v '\.git' >>MANIFEST
 	sort -u -o MANIFEST MANIFEST
 
 release: manifest
