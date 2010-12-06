@@ -163,7 +163,10 @@ augment class Any {
                   :excludes_max($excludes_max));
     }
 
-    multi method pick($num is copy = 1) {
+    multi method pick($num is copy = 1, Bool :$replace) {
+        die "Option :replace is deprecated -- please use .roll"
+            if $replace;
+
         my @l = @.list.Seq;
 
         if ($num == 1) {
@@ -180,7 +183,10 @@ augment class Any {
         }
     }
 
-    multi method pick(Whatever) {
+    multi method pick(Whatever, Bool :$replace) {
+        die "Option :replace is deprecated -- please use .roll"
+            if $replace;
+
         self.pick(Inf);
     }
 
@@ -291,7 +297,7 @@ augment class Any {
         self[0..(self.elems-1)]
     }
 
-    our multi method postcircumfix:<[ ]>(&block) { self[&block(self.elems)]; }
+    our multi method postcircumfix:<[ ]>(&block) { self[&block(|(self.elems xx &block.count))]; }
 
     our multi method postcircumfix:<[ ]>(@pos) {
         my $result = pir::new__ps('ResizablePMCArray');
@@ -374,7 +380,9 @@ proto sub min($by, *@values) { @values.min($by); }
 proto sub max($by, *@values) { @values.max($by); }
 proto sub minmax($by, *@values) { @values.minmax($by); }
 proto sub uniq(@values) { @values.uniq; }
-proto sub pick ($num, *@values) { @values.pick($num); }
+proto sub pick ($num, Bool :$replace, *@values) {
+    @values.pick($num, :$replace);
+}
 proto sub roll ($num, *@values) { @values.roll($num); }
 proto sub map($mapper, *@values) { @values.map($mapper); }
 proto sub kv(@array) { @array.kv; }
@@ -382,6 +390,8 @@ proto sub keys(@array) { @array.keys; }
 proto sub values(@array) { @array.values; }
 proto sub pairs(@array) { @array.pairs; }
 proto sub rotate(@array, $n = 1) { @array.rotate($n); }
+proto sub elems(@array) { @array.elems; }
+multi sub elems(*@list) { @list.elems; }
 
 multi sub sort(*@values, :&by) {
     my &x = &by // (@values[0] ~~ Callable ?? @values.shift !! &infix:<cmp> );

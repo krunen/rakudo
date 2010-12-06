@@ -6,6 +6,8 @@ use strict;
 use warnings;
 use Getopt::Long;
 use Cwd;
+use lib "build/lib";
+use Parrot::CompareRevisions qw(compare_parrot_revs parse_parrot_revision_file);
 
 MAIN: {
     my %options;
@@ -18,13 +20,6 @@ MAIN: {
         exit(0);
     }
 
-    # Determine the revision of Parrot we require
-    open my $REQ, '<', "build/PARROT_REVISION"
-      or die "cannot open build/PARROT_REVISION: $!\n";
-    my ($reqsvn, $reqpar) = split(' ', <$REQ>);
-    $reqsvn += 0;
-    close $REQ;
-
     # Update/generate parrot build if needed
     if ($options{'gen-parrot'}) {
         my @opts    = @{ $options{'gen-parrot-option'} || [] };
@@ -35,7 +30,8 @@ MAIN: {
 
         print "Generating Parrot ...\n";
         print "@command\n\n";
-        system @command;
+        system(@command) == 0
+            or die "Error while executing @command; aborting\n";
     }
 
     # Get a list of parrot-configs to invoke.
@@ -56,20 +52,33 @@ MAIN: {
     # Get configuration information from parrot_config
     my %config = read_parrot_config(@parrot_config_exe);
 
+    # Determine the revision of Parrot we require
+    my ($req, $reqpar) = parse_parrot_revision_file;
+
     my $parrot_errors = '';
     if (!%config) { 
         $parrot_errors .= "Unable to locate parrot_config\n"; 
     }
-    elsif ($reqsvn > $config{'revision'} &&
-            ($reqpar eq '' || version_int($reqpar) > version_int($config{'VERSION'}))) {
-        $parrot_errors .= "Parrot revision r$reqsvn required (currently r$config{'revision'})\n";
+    else {
+        if ($config{git_describe}) {
+            # a parrot built from git
+            if (compare_parrot_revs($req, $config{'git_describe'}) > 0) {
+                $parrot_errors .= "Parrot revision $req required (currently $config{'git_describe'})\n";
+            }
+        }
+        else {
+            # not built from a git repo - let's assume it's a release
+            if (version_int($reqpar) > version_int($config{'VERSION'})) {
+                $parrot_errors .= "Parrot version $reqpar required (currently $config{VERSION})\n";
+            }
+        }
     }
 
     if ($parrot_errors) {
         die <<"END";
 ===SORRY!===
 $parrot_errors
-To automatically checkout (svn) and build a copy of parrot r$reqsvn,
+To automatically clone (git) and build a copy of parrot $req,
 try re-running Configure.pl with the '--gen-parrot' option.
 Or, use the '--parrot-config' option to explicitly specify
 the location of parrot_config to be used to build Rakudo Perl.

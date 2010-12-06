@@ -1,8 +1,10 @@
 augment class Bool does Abstraction {
-    method Bool { self }
+    method Bool { self ?? True !! False }
     method ACCEPTS($topic) { self }
 
     method perl() { self ?? "Bool::True" !! "Bool::False"; }
+
+    method Numeric() { self ?? 1 !! 0 }
 
     method Str() { $.perl() }
 

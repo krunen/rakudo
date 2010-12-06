@@ -917,7 +917,9 @@ method package_def($/, $key?) {
         if $<def_module_name> {
             my $name := ~$<def_module_name>[0]<longname><name>;
             if $name ne '::' {
-                $/.CURSOR.add_name($name, 1);
+                if $*SCOPE ne 'anon' {
+                    $/.CURSOR.add_name($name, 1);
+                }
                 $package.name($name);
             }
             if $<def_module_name>[0]<signature> {
@@ -2790,6 +2792,7 @@ method cleanup_modifiers($/) {
 method quote:sym<apos>($/) { make $<quote_EXPR>.ast; }
 method quote:sym<dblq>($/) { make $<quote_EXPR>.ast; }
 method quote:sym<qq>($/)   { make $<quote_EXPR>.ast; }
+method quote:sym<qw>($/)   { make $<quote_EXPR>.ast; }
 method quote:sym<q>($/)    { make $<quote_EXPR>.ast; }
 method quote:sym<Q>($/)    { make $<quote_EXPR>.ast; }
 method quote:sym<Q:PIR>($/) {
@@ -3515,27 +3518,34 @@ sub capture_or_parcel($args, $name) {
 # to curry for now; in the future, we will inspect the multi signatures
 # of the op to decide, or likely store things in this hash from that
 # introspection and keep it as a quick cache.
+
+# not_curried = 1 means do not curry Whatever, but do curry WhateverCode
+# not_curried = 2 means do not curry either.
+
 our %not_curried;
 INIT {
-    %not_curried{'&infix:<...>'}  := 1;
+    %not_curried{'&infix:<...>'}  := 2;
+    %not_curried{'&infix:<...^>'} := 2;
     %not_curried{'&infix:<..>'}   := 1;
     %not_curried{'&infix:<..^>'}  := 1;
     %not_curried{'&infix:<^..>'}  := 1;
     %not_curried{'&infix:<^..^>'} := 1;
-    %not_curried{'&prefix:<^>'}   := 1;
+    %not_curried{'&prefix:<^>'}   := 2;
     %not_curried{'&infix:<xx>'}   := 1;
-    %not_curried{'&infix:<~~>'}   := 1;
-    %not_curried{'&infix:<=>'}    := 1;
-    %not_curried{'&infix:<:=>'}   := 1;
-    %not_curried{'WHAT'}          := 1;
-    %not_curried{'HOW'}           := 1;
-    %not_curried{'WHO'}           := 1;
-    %not_curried{'WHERE'}         := 1;
+    %not_curried{'&infix:<~~>'}   := 2;
+    %not_curried{'&infix:<=>'}    := 2;
+    %not_curried{'&infix:<:=>'}   := 2;
+    %not_curried{'WHAT'}          := 2;
+    %not_curried{'HOW'}           := 2;
+    %not_curried{'WHO'}           := 2;
+    %not_curried{'WHERE'}         := 2;
 }
 sub whatever_curry($/, $past, $upto_arity) {
-    if $past.isa(PAST::Op) && !%not_curried{$past.name} && $past<pasttype> ne 'call' {
-        if ($upto_arity >= 1 && ($past[0].returns eq 'Whatever' || $past[0].returns eq 'WhateverCode'))
-        || ($upto_arity == 2 && ($past[1].returns eq 'Whatever' || $past[1].returns eq 'WhateverCode')) {
+    if $past.isa(PAST::Op) && %not_curried{$past.name} != 2 && $past<pasttype> ne 'call' {
+        if ($upto_arity >= 1 && (($past[0].returns eq 'Whatever' && !%not_curried{$past.name})
+                                 || $past[0].returns eq 'WhateverCode'))
+        || ($upto_arity == 2 && (($past[1].returns eq 'Whatever' && !%not_curried{$past.name})
+                                 || $past[1].returns eq 'WhateverCode')) {
 
             my $counter := 0;
             my $sig := Perl6::Compiler::Signature.new();
@@ -3566,9 +3576,14 @@ sub whatever_curry($/, $past, $upto_arity) {
 
                 if $right.returns eq 'WhateverCode' {
                     $right_new := PAST::Op.new( :pasttype('call'), :node($/), $right);
-                    my $total_arity := $counter + $right.arity;
-                    while $counter < $total_arity {
+                    # Next block is a bit weird, because $counter + $right.arity was
+                    # consistently failing.  So we create a new variable as a temporary
+                    # counter.
+                    my $right_arity := $right.arity;
+                    my $right_counter := 0;
+                    while $right_counter < $right_arity {
                         $counter++;
+                        $right_counter++;
                         $right_new.push(PAST::Var.new( :name('$x' ~ $counter), :scope('lexical') ));
                         $sig.add_parameter(Perl6::Compiler::Parameter.new(:var_name('$x' ~ $counter)));
                     }

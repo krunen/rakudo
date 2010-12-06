@@ -45,7 +45,7 @@ our multi reduce(&op, *@list) {
     @list.reduce(&op)
 }
 
-our multi sub hyper(&op, @lhs, @rhs, :$dwim-left, :$dwim-right) {
+our multi sub hyper(&op, @lhs, @rhs, :$dwim-left, :$dwim-right, :$path = '') {
     my sub repeating-array(@a) {
         gather loop {
             my $prev-a;
@@ -61,7 +61,11 @@ our multi sub hyper(&op, @lhs, @rhs, :$dwim-left, :$dwim-right) {
     my $length;
     if !$dwim-left && !$dwim-right {
         if +@lhs != +@rhs {
-            die "Sorry, sides are of uneven length and not dwimmy.";
+            my $msg = "Sorry, lists on both sides of non-dwimmy hyperop are not of same length:\n"
+                ~ "    left:  @lhs.elems() elements\n"
+                ~ "    right: @rhs.elems() elements\n";
+            $msg ~= "At .$path" if $path;
+            die $msg;
         }
         $length = +@lhs;
     } elsif !$dwim-left {
@@ -84,9 +88,9 @@ our multi sub hyper(&op, @lhs, @rhs, :$dwim-left, :$dwim-right) {
     my @result;
     for ^$length -> $i {
         if Associative.ACCEPTS(@lhs[$i]) || Associative.ACCEPTS(@rhs[$i]) {
-            @result.push(hyper(&op, @lhs[$i], @rhs[$i], :$dwim-left, :$dwim-right).item);
+            @result.push(hyper(&op, @lhs[$i], @rhs[$i], :$dwim-left, :$dwim-right, path => $path ~ '[' ~ $i ~ ']').item);
         } elsif Iterable.ACCEPTS(@lhs[$i]) || Iterable.ACCEPTS(@rhs[$i]) {
-            @result.push([hyper(&op, @lhs[$i].list, @rhs[$i].list, :$dwim-left, :$dwim-right)]);
+            @result.push([hyper(&op, @lhs[$i].list, @rhs[$i].list, :$dwim-left, :$dwim-right, path => $path ~ '[' ~ $i ~ ']')]);
         } else {
             @result.push(op(@lhs[$i], @rhs[$i]));
         }
@@ -94,53 +98,87 @@ our multi sub hyper(&op, @lhs, @rhs, :$dwim-left, :$dwim-right) {
     @result
 }
 
-our multi sub hyper(&op, $lhs, $rhs, :$dwim-left, :$dwim-right) {
-    hyper(&op, $lhs.list, $rhs.list, :$dwim-left, :$dwim-right);
+our multi sub hyper(&op, ::T1 $lhs, ::T2 $rhs, :$dwim-left, :$dwim-right, :$path = '') {
+    my $lhs-list = $lhs.list;
+    my $rhs-list = $rhs.list;
+    my $unordered = Any;
+    if $lhs-list.elems != 1 and $lhs ~~ Iterable and $lhs !~~ Positional {
+        $unordered = T1;
+        $rhs-list.elems == 1 or die 'When one argument of a hyperoperator is an unordered data structure, the other must be scalar';
+    } elsif $rhs-list.elems != 1 and $rhs ~~ Iterable and $rhs !~~ Positional {
+        $unordered = T2;
+        $lhs-list.elems == 1 or die 'When one argument of a hyperoperator is an unordered data structure, the other must be scalar';
+    }
+    my @result = hyper(&op, $lhs-list, $rhs-list, :$dwim-left, :$dwim-right, :$path);
+    # If one of the arguments is unordered, we cast our return
+    # value to be of its type, so set(1, 2, 3) »+» will return a Set
+    # instead of an ordered type.
+    $unordered !=== Any ?? $unordered.new(@result) !! @result
 }
 
-our multi sub hyper(&op, %lhs, %rhs, :$dwim-left, :$dwim-right) {
+role Hash { ... }
+
+our multi sub hyper(&op, Hash $lhs, Hash $rhs, :$dwim-left, :$dwim-right, :$path = '') {
     my %result;
     my @keys;
     if $dwim-left && $dwim-right {
-        @keys = %lhs.keys.grep({ %rhs.exists($_) });
+        @keys = $lhs.keys.grep({ $rhs.exists($_) });
     } elsif $dwim-left {
-        @keys = %rhs.keys;
+        @keys = $rhs.keys;
     } elsif $dwim-right {
-        @keys = %lhs.keys;
+        @keys = $lhs.keys;
     } else {
         # .eagers should not be necessary in next line, but are
         # needed ATM because of the gather / take bug.
-        @keys = (%lhs.keys.eager, %rhs.keys.eager).uniq;
+        @keys = ($lhs.keys.eager, $rhs.keys.eager).uniq;
     }
 
     for @keys -> $key {
-        %result{$key} = &op(%lhs{$key}, %rhs{$key});
+        if Associative.ACCEPTS($lhs{$key}) || Associative.ACCEPTS($rhs{$key}) {
+            %result{$key} = hyper(&op, $lhs{$key}, $rhs{$key}, :$dwim-left, :$dwim-right, path => $path ~ '{' ~ $key.perl ~ '}').item;
+        } elsif Iterable.ACCEPTS($lhs{$key}) || Iterable.ACCEPTS($rhs{$key}) {
+            %result{$key} = hyper(&op, $lhs{$key}.list, $rhs{$key}.list, :$dwim-left, :$dwim-right, path => $path ~ '{' ~ $key.perl ~ '}');
+        } else {
+            %result{$key} = op($lhs{$key}, $rhs{$key});
+        }
     }
     %result;
 }
 
-our multi sub hyper(&op, %arg) {
+our multi sub hyper(&op, Hash $arg) {
     my %result;
-    for %arg.keys -> $key {
-        %result{$key} = &op(%arg{$key});
+    for $arg.keys -> $key {
+        %result{$key} = &op($arg{$key});
     }
     %result;
 }
 
-our multi sub hyper(&op, %lhs, $rhs, :$dwim-left, :$dwim-right) {
-    die "Sorry, right side is too short and not dwimmy." unless $dwim-right;
+our multi sub hyper(&op, Hash $lhs, $rhs, :$dwim-left, :$dwim-right, :$path) {
+    unless ($dwim-right) {
+        my $msg = "Sorry, structures on both sides of non-dwimmy hyperop are not of same shape:\n"
+            ~ "    left:  Hash\n"
+            ~ "    right: $rhs.WHAT.perl()\n";
+        $msg ~= "At .$path" if $path;
+        die $msg;
+    }
     my %result;
-    for %lhs.keys -> $key {
-        %result{$key} = &op(%lhs{$key}, $rhs);
+    for $lhs.keys -> $key {
+        %result{$key} = &op($lhs{$key}, $rhs);
     }
     %result;
 }
 
-our multi sub hyper(&op, $lhs, %rhs, :$dwim-left, :$dwim-right) {
-    die "Sorry, left side is too short and not dwimmy." unless $dwim-left;
+our multi sub hyper(&op, $lhs, Hash $rhs, :$dwim-left, :$dwim-right, :$path) {
+    unless ($dwim-left) {
+        my $msg = "Sorry, structures on both sides of non-dwimmy hyperop are not of same shape:\n"
+            ~ "    left:  $lhs.WHAT.perl()\n"
+            ~ "    right: Hash\n";
+        $msg ~= "At .$path" if $path;
+        die $msg;
+    }
     my %result;
-    for %rhs.keys -> $key {
-        %result{$key} = &op($lhs, %rhs{$key});
+    for $rhs.keys -> $key {
+        %result{$key} = &op($lhs, $rhs{$key});
     }
     %result;
 }
@@ -156,8 +194,9 @@ our multi sub hyper(&op, @arg) {
     @result
 }
 
-our multi sub hyper(&op, $arg) {
-    hyper(&op, $arg.list)
+our multi sub hyper(&op, ::T $arg) {
+    my @result = hyper(&op, $arg.list);
+    T ~~ Iterable && T !~~ Positional ?? T.new(@result) !! @result
 }
 
 our multi sub reducewith(&op, *@args,
