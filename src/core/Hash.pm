@@ -74,6 +74,7 @@ role Hash is EnumMap {
         if $has_previous {
             warn "Trailing item in Hash.push";
         }
+        return %(self);
     }
 
     # push a value onto a hash Objectitem, constructing an array if necessary
@@ -91,6 +92,10 @@ role Hash is EnumMap {
 
     method list() {
         return self.pairs;
+    }
+
+    method hash() {
+        return self;
     }
 
     multi method sort(&by = &infix:<cmp>) {

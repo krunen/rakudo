@@ -77,6 +77,7 @@ augment class Any {
         my $min = +Inf;
         my $first-time = Bool::True;
         for @.list {
+            .defined or next;
             if $first-time {
                 $min = $_;
                 $first-time = Bool::False;
@@ -98,6 +99,7 @@ augment class Any {
         my $max = -Inf;
         my $first-time = Bool::True;
         for @.list {
+            .defined or next;
             if $first-time {
                 $max = $_;
                 $first-time = Bool::False;
@@ -123,6 +125,8 @@ augment class Any {
 
         my $first-time = Bool::True;
         for @.list {
+            .defined or next;
+
             when Range {
                 if $first-time {
                     $min = $_.min;
@@ -210,10 +214,10 @@ augment class Any {
         self.roll(Inf);
     }
 
-    multi method classify($test) {
+    multi method classify(&test) {
         my %result;
         for @.list {
-            my $k = $_ ~~ $test;
+            my $k = test $_;
             %result{$k} //= [];
             %result{$k}.push: $_;
         }
@@ -376,10 +380,12 @@ multi sub reverse(*@v) { @v.reverse; }
 proto sub end(@array) { @array.end; }
 proto sub grep(Mu $test, *@values) { @values.grep($test); }
 proto sub first(Mu $test, @values) { @values.first($test); }
+multi sub first(Mu $test, *@values) { @values.first($test); }
 proto sub min($by, *@values) { @values.min($by); }
 proto sub max($by, *@values) { @values.max($by); }
 proto sub minmax($by, *@values) { @values.minmax($by); }
 proto sub uniq(@values) { @values.uniq; }
+multi sub uniq(*@values) { @values.uniq; }
 proto sub pick ($num, Bool :$replace, *@values) {
     @values.pick($num, :$replace);
 }

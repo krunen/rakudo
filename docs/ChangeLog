@@ -1,3 +1,22 @@
+New in 2011.01 release
++ faster subroutine calls (type cache)
++ 'handles RoleName' now works
++ Test.pm: s/done_testing/done/
++ non-spec debugging pragma Devel::Trace
++ improved parsing of keyword boundaries
+
+New in 2010.12 release
++ new .trans algorithm
++ fixed $*PID on MacOS X
++ don't register names of anon types
++ configuration improvements
++ updated Any functions
++ fix $*IN_DECL leakage
++ implemented Hash.hash
++ Temporal updates
++ Buf.decode fixed
++ open() fixed for binary flag
+
 New in 2010.11 release
 + now works with parrot on git
 + implemented qw//

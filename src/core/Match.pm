@@ -190,6 +190,15 @@ class Match is Regex::Match is Cool does Positional does Associative {
             take "$sp  ]";
         }
     }
+
+    method pretty ($d = 0) {
+        my $s = ' ' x ($d + 1);
+        my $r = "=> <{self}>\n";
+        for @.caps {
+            $r ~= $s ~ (.key // '?') ~ ' ' ~ .value.pretty($d + 1)
+        }
+        $r;
+    }
 }
 
 multi sub infix:<eqv>(Match $a, Match $b) {
@@ -200,5 +209,12 @@ multi sub infix:<eqv>(Match $a, Match $b) {
     && $a.list eqv $b.list
     && $a.hash eqv $b.hash
 }
+
+# A helper function used by Perl6/Actions.pm. The real point is to
+# ensure that Parrot objects returned by .ACCEPTS are converted to
+# Bools.
+our multi coerce-smartmatch-result(Mu $x,    1) { ! $x }
+our multi coerce-smartmatch-result(Mu $x,    0) { ? $x }
+our multi coerce-smartmatch-result(Match $x, 0) {   $x }
 
 # vim: ft=perl6

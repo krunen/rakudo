@@ -34,15 +34,18 @@ part of monthly Parrot releases.
   2010-09-23   Rakudo #33 "Milan"              (moritz)
   2010-10-21   Rakudo #34 "Paris"              (duff)
   2010-11-18   Rakudo #35 "Melbourne"          (masak)
+  2010-12-23   Rakudo #36 "New York"           (smash)
 
 =head2 Planned 2010 releases
 
 Dates are based on Parrot's expected release schedule.
 
-  2010-12-23   Rakudo #36                      (smash)
-  2011-01-20   Rakudo #37                      -vacant-
+  2011-01-20   Rakudo #37                      (tadzik)
   2011-02-17   Rakudo #38                      -vacant-
   2011-03-17   Rakudo #39                      -vacant-
+  2011-04-21   Rakudo #40                      -vacant-
+  2011-05-19   Rakudo #41                      -vacant-
+  2011-06-23   Rakudo #42                      -vacant-
 
 =head2 Suggested .pm group names for future releases
 
@@ -113,6 +116,20 @@ the immediately prior release of Parrot.
 The short period following the Parrot release until the
 Rakudo release is generally intended for fixing bugs,
 updating documentation, and so on.
+
+=item 3.
+
+Update Rakudo's leap-second tables:
+
+  $ perl tools/update-tai-utc.pl src/core/tai-utc.pm
+
+If a new leap second has been announced, F<tai-utc.pm> will be modified, so
+commit the new version:
+
+  $ git commit src/core/tai-utc.pm
+
+But probably there won't be any new leap seconds, in which case the file
+will be unchanged.
 
 =item 4.
 

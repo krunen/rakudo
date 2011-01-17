@@ -3,8 +3,10 @@ class Perl6::Actions is HLL::Actions;
 our @BLOCK;
 our @PACKAGE;
 our $TRUE;
+our @MAX_PERL_VERSION;
 
 our $FORBID_PIR;
+our $STATEMENT_PRINT;
 
 INIT {
     # initialize @BLOCK and @PACKAGE
@@ -18,7 +20,12 @@ INIT {
     %valflags<Perl6Str> := 'e';
     %valflags<Str>      := 'e';
 
+    # If, e.g., we support Perl up to v6.1.2, set
+    # @MAX_PERL_VERSION to [6, 1, 2].
+    @MAX_PERL_VERSION[0] := 6;
+
     $FORBID_PIR := 0;
+    $STATEMENT_PRINT := 0;
 }
 
 sub xblock_immediate($xblock) {
@@ -255,6 +262,15 @@ method statement($/, $key?) {
     }
     elsif $<statement_control> { $past := $<statement_control>.ast; }
     else { $past := 0; }
+    if $STATEMENT_PRINT && $past {
+        $past := PAST::Stmts.new(:node($/),
+            PAST::Op.new(
+                :pirop<say__vs>,
+                PAST::Val.new(:value(~$/))
+            ),
+            $past
+        );
+    }
     make $past;
 }
 
@@ -478,7 +494,18 @@ sub import($/) {
 
 method statement_control:sym<use>($/) {
     my $past := PAST::Stmts.new( :node($/) );
-    if $<module_name> {
+    if $<version> {
+        my $i := -1;
+        for $<version><vnum> {
+            ++$i;
+            if $_ ne '*' && $_ < @MAX_PERL_VERSION[$i] {
+                last;
+            } elsif $_ > @MAX_PERL_VERSION[$i] {
+                my $mpv := pir::join('.', @MAX_PERL_VERSION);
+                $/.CURSOR.panic("Perl $<version> required--this is only v$mpv")
+            }
+        }
+    } elsif $<module_name> {
         if ~$<module_name> eq 'fatal' {
             declare_variable($/, PAST::Stmts.new(), '$', '*', 'FATAL', 0);
             $past := PAST::Op.new(
@@ -505,6 +532,9 @@ method statement_control:sym<use>($/) {
         }
         elsif ~$<module_name> eq 'FORBID_PIR' {
             $FORBID_PIR := 1;
+        }
+        elsif ~$<module_name> eq 'Devel::Trace' {
+            $STATEMENT_PRINT := 1;
         }
         else {
             need($<module_name>);
@@ -2372,7 +2402,7 @@ sub make_smartmatch($/, $negated) {
     my $rhs := $/[1].ast;
     my $old_topic_var := $lhs.unique('old_topic');
     my $result_var := $lhs.unique('sm_result');
-    my $past := PAST::Op.new(
+    PAST::Op.new(
         :pasttype('stmts'),
 
         # Stash original $_.
@@ -2391,9 +2421,12 @@ sub make_smartmatch($/, $negated) {
         # return value to a result variable.
         PAST::Op.new( :pasttype('bind'),
             PAST::Var.new( :name($result_var), :scope('lexical'), :isdecl(1) ),
-            PAST::Op.new( :pasttype('callmethod'), :name('ACCEPTS'),
-                $rhs,
-                PAST::Var.new( :name('$_'), :scope('lexical') )
+            PAST::Op.new( :pasttype('call'), :name('&coerce-smartmatch-result'),
+                PAST::Op.new( :pasttype('callmethod'), :name('ACCEPTS'),
+                    $rhs,
+                    PAST::Var.new( :name('$_'), :scope('lexical') )
+                ),
+                $negated
             )
         ),
 
@@ -2406,14 +2439,6 @@ sub make_smartmatch($/, $negated) {
         # And finally evaluate to the smart-match result.
         PAST::Var.new( :name($result_var), :scope('lexical') )
     );
-    if $negated {
-        $past := PAST::Op.new(
-            :pasttype('call'),
-            :name('&prefix:<!>'),
-            $past
-        );
-    }
-    $past;
 }
 
 method prefixish($/) {
@@ -2547,8 +2572,13 @@ method postfixish($/) {
     if $<postfix_prefix_meta_operator> {
         my $past := $<OPER>.ast;
         if $past && $past.isa(PAST::Op) && $past.pasttype() eq 'call' {
-            $past.unshift($past.name());
-            $past.name('!dispatch_dispatcher_parallel');
+            if ($past.name() eq '') {
+                $past.name('!dispatch_invocation_parallel');
+            }
+            else {
+                $past.unshift($past.name());
+                $past.name('!dispatch_dispatcher_parallel');
+            }
         }
         elsif $past && $past.isa(PAST::Op) && $past.pasttype() eq 'callmethod' {
             $past.unshift($past.name());
@@ -3541,7 +3571,8 @@ INIT {
     %not_curried{'WHERE'}         := 2;
 }
 sub whatever_curry($/, $past, $upto_arity) {
-    if $past.isa(PAST::Op) && %not_curried{$past.name} != 2 && $past<pasttype> ne 'call' {
+    if $past.isa(PAST::Op) && %not_curried{$past.name} != 2
+                           && ($past<pasttype> ne 'call' || pir::index($past.name, '&infix:') == 0) {
         if ($upto_arity >= 1 && (($past[0].returns eq 'Whatever' && !%not_curried{$past.name})
                                  || $past[0].returns eq 'WhateverCode'))
         || ($upto_arity == 2 && (($past[1].returns eq 'Whatever' && !%not_curried{$past.name})

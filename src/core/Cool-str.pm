@@ -55,9 +55,10 @@ augment class Cool {
     }
 
     multi method comb(Regex $matcher = /./, $limit = *, :$match) {
+        my $self-string = ~self;
         my $c = 0;
         my $l = $limit ~~ ::Whatever ?? Inf !! $limit;
-        gather while $l > 0 && (my $m = self.match($matcher, :c($c))) {
+        gather while $l > 0 && (my $m = $self-string.match($matcher, :c($c))) {
             if $match {
                 my $m-clone = $m;
                 take $m-clone;
@@ -407,14 +408,16 @@ augment class Cool {
     }
 
     our multi method ord() {
-        given self.chars {
-            when 0  { fail('Can not take ord of empty string'); }
-            when 1  { pir::box__PI(pir::ord__IS(self)); }
-            default {
-                        gather for self.comb {
-                            take pir::box__PI(pir::ord__IS($_))
-                        }
-                    }
+        if self eq "" {
+            fail('Can not take ord of empty string');
+        }
+
+        pir::box__PI(pir::ord__IS(self));
+    }
+
+    our multi method ords() {
+        gather for self.comb {
+            take $_.ord;
         }
     }
 
@@ -492,7 +495,7 @@ augment class Cool {
         try {
             $result = pir::sprintf__SSP(~self, (|@args)!PARROT_POSITIONALS);
         }
-        $! ?? fail( "Insufficient arguments supplied to sprintf") !! $result
+        $! ?? die 'Not enough arguments supplied for the given format string' !! $result
     }
 
     method IO() {
@@ -500,13 +503,8 @@ augment class Cool {
     }
 }
 
-multi sub ord($string) {
-    $string.ord;
-}
-
-proto ord($string) {
-    $string.ord;
-}
+proto ord($string) { $string.ord; }
+proto ords($string) { $string.ords; }
 
 our Str proto sub infix:<x>($str, $n) {
     $n > 0 ?? ~(pir::repeat__SSI($str, $n)) !!  ''

@@ -143,7 +143,7 @@ multi sub isa_ok(Mu $var, Mu $type, $msg) is export {
         or diag('Actual type: ' ~ $var.WHAT);
 }
 
-multi sub dies_ok($closure, $reason) is export {
+multi sub dies_ok(Callable $closure, $reason) is export {
     try {
         $closure();
     }
@@ -153,17 +153,17 @@ multi sub dies_ok($closure, $reason) is export {
     proclaim(defined($!), $reason);
     #proclaim((defined $! && "$!" !~~ / ^ 'Null PMC access ' /), $reason);
 }
-multi sub dies_ok($closure) is export {
+multi sub dies_ok(Callable $closure) is export {
     dies_ok($closure, '');
 }
 
-multi sub lives_ok($closure, $reason) is export {
+multi sub lives_ok(Callable $closure, $reason) is export {
     try {
         $closure();
     }
     proclaim((not defined $!), $reason);
 }
-multi sub lives_ok($closure) is export {
+multi sub lives_ok(Callable $closure) is export {
     lives_ok($closure, '');
 }
 
@@ -240,6 +240,10 @@ sub proclaim($cond, $desc) {
 }
 
 sub done_testing() is export {
+    die "done_testing() has been renamed to done(), please change your test code";
+}
+
+sub done() is export {
     our $done_testing_has_been_run;
 
     $done_testing_has_been_run = 1;
@@ -261,10 +265,10 @@ END {
     our $done_testing_has_been_run;
     our $no_plan;
 
-    ## In planned mode, people don't necessarily expect to have to call done_testing
+    ## In planned mode, people don't necessarily expect to have to call done
     ## So call it for them if they didn't
     if !$done_testing_has_been_run && !$no_plan {
-        done_testing;
+        done;
     }
 }
 

@@ -28,6 +28,33 @@ dispatcher for each thingy we're dispatching over.
 .end
 
 
+=item !dispatch_invocation_parallel
+
+(TBD)
+
+=cut
+
+.sub '!dispatch_invocation_parallel'
+    .param pmc invocanty
+    .param pmc pos_args        :slurpy
+    .param pmc named_args      :slurpy :named
+
+    .local pmc it, results
+    results = new ['ResizablePMCArray']
+    invocanty = invocanty.'flat'()
+    it = iter invocanty
+  it_loop:
+    unless it goto it_loop_done
+    $P0 = shift it
+    $P0 = $P0(pos_args :flat, named_args :flat :named)
+    push results, $P0
+    goto it_loop
+  it_loop_done:
+
+    .tailcall '&infix:<,>'(results :flat)
+.end
+
+
 =item !dispatch_method_parallel
 
 Does a parallel method dispatch. Invokes the method for each thing in the
@@ -219,11 +246,11 @@ there are none.
     .return (result_list)
   failure:
     $S0 = "Could not invoke method '"
-    concat $S0, method_name
-    concat $S0, "' on invocant of type '"
+    $S0 = concat $S0, method_name
+    $S0 = concat $S0, "' on invocant of type '"
     $S1 = invocant.'WHAT'()
-    concat $S0, $S1
-    concat $S0, "'"
+    $S0 = concat $S0, $S1
+    $S0 = concat $S0, "'"
     '&die'($S0)
 .end
 
@@ -253,11 +280,11 @@ Helper for handling calls of the form .Foo::bar.
     .tailcall $P0(invocant, pos_args :flat, named_args :flat :named)
   not_allowed:
     $S0 = "Can not call method '"
-    concat $S0, name
-    concat $S0, "' on unrelated type '"
+    $S0 = concat $S0, name
+    $S0 = concat $S0, "' on unrelated type '"
     $S1 = target.'perl'()
-    concat $S0, $S1
-    concat $S0, "'"
+    $S0 = concat $S0, $S1
+    $S0 = concat $S0, "'"
     '&die'($S0)
 .end
 
