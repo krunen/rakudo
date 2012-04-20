@@ -1,55 +1,59 @@
-class CallFrame {
-    has $!interp;
-    has $!level = 2;
-    method !annotations {
-        my $i = $!interp;
-        my $l = $!level;
-        CREATE_HASH_FROM_LOW_LEVEL Q:PIR {
+my class CallFrame {
+    has Mu $!interp;
+    has Int $.level;
+    has %.annotations;
+    has %.my;
+    method new(Int :$level = 0) {
+        my $l = $level + 1;
+        my Mu $interp := pir::getinterp__P;
+        my $self := nqp::create(CallFrame);
+        nqp::bindattr($self, CallFrame, '$!interp', pir::getinterp__P);
+        nqp::bindattr($self, CallFrame, '%!annotations',
+            Q:PIR {
+                .local pmc interp, annon
+                .local int level
+
+                interp = find_lex '$interp'
+                $P0    = find_lex '$l'
+                level  = repr_unbox_int $P0
+
+                annon  = interp["annotations"; level]
+                %r     = perl6ize_type annon
+            }
+        );
+
+        my Mu $lexpad := Q:PIR {
             .local pmc interp
             .local int level
 
-            interp = find_lex '$i'
-            $P0    = find_lex '$l'
-            level  = $P0
-
-            %r     = interp["annotations"; level]
-        }
-    }
-
-    method line() {
-        self!annotations()<line>;
-    }
-    method file() {
-        self!annotations()<file>;
-    }
-
-    method callframe(Int $level = 0) {
-        CallFrame.new(:interp($!interp), :level($!level + $level));
-    }
-
-    method my() {
-        my $i = $!interp;
-        my $l = $!level;
-        my $pad = Q:PIR {
-            .local pmc interp
-            .local int level
-
-            interp = find_lex '$i'
+            interp = find_lex '$interp'
             $P0    = find_lex '$l'
             level  = $P0
 
             # no idea why we need this:
-            dec level
-
-            %r     = interp["lexpad"; level]
+            %r = interp["lexpad"; level]
         };
-        CREATE_HASH_FROM_LOW_LEVEL $pad;
+        my $h := nqp::create(EnumMap);
+        nqp::bindattr($h, EnumMap, '$!storage', $lexpad);
+        nqp::bindattr($self, CallFrame, '%!my', $h);
+
+        $self;
+    }
+
+    method line() {
+        %.annotations<line>;
+    }
+    method file() {
+        %.annotations<file>;
+    }
+
+    method callframe(Int $level = 0) {
+        die X::NYI.new(feature => 'Callframe.callframe');
     }
 }
 
-our multi sub callframe(Int $level = 0) {
-    my $interp = pir::getinterp__p();
-    CallFrame.new(:$interp, level => ($level + 2));
+sub callframe(Int $level = 0) {
+    CallFrame.new(level => ($level + 1));
 }
 
 # vim: ft=perl6

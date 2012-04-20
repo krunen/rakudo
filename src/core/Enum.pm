@@ -1,75 +1,44 @@
-augment class Enum {
+my class Enum {
+    has $.key;
+    has $.value;
 
-=begin item ACCEPTS()
+    method new(:$key, Mu :$value) { nqp::create(self).BUILD($key, $value) }
+    method BUILD(\$key, Mu \$value) { $!key = $key; $!value = $value; self }
 
-Called from smartmatches '$_ ~~ X'.
-
-For C<$_ ~~ Mapping> tests if C<$_{X.key} ~~ X.value>
-
-Else it delegates to a  method call '.:Xkey(Xval)'
-(TODO: should actually be .Xkey, not .:Xkey).
-
-=end item
-
-    multi method ACCEPTS(EnumMap $topic) {
-	    $topic{$.key} ~~ $.value;
+    multi method ACCEPTS(Enum:D: Associative:D $topic) { 
+        $topic{$.key} ~~ $.value 
     }
 
-    multi method ACCEPTS($topic) {
-        my $meth_name = $.key;
-        return (?$topic."$meth_name"()) === (?$.value);
+    multi method ACCEPTS(Enum:D: Mu $topic) {
+        my $method = $.key;
+        $topic."$method"() === $.value;
+    }
+    
+    method invert() {
+        $.value => $.key;
     }
 
-=begin item fmt
+    method key(Enum:D:)   { $!key }
+    method kv(Enum:D:)    { $!key, $!value }
+    method value(Enum:D:) { $!value }
 
-  our Str multi Pair::fmt ( Str $format = "%s\t%s" )
+    method keys(Enum:D:)  { ($!key,).list }
+    method values(Enum:D:){ ($!value,).list }
+    method pairs(Enum:D:) { (self,).list }
 
-Returns the invocant pair formatted by an implicit call to C<sprintf> on
-the key and value.
+    multi method Str(Enum:D:) { $.key ~ "\t" ~ $.value }
+    multi method perl(Enum:D:) { $.key.perl ~ ' => ' ~ $.value.perl }
 
-=end item
-    method fmt(Str $format = "%s\t%s") {
-        return sprintf($format, $.key, $.value);
+    method fmt($format = "%s\t%s") {
+        sprintf($format, $.key, $.value);
     }
-
-=begin item kv
-
-Return key and value as a 2-element List.
-
-=end item
-    method kv() {
-        ($.key, $.value);
-    }
-
-=begin item pairs
-
-=end item
-    method pairs() {
-        return self.list();
-    }
-
-    method value() {
-        $!value
-    }
-
-    multi method perl() {
-        # $.key.perl ~ ' => ' ~ $.value.perl;
-        "Pair.new(:key({$.key.perl}), :value({$.value.perl}))";
-    }
-
-    # I don't see anything in the spec about what
-    # this should do.  This is doing the same thing
-    # that ~Pair did in old Rakudo master, which didn't
-    # seem to have Pair.Str.
-    multi method Str() {
-        "$.key\t$.value";
-    }
-
-    multi method hash() {
-        my %h;
-        %h{self.key} = self.value;
-        %h;
+    
+    method at_key($key) {
+        $key eq $!key ?? $!value !! Mu
     }
 }
 
-# vim: ft=perl6
+multi sub infix:<eqv>(Enum:D $a, Enum:D $b) {
+    $a.WHAT === $b.WHAT && $a.key eqv $b.key && $a.value eqv $b.value
+}
+

@@ -1,4 +1,4 @@
-role Callable[::T = Mu] {
+my role Callable[::T = Mu] {
     method of() { T }
     method returns() { T }
 }

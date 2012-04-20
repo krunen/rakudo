@@ -1,220 +1,97 @@
-class Match is Regex::Match is Cool does Positional does Associative {
+my class Match is Capture is Cool {
+    has $.orig;
+    has $.from;
+    has $.to;
+    has $.CURSOR;
+    has $.ast;
 
-    method ACCEPTS($x) {
-       self === Match ?? nextsame() !! self;
+    multi method Str(Match:D:) {
+        $!to > $!from ?? $!orig.substr($!from, $!to-$!from) !! ''
     }
-    method new(:$from, :$to, :$orig, :$ast, :@positional, :%named) {
-        my $new = self.bless(*);
-        return $new unless $orig.defined;
-        pir::setattribute__vpsp($new, '$!from',   $from);
-        pir::setattribute__vpsp($new, '$!to',     $to);
-        pir::setattribute__vpsp($new, '$!target', $orig);
-        pir::setattribute__vpsp($new, '$!ast',    $ast);
+    multi method Numeric(Match:D:) {
+        self.Str.Numeric
+    }
+    multi method Bool(Match:D:) {
+        $!to >= $!from
+    }
+    multi method ACCEPTS(Match:D: Any $) { self }
 
-        for @positional.kv -> $k, $v {
-            Q:PIR {
-                .local pmc self, key, value
-                self  = find_lex '$new'
-                key   = find_lex '$k'
-                value = find_lex '$v'
-
-                self  = descalarref self
-                $I0   = key
-                self[$I0] = value
-            }
-
-        }
-        for (%named ||{}).kv -> $k, $v {
-            Q:PIR {
-                .local pmc self, key, value
-                self  = find_lex '$new'
-                key   = find_lex '$k'
-                value = find_lex '$v'
-
-                self  = descalarref self
-                $S0   = key
-                self[$S0] = value
-            }
-        }
-
-        $new;
+    method prematch(Match:D:) {
+        $!orig.substr(0, $!from);
+    }
+    method postmatch(Match:D:) {
+        $!orig.substr($!to)
     }
 
-    method ast() {
-        my $x = self.Regex::Match::ast;
-        pir::isa__IPs($x, 'Undef') ?? Any !! $x;
-    }
-
-    method Str() {
-        ~self.Regex::Match::Str;
-    }
-
-    method Bool() {
-        $.from <= $.to;
-    }
-
-    method defined() {
-        $.from <= $.to;
-    }
-
-    method at_key($key) {
-        Q:PIR {
-            $P0 = find_lex 'self'
-            $P1 = find_lex '$key'
-            %r = $P0[$P1]
-            unless null %r goto done
-            %r = new ['Proxy']
-            setattribute %r, '$!base', $P0
-            setattribute %r, '$!key', $P1
-          done:
-        }
-    }
-
-    method at_pos($pos) {
-        Q:PIR {
-            $P0 = find_lex 'self'
-            $P1 = find_lex '$pos'
-            $I1 = $P1
-            %r = $P0[$I1]
-            unless null %r goto done
-            %r = new ['Proxy']
-            setattribute %r, '$!base', $P0
-            setattribute %r, '$!key', $P1
-          done:
-        }
-    }
-
-    method of() { Mu }
-
-    multi method hash() {
-        # nextsame() dies here with 'Null PMC access in clone()'
-        CREATE_HASH_FROM_LOW_LEVEL(pir::descalarref__PP(self).Regex::Match::hash);
-    }
-
-    multi method list() {
-        Seq.new(pir::descalarref__PP(self).Regex::Match::list);
-    }
-
-    multi method keys() {
-        (self.list.keys, self.hash.keys).flat;
-    }
-
-    multi method values() {
-        (self.list.values, self.hash.values).flat;
-    }
-
-    multi method kv() {
-        (self.list.kv, self.hash.kv).flat;
-    }
-
-    multi method pairs() {
-        (self.list.pairs, self.hash.pairs).flat;
-    }
-
-    multi method caps() {
+    method caps(Match:D:) {
         my @caps;
         for self.pairs -> $p {
-            # in regexes like [(.) ...]+, the capture for (.) is
-            # a List. flatten that.
-            if $p.value ~~ Array  {
-                for $p.value.list {
-                    @caps.push: $p.key => $_;
-                }
+            if $p.value ~~ Parcel {
+                @caps.push: $p.key => $_ for $p.value.list
             } else {
                 @caps.push: $p;
             }
         }
-        @caps.sort({ .value.from });
+        @caps.sort: -> $p { $p.value.from }
     }
 
-    multi method chunks() {
-        my $prev = $.from;
+    method chunks(Match:D:) {
+        my $prev = $!from;
         gather {
-            for @.caps {
+            for self.caps {
                 if .value.from > $prev {
-                    take '~' => self.substr($prev - $.from, .value.from - $prev)
+                    take '~' => $!orig.substr($prev, .value.from - $prev)
                 }
                 take $_;
                 $prev = .value.to;
             }
-            take ('~' => self.substr($prev - $.from)) if $prev < $.to;
+            take '~' => $!orig.substr($prev, $!to - $prev) if $prev < $!to;
         }
     }
 
-    multi method perl() {
-        self!_perl(0);
-    }
-
-    method !_perl(Int $indent) {
-        return [~] gather {
-            my $sp = ' ' x $indent;
-            take $sp;
-            take "Match.new(\n";
-            take "$sp ast  => {$.ast.perl},\n" unless $.ast === Any;
-            take "$sp from => $.from,\n";
-            take "$sp orig => $.orig.perl(),\n";
-            take "$sp to   => $.to,\n";
-            if @(self) {
-                take "$sp positional => [\n";
-                for self.flat {
-                    self!_perl_quant($_, $indent);
-                    take ",\n";
-                }
-                take "$sp  ],\n";
-            }
-            if %(self) {
-                take "$sp named => \{\n";
-                for %(self).pairs {
-                    take "$sp  {.key} => ";
-                    self!_perl_quant(.value, $indent);
-                    take ",\n";
-                }
-                take "$sp \},\n";
-            }
-            take "$sp)";
+    multi method perl(Match:D:) {
+        my %attrs;
+        for <orig from to ast list hash> {
+            %attrs{$_} = self."$_"().perl;
         }
-    }
 
-    method !_perl_quant($obj, $indent) {
-        my $sp = ' ' x $indent;
-        if !defined($obj) {
-            # do nothing; we only get here when something's not quite right...
-        } elsif $obj ~~ Match {
-            take $obj!_perl($indent + 3);
-        } else {
-            take "[\n";
-            for $obj.list {
-                take $_!_perl($indent + 4);
-                take ",\n";
-            }
-            take "$sp  ]";
-        }
+        'Match.new('
+            ~ %attrs.fmt('%s => %s', ', ')
+            ~ ')'
     }
-
-    method pretty ($d = 0) {
+    multi method gist (Match:D: $d = 0) {
+        return "#<failed match>" unless self;
         my $s = ' ' x ($d + 1);
         my $r = "=> <{self}>\n";
         for @.caps {
-            $r ~= $s ~ (.key // '?') ~ ' ' ~ .value.pretty($d + 1)
+            $r ~= $s ~ (.key // '?') ~ ' ' ~ .value.gist($d + 1)
         }
         $r;
     }
+
+    method make(Match:D: Mu $ast) {
+        $!ast = $ast;
+        nqp::bindattr(
+            nqp::p6decont(self.CURSOR),
+            Cursor,
+            '$!ast',
+            $ast
+        );
+    }
 }
 
-multi sub infix:<eqv>(Match $a, Match $b) {
-       $a.ast eqv $b.ast
-    && $a.orig eqv $b.orig
-    && $a.from eqv $b.from
-    && $a.to   eqv $b.to
-    && $a.list eqv $b.list
-    && $a.hash eqv $b.hash
+sub make(Mu $ast) {
+    nqp::bindattr(
+        nqp::p6decont(pir::find_caller_lex__Ps('$/')),
+        Match,
+        '$!ast',
+        $ast
+    );
+    nqp::bindattr(
+        nqp::p6decont(pir::find_caller_lex__Ps('$/').CURSOR),
+        Cursor,
+        '$!ast',
+        $ast
+    );
 }
 
-# A helper function used by Perl6/Actions.pm. The real point is to
-# ensure that Parrot objects returned by .ACCEPTS are converted to
-# Bools.
-our multi coerce-smartmatch-result(Mu $x,    1) { ! $x }
-our multi coerce-smartmatch-result(Mu $x,    0) { ? $x }
-our multi coerce-smartmatch-result(Match $x, 0) {   $x }
-
-# vim: ft=perl6

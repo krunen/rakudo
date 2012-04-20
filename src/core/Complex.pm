@@ -1,20 +1,26 @@
-class Complex does Numeric is Cool {
-    has $.re;
-    has $.im;
+my class Complex is Cool does Numeric {
+    has num $.re;
+    has num $.im;
 
-    multi method new(Real $re, Real $im) {
-        self.bless(*, :re($re), :im($im));
+    proto method new(|$) { * }
+    multi method new(Real \$re, Real \$im) {
+        my $new = nqp::create(self);
+        $new.BUILD($re.Num, $im.Num);
+        $new;
     }
-
-    method reals() {
+    method BUILD(Num \$re, Num \$im) {
+        $!re = $re;
+        $!im = $im;
+    }
+    method reals(Complex:D:) {
         (self.re, self.im);
     }
 
-    method isNaN() {
+    method isNaN(Complex:D:) {
         self.re.isNaN || self.im.isNaN;
     }
 
-    method Real() {
+    multi method Real(Complex:D:) {
         if $!im == 0 {
             $!re;
         } else {
@@ -22,257 +28,381 @@ class Complex does Numeric is Cool {
         }
     }
 
-    our Bool multi method Bool() { ( $!re != 0 || $!im != 0 ) ?? Bool::True !! Bool::False }
+    # should probably be eventually supplied by role Numeric
+    method Num(Complex:D:) { self.Real.Num }
+    method Int(Complex:D:) { self.Real.Int }
+    method Rat(Complex:D:) { self.Real.Rat }
 
-    multi method Complex() { self }
-
-    method Str() {
-        "$.re + {$.im}i";
+    multi method Bool(Complex:D:) {
+        $!re != 0e0 || $!im != 0e0;
     }
 
-    multi method perl() {
+    method Complex() { self }
+    multi method Str(Complex:D:) {
+        my Str $i = nqp::isnanorinf($!im) ?? '\\i' !! 'i';
+        $!im < 0e0
+            ?? nqp::p6box_s($!re) ~ '-' ~ nqp::p6box_s(nqp::abs_n($!im)) ~ $i
+            !! nqp::p6box_s($!re) ~ '+' ~ nqp::p6box_s($!im) ~ $i;
+    }
+
+    multi method perl(Complex:D:) {
         "Complex.new($.re, $.im)";
+    }
+    method conj(Complex:D:) {
+        Complex.new($.re, -$.im);
     }
 
     method abs(Complex $x:) {
-        ($x.re * $x.re + $x.im * $x.im).sqrt
+        nqp::p6box_n(nqp::sqrt_n(
+            nqp::add_n(
+                nqp::mul_n($!re, $!re),
+                nqp::mul_n($!im, $!im),
+            )
+        ))
     }
 
-    multi method exp(Complex $exponent:) {
-        Complex.new($.re.Num.exp * $.im.Num.cos, $.re.Num.exp * $.im.Num.sin);
+    method polar() {
+        $.abs, $!im.atan2($!re);
+    }
+    multi method log(Complex:D:) {
+        my Num ($mag, $angle) = self.polar;
+        Complex.new($mag.log, $angle);
     }
 
-    multi method exp(Complex $exponent: Numeric $base) {
-        $base ** $exponent;
+    method sqrt(Complex:D:) {
+        my Num ($mag, $angle) = self.polar;
+        $mag.sqrt.unpolar($angle/2);
     }
 
-    method ln() {
-        Q:PIR {
-            .local pmc self
-            self = find_lex 'self'
-            $P0 = get_root_namespace ['parrot'; 'Complex' ]
-            $P0 = get_class $P0
-            $P0 = $P0.'new'()
-            $N0 = self.'re'()
-            $P0[0] = $N0
-            $N1 = self.'im'()
-            $P0[1] = $N1
-            $P0 = $P0.'ln'()
-            $N0 = $P0[0]
-            $P2 = box $N0
-            $N1 = $P0[1]
-            $P3 = box $N1
-            $P1 = get_hll_global 'Complex'
-            $P1 = $P1.'new'($P2, $P3)
-            %r  = $P1
-        }
+    multi method exp(Complex:D:) {
+        my Num $mag = $!re.exp;
+        Complex.new($mag * $!im.cos, $mag * $!im.sin);
     }
 
-    method sqrt() {
-        Q:PIR {
-            .local pmc self
-            self = find_lex 'self'
-            $P0 = get_root_namespace ['parrot'; 'Complex' ]
-            $P0 = get_class $P0
-            $P0 = $P0.'new'()
-            $N0 = self.'re'()
-            $P0[0] = $N0
-            $N1 = self.'im'()
-            $P0[1] = $N1
-            $P0 = $P0.'sqrt'()
-            $N0 = $P0[0]
-            $P2 = box $N0
-            $N1 = $P0[1]
-            $P3 = box $N1
-            $P1 = get_hll_global 'Complex'
-            $P1 = $P1.'new'($P2, $P3)
-            %r  = $P1
-        }
-    }
-
-    method roots(Complex $x: Int $n) {
-        return NaN if $n < 1;
+    method roots(Complex:D: $an) {
+        my Int $n = $an.Int;
+        return $NaN if $n < 1;
         return self if $n == 1;
-        return NaN  if $x.re | $x.im ~~  Inf | NaN | -Inf;
+        for $!re, $!im {
+            return $NaN if $_ eq 'Inf' || $_ eq '-Inf' || $_ eq 'NaN';
+        }
 
-        my ($mag, $angle) = $x.polar;
-        $mag **= 1 / $n;
-        (^$n).map: { $mag.unpolar( ($angle + $_ * 2 * pi) / $n) };
+        my ($mag, $angle) = self.polar;
+        $mag **= 1e0 / $n;
+        (^$n).map: { $mag.unpolar( ($angle + $_ * 2e0 * pi) / $n) };
+    }
+    
+    method sin(Complex:D:) {
+        $!re.sin * $!im.cosh + ($!re.cos * $!im.sinh)i;
+    }
+    
+    method asin(Complex:D:) {
+        (Complex.new(0, -1) * log((self)i + sqrt(1 - self * self)));
     }
 
-    multi method polar() {
-        $.abs, atan2($.im, $.re);
+    method cos(Complex:D:) {
+        $!re.cos * $!im.cosh - ($!re.sin * $!im.sinh)i;
+    }
+    
+    method acos(Complex:D:) {
+        (pi / 2) - self.asin;
+    }
+    
+    method tan(Complex:D:) {
+        self.sin / self.cos;
+    }
+    
+    method atan(Complex:D:) {
+        ((log(1 - (self)i) - log(1 + (self)i))i / 2);
     }
 
-    method sin(Complex $x: $base = Radians) {
-        $x.re.sin($base) * $x.im.cosh($base) + ($x.re.cos($base) * $x.im.sinh($base))i;
+    method sec(Complex:D:) {
+        1 / self.cos;
     }
 
-    method asin(Complex $x: $base = Radians) {
-        (-1i * log(($x)i + sqrt(1 - $x * $x))).from-radians($base);
+    method asec(Complex:D:) {
+        (1 / self).acos;
     }
 
-    method cos(Complex $x: $base = Radians) {
-        $x.re.cos($base) * $x.im.cosh($base) - ($x.re.sin($base) * $x.im.sinh($base))i;
+    method cosec(Complex:D:) {
+        1 / self.sin;
     }
 
-    method acos(Complex $x: $base = Radians) {
-        (pi / 2).from-radians($base) - $x.asin($base);
+    method acosec(Complex:D:) {
+        (1 / self).asin;
     }
 
-    method tan(Complex $x: $base = Radians) {
-        $x.sin($base) / $x.cos($base);
+    method cotan(Complex:D:) {
+        self.cos / self.sin;
     }
 
-    method atan(Complex $x: $base = Radians) {
-        ((log(1 - ($x)i) - log(1 + ($x)i))i / 2).from-radians($base);
+    method acotan(Complex:D:) {
+        (1 / self).atan;
     }
 
-    method sec(Complex $x: $base = Radians) {
-        1 / $x.cos($base);
+    method sinh(Complex:D:) {
+        -((Complex.new(0, 1) * self).sin)i;
     }
-
-    method asec(Complex $x: $base = Radians) {
-        (1 / $x).acos($base);
+    
+    method asinh(Complex:D:) {
+        (self + sqrt(1 + self * self)).log;
     }
-
-    method cosec(Complex $x: $base = Radians) {
-        1 / $x.sin($base);
+    
+    method cosh(Complex:D:) {
+        (Complex.new(0, 1) * self).cos;
     }
-
-    method acosec(Complex $x: $base = Radians) {
-        (1 / $x).asin($base);
+    
+    method acosh(Complex:D:) {
+        (self + sqrt(self * self - 1)).log;
     }
-
-    method cotan(Complex $x: $base = Radians) {
-        $x.cos($base) / $x.sin($base);
+    
+    method tanh(Complex:D:) {
+        -((Complex.new(0, 1) * self).tan)i;
     }
-
-    method acotan(Complex $x: $base = Radians) {
-        (1 / $x).atan($base);
+    
+    method atanh(Complex:D:) {
+        (((1 + self) / (1 - self)).log / 2);
     }
-
-    method sinh(Complex $x: $base = Radians) {
-        -((1i * $x).sin($base))i;
+    
+    method sech(Complex:D:) {
+        1 / self.cosh;
     }
-
-    method asinh(Complex $x: $base = Radians) {
-        ($x + sqrt(1 + $x * $x)).log.from-radians($base);
+    
+    method asech(Complex:D:) {
+        (1 / self).acosh;
     }
-
-    method cosh(Complex $x: $base = Radians) {
-        (1i * $x).cos($base);
+    
+    method cosech(Complex:D:) {
+        1 / self.sinh;
     }
-
-    method acosh(Complex $x: $base = Radians) {
-        ($x + sqrt($x * $x - 1)).log.from-radians($base);
+    
+    method acosech(Complex:D:) {
+        (1 / self).asinh;
     }
-
-    method tanh(Complex $x: $base = Radians) {
-        -((1i * $x).tan($base))i;
+    
+    method cotanh(Complex:D:) {
+        1 / self.tanh;
     }
-
-    method atanh(Complex $x: $base = Radians) {
-        (((1 + $x) / (1 - $x)).log / 2).from-radians($base);
+    
+    method acotanh(Complex:D:) {
+        (1 / self).atanh;
     }
-
-    method sech(Complex $x: $base = Radians) {
-        1 / $x.cosh($base);
-    }
-
-    method asech(Complex $x: $base = Radians) {
-        (1 / $x).acosh($base);
-    }
-
-    method cosech(Complex $x: $base = Radians) {
-        1 / $x.sinh($base);
-    }
-
-    method acosech(Complex $x: $base = Radians) {
-        (1 / $x).asinh($base);
-    }
-
-    method cotanh(Complex $x: $base = Radians) {
-        1 / $x.tanh($base);
-    }
-
-    method acotanh(Complex $x: $base = Radians) {
-        (1 / $x).atanh($base);
-    }
-
 }
 
-multi sub prefix:<->(Complex $a) {
-    Complex.new(-$a.re, -$a.im);
+multi sub prefix:<->(Complex:D \$a) returns Complex:D {
+    my $new := nqp::create(Complex);
+    nqp::bindattr_n( $new, Complex, '$!re',
+        nqp::neg_n(
+            nqp::getattr_n(nqp::p6decont($a), Complex, '$!re')
+        )
+    );
+    nqp::bindattr_n( $new, Complex, '$!im',
+        nqp::neg_n(
+            nqp::getattr_n(nqp::p6decont($a), Complex, '$!im')
+        )
+    );
+    $new;
 }
 
-multi sub infix:<+>(Complex $a, Complex $b) {
-    Complex.new($a.re + $b.re, $a.im + $b.im);
+multi sub prefix:<abs>(Complex:D \$a) returns Num:D {
+    my num $re = nqp::getattr_n(nqp::p6decont($a), Complex, '$!re');
+    my num $im = nqp::getattr_n(nqp::p6decont($a), Complex, '$!im');
+    nqp::p6box_n(pir::sqrt__NN(nqp::add_n(nqp::mul_n($re, $re), nqp::mul_n($im, $im))));
 }
 
-multi sub infix:<+>(Complex $a, Real $b) {
-    Complex.new($a.re + $b, $a.im);
+multi sub infix:<+>(Complex:D \$a, Complex:D \$b) returns Complex:D {
+    my $new := nqp::create(Complex);
+    nqp::bindattr_n( $new, Complex, '$!re',
+        nqp::add_n(
+            nqp::getattr_n(nqp::p6decont($a), Complex, '$!re'),
+            nqp::getattr_n(nqp::p6decont($b), Complex, '$!re'),
+        )
+    );
+    nqp::bindattr_n( $new, Complex, '$!im',
+        nqp::add_n(
+            nqp::getattr_n(nqp::p6decont($a), Complex, '$!im'),
+            nqp::getattr_n(nqp::p6decont($b), Complex, '$!im'),
+        )
+    );
+    $new;
 }
 
-multi sub infix:<+>(Real $a, Complex $b) {
-    # Was $b + $a; but that trips a ng bug, and also means
-    # that Num + Complex is slower than Complex + Num, which
-    # seems daft.
-    Complex.new($a + $b.re, $b.im);
+multi sub infix:<+>(Complex:D \$a, Real \$b) returns Complex:D {
+    my $new := nqp::create(Complex);
+    nqp::bindattr_n( $new, Complex, '$!re',
+        nqp::add_n(
+            nqp::getattr_n(nqp::p6decont($a), Complex, '$!re'),
+            nqp::unbox_n($b.Num)
+        )
+    );
+    nqp::bindattr_n($new, Complex, '$!im',
+        nqp::getattr_n(nqp::p6decont($a), Complex, '$!im'),
+    );
+    $new
 }
 
-# Originally infix:<-> was implemented in terms of addition, but
-# that adds an extra function call to each.  This repeats ourselves,
-# but should avoid odd performance anomalies.
-
-multi sub infix:<->(Complex $a, Complex $b) {
-    Complex.new($a.re - $b.re, $a.im - $b.im);
+multi sub infix:<+>(Real \$a, Complex:D \$b) returns Complex:D {
+    my $new := nqp::create(Complex);
+    nqp::bindattr_n($new, Complex, '$!re',
+        nqp::add_n(
+            nqp::unbox_n($a.Num),
+            nqp::getattr_n(nqp::p6decont($b), Complex, '$!re'),
+        )
+    );
+    nqp::bindattr_n($new, Complex, '$!im',
+        nqp::getattr_n(nqp::p6decont($b), Complex, '$!im'),
+    );
+    $new;
 }
 
-multi sub infix:<->(Complex $a, Real $b) {
-    Complex.new($a.re - $b, $a.im);
+multi sub infix:<->(Complex:D \$a, Complex:D \$b) returns Complex:D {
+    my $new := nqp::create(Complex);
+    nqp::bindattr_n( $new, Complex, '$!re',
+        nqp::sub_n(
+            nqp::getattr_n(nqp::p6decont($a), Complex, '$!re'),
+            nqp::getattr_n(nqp::p6decont($b), Complex, '$!re'),
+        )
+    );
+    nqp::bindattr_n($new, Complex, '$!im',
+        nqp::sub_n(
+            nqp::getattr_n(nqp::p6decont($a), Complex, '$!im'),
+            nqp::getattr_n(nqp::p6decont($b), Complex, '$!im'),
+        )
+    );
+    $new
 }
 
-multi sub infix:<->(Real $a, Complex $b) {
-    Complex.new($a - $b.re, -$b.im);
+multi sub infix:<->(Complex:D \$a, Real \$b) returns Complex:D {
+    my $new := nqp::create(Complex);
+    nqp::bindattr_n( $new, Complex, '$!re',
+        nqp::sub_n(
+            nqp::getattr_n(nqp::p6decont($a), Complex, '$!re'),
+            $b.Num,
+        )
+    );
+    nqp::bindattr_n($new, Complex, '$!im',
+        nqp::getattr_n(nqp::p6decont($a), Complex, '$!im')
+    );
+    $new
 }
 
-multi sub infix:<*>(Complex $a, Complex $b) {
-    Complex.new($a.re * $b.re - $a.im * $b.im, $a.im * $b.re + $a.re * $b.im);
+multi sub infix:<->(Real \$a, Complex:D \$b) returns Complex:D {
+    my $new := nqp::create(Complex);
+    nqp::bindattr_n( $new, Complex, '$!re',
+        nqp::sub_n(
+            $a.Num,
+            nqp::getattr_n(nqp::p6decont($b), Complex, '$!re'),
+        )
+    );
+    nqp::bindattr_n($new, Complex, '$!im',
+        nqp::neg_n(
+            nqp::getattr_n(nqp::p6decont($b), Complex, '$!im')
+        )
+    );
+    $new
 }
 
-multi sub infix:<*>(Complex $a, Real $b) {
-    Complex.new($a.re * $b, $a.im * $b);
+multi sub infix:<*>(Complex:D \$a, Complex:D \$b) returns Complex:D {
+    my num $a_re = nqp::getattr_n(nqp::p6decont($a), Complex, '$!re');
+    my num $a_im = nqp::getattr_n(nqp::p6decont($a), Complex, '$!im');
+    my num $b_re = nqp::getattr_n(nqp::p6decont($b), Complex, '$!re');
+    my num $b_im = nqp::getattr_n(nqp::p6decont($b), Complex, '$!im');
+    my $new := nqp::create(Complex);
+    nqp::bindattr_n($new, Complex, '$!re',
+        nqp::sub_n(nqp::mul_n($a_re, $b_re), nqp::mul_n($a_im, $b_im)),
+    );
+    nqp::bindattr_n($new, Complex, '$!im',
+        nqp::add_n(nqp::mul_n($a_re, $b_im), nqp::mul_n($a_im, $b_re)),
+    );
+    $new;
 }
 
-multi sub infix:<*>(Real $a, Complex $b) {
-    Complex.new($a * $b.re, $a * $b.im);
+multi sub infix:<*>(Complex:D \$a, Real \$b) returns Complex:D {
+    my $new := nqp::create(Complex);
+    my num $b_num = $b.Num;
+    nqp::bindattr_n($new, Complex, '$!re',
+        nqp::mul_n(
+            nqp::getattr_n(nqp::p6decont($a), Complex, '$!re'),
+            $b_num,
+        )
+    );
+    nqp::bindattr_n($new, Complex, '$!im',
+        nqp::mul_n(
+            nqp::getattr_n(nqp::p6decont($a), Complex, '$!im'),
+            $b_num,
+        )
+    );
+    $new
 }
 
-multi sub infix:</>(Complex $a, Complex $b) {
-    my $d = $b.re * $b.re + $b.im * $b.im;
-    Complex.new(($a.re * $b.re + $a.im * $b.im) / $d,
-                ($a.im * $b.re - $a.re * $b.im) / $d);
+multi sub infix:<*>(Real \$a, Complex:D \$b) returns Complex:D {
+    my $new := nqp::create(Complex);
+    my num $a_num = $a.Num;
+    nqp::bindattr_n($new, Complex, '$!re',
+        nqp::mul_n(
+            $a_num,
+            nqp::getattr_n(nqp::p6decont($b), Complex, '$!re'),
+        )
+    );
+    nqp::bindattr_n($new, Complex, '$!im',
+        nqp::mul_n(
+            $a_num,
+            nqp::getattr_n(nqp::p6decont($b), Complex, '$!im'),
+        )
+    );
+    $new
 }
 
-multi sub infix:</>(Complex $a, Real $b) {
+multi sub infix:</>(Complex:D \$a, Complex:D \$b) returns Complex:D {
+    my num $a_re = nqp::getattr_n(nqp::p6decont($a), Complex, '$!re');
+    my num $a_im = nqp::getattr_n(nqp::p6decont($a), Complex, '$!im');
+    my num $b_re = nqp::getattr_n(nqp::p6decont($b), Complex, '$!re');
+    my num $b_im = nqp::getattr_n(nqp::p6decont($b), Complex, '$!im');
+    my num $d    = nqp::add_n(nqp::mul_n($b_re, $b_re), nqp::mul_n($b_im, $b_im));
+    my $new := nqp::create(Complex);
+    nqp::bindattr_n($new, Complex, '$!re',
+        nqp::div_n(
+            nqp::add_n(nqp::mul_n($a_re, $b_re), nqp::mul_n($a_im, $b_im)),
+            $d,
+        )
+    );
+    nqp::bindattr_n($new, Complex, '$!im',
+        nqp::div_n(
+            nqp::sub_n(nqp::mul_n($a_im, $b_re), nqp::mul_n($a_re, $b_im)),
+            $d,
+        )
+    );
+    $new;
+}
+
+multi sub infix:</>(Complex:D \$a, Real \$b) returns Complex:D {
     Complex.new($a.re / $b, $a.im / $b);
 }
 
-multi sub infix:</>(Real $a, Complex $b) {
+multi sub infix:</>(Real \$a, Complex:D \$b) returns Complex:D {
     Complex.new($a, 0) / $b;
 }
 
-multi sub infix:<**>(Complex $a, Complex $b) {
-    ($a.log * $b).exp;
+multi sub infix:<**>(Complex:D \$a, Complex:D \$b) returns Complex:D {
+    ($a.re == 0e0 && $a.im == 0e0) ?? Complex.new(0e0, 0e0) !! ($b * $a.log).exp
+}
+multi sub infix:<**>(Real      \$a, Complex:D \$b) returns Complex:D {
+    $a == 0 ?? Complex.new(0e0, 0e0) !! ($b * $a.log).exp 
+}
+multi sub infix:<**>(Complex:D \$a, Real      \$b) returns Complex:D {
+    ($b * $a.log).exp
 }
 
-multi sub infix:<**>(Complex $a, Real $b) {
-    ($a.log * $b).exp;
-}
+multi sub infix:<==>(Complex:D \$a, Complex:D \$b) returns Bool:D { $a.re == $b.re && $a.im == $b.im }
+multi sub infix:<==>(Complex:D \$a, Real      \$b) returns Bool:D { $a.re == $b    && $a.im == 0e0   }
+multi sub infix:<==>(Real      \$a, Complex:D \$b) returns Bool:D { $a    == $b.re && 0e0   == $b.im }
 
-multi sub infix:<**>(Real $a, Complex $b) {
-    ($a.log * $b).exp;
-}
+proto postfix:<i>(|$) returns Complex:D { * }
+multi postfix:<i>(Real      \$a) returns Complex:D { Complex.new(0e0, $a);     }
+multi postfix:<i>(Complex:D \$a) returns Complex:D { Complex.new(-$a.im, $a.re) }
+multi postfix:<i>(Numeric   \$a) returns Complex:D { $a * Complex.new(0e0, 1e0) }
+multi postfix:<i>(Cool      \$a) returns Complex:D { $a.Numeric * Complex.new(0e0, 1e0) }
+
+constant i = Complex.new(0e0, 1e0);
 
 # vim: ft=perl6

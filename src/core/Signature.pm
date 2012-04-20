@@ -1,114 +1,62 @@
-augment class Signature {
-    method ACCEPTS(Signature) {
-        die("Sorry, smart-matching a Signature against a Signature is not yet implemented.");
+my class Signature {
+    # declared in BOOTSTRAP.pm:
+    #   is Cool;               # parent class
+    #   has $!params;          # RPA of parameters
+    #   has $!returns;         # return type
+    #   has $!arity;           # cached arity
+    #   has $!count;           # cached count
+
+    method arity() {
+        self.count if nqp::isnull($!arity) || !$!arity.defined;
+        $!arity;
     }
-    
-    method ACCEPTS(Callable) {
-        die("Sorry, smart-matching a Callable against a Signature is not yet implemented.");
-    }
-    
-    method ACCEPTS(Capture $c) {
-        my $result = Bool::False;
-        try {
-            self!BIND($c);
-            $result = Bool::True;
-        }
-        $result
-    }
-    
-    method ACCEPTS($any) {
-        my $result = Bool::False;
-        try {
-            self!BIND((|$any).Capture);
-            $result = Bool::True;
-        }
-        $result
-    }
-
-    method perl() {
-        my @parts = gather {
-            take ':(';
-            my $sep = '';
-            my $last_was_multi_inv = True;
-            for $.params -> $param {
-                # First, separator, if any.
-                if $last_was_multi_inv && !$param.multi_invocant { $sep = ';; ' }
-                take ~$sep;
-                $sep = ', ';
-
-                # First the type.
-                my $name = $param.name;
-
-                if !$param.slurpy {
-                    my $sigil = $name.substr(0, 1);
-                    my $perl = $param.type.perl;
-                    if $sigil eq '$' {
-                        take $perl ~ ' ';
-                    }
-                    elsif $sigil eq '@' {
-                        if $perl ne 'Positional' {
-                            take $perl.substr(11, $perl.chars - 12) ~ ' ';
-                        }
-                    }
-                    elsif $sigil eq '%' {
-                        if $perl ne 'Associative' {
-                            take $perl.substr(12, $perl.chars - 13) ~ ' ';
-                        }
-                    }
-                    elsif $perl.substr(0, 8) eq 'Callable' {
-                        if $perl ne 'Callable' {
-                            take $perl.substr(9, $perl.chars - 10) ~ ' ';
-                        }
-                    }
-                    else {
-                        take $perl ~ ' ';
-                    }
+ 
+    method count() {
+        if nqp::isnull($!count) || !$!count.defined {
+            # calculate the count and arity -- we keep them
+            # cached for when we're called the next time.
+            my $count = 0;
+            my $arity = 0;
+            my Mu $iter := nqp::iterator($!params);
+            my $param;
+            while $iter {
+                $param := nqp::shift($iter);
+                if $param.capture || $param.slurpy && !$param.named { 
+                    $count = Inf; 
                 }
-
-                # Any type captures.
-                for @($param.type_captures) -> $name {
-                    take '::' ~ $name ~ ' ';
+                elsif $param.positional {
+                    $count++;
+                    $arity++ unless $param.optional;
                 }
-
-                # Slurpiness, namedness, then the name.
-                if $param.slurpy  { take '*' }
-                if $param.capture { take '|' }
-                if $param.parcel  { take '\|' }
-                my @names = @($param.named_names);
-                for @names -> $name {
-                    take ':' ~ $name ~ '(';
-                }
-                take $name;
-                take ')' x +@names;
-
-                # Optionality.
-                if $param.optional && !$param.named && !$param.default   { take '?' }
-                elsif !$param.optional && $param.named && !$param.slurpy { take '!' }
-
-                # Any constraints?
-                my $cons_perl = $param.constraints.perl;
-                if $cons_perl ne 'Bool::True' {
-                    take ' where ' ~ $cons_perl;
-                }
-                
-                # Any sub-signature?
-                if $param.signature {
-                    take ' ' ~ $param.signature.perl.substr(1);
-                }
-
-                # Default.
-                if $param.default {
-                    take ' = ' ~ $param.default.perl;
-                }
-
-                # Invocant/multi invocant marking.
-                if $param.invocant { $sep = ': '; }
-                $last_was_multi_inv = $param.multi_invocant;
             }
-            take ')';
-        };
-        return @parts.join('');
+            nqp::bindattr(self, Signature, '$!arity', $arity);
+            nqp::bindattr(self, Signature, '$!count', $count);
+        }
+        $!count
     }
+              
+    method params() {
+        nqp::p6list(nqp::clone($!params), List, Mu);
+    }
+    
+    # XXX TODO: Parameter separators.
+    multi method perl(Signature:D:) {
+        # Opening.
+        my $perl = ':(';
+        
+        # Parameters.
+        my $params = self.params();
+        my $sep = '';
+        my $i = 0;
+        while $i < $params.elems {
+            $perl = $perl ~ $sep ~ $params[$i].perl;
+            $sep = ', ';
+            $i = $i + 1;
+        }
+        
+        # Closer.
+        $perl ~ ')'
+    }
+    
+    method returns() { $!returns }
 }
-
-# vim: ft=perl6

@@ -1,25 +1,19 @@
-augment class Pair {
-    multi method perl() {
-        $.key.perl ~ ' => ' ~ $.value.perl;
-    }
+my class Pair is Enum does Associative {
+    method key() is rw { nqp::getattr(self, Enum, '$!key') }
+    method value() is rw { nqp::getattr(self, Enum, '$!value') }
 
-    method keys() {
-        [self.key];
+    multi method ACCEPTS(Pair:D: %h) {
+        $.value.ACCEPTS(%h{%.key});
     }
-
-    method values() {
-        [self.value];
-    }
-
-    multi method invert() {
-        $.value => $.key;
-    }
-
-    method Numeric() {
-        fail "Don't know how to numify a Pair";
+    multi method ACCEPTS(Pair:D: Mu $other) {
+        $other."$.key"().Bool === $.value.Bool
     }
 }
 
-multi sub infix:<cmp>(Pair $a, Pair $b) {
-    ($a.key cmp $b.key) || ($a.value cmp $b.value);
+sub infix:«=>»($key, Mu $value) { 
+    Pair.new(:key($key), :value($value))
+}
+
+multi infix:<cmp>(Pair \$a, Pair \$b) {
+    ($a.key cmp $b.key) || ($a.value cmp $b.value)
 }

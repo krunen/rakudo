@@ -1,6 +1,6 @@
-use v6;
+my class Duration {... }
 
-class Instant does Real {
+my class Instant is Real {
     has Rat $.x;
       # A linear count of seconds since 1970-01-01T00:00:00Z, plus
       # tai-utc::initial-offset. Thus, $.x matches TAI from 1970
@@ -41,70 +41,78 @@ class Instant does Real {
         ($.x - $offset, False)
     }
 
-    method Str() {
-        'Instant:' ~ default-formatter
-            ::DateTime.new(self), :subseconds
+    multi method Str(Instant:D:) {
+        'Instant:' ~ $.x
     }
+    multi method perl(Instant:D:) {
+        "Instant.new(x => $.x.perl())";
+    }
+    method Bridge(Instant:D:) { $.x.Bridge }
+    method Num   (Instant:D:) { $.x.Num    }
+    method Int   (Instant:D:) { $.x.Int    }
 
-    method perl() {
-        sprintf '(DateTime.new(year => 1970).Instant + %s)',
-            ($.x - tai-utc::initial-offset).perl
-    }
+
+
+#    TODO: should be the new .gist, probably
+#    method Str() {
+#        'Instant:' ~ default-formatter
+#            ::DateTime.new(self), :subseconds
+#    }
 }
 
-our multi sub infix:«cmp»(Instant $a, Instant $b) {
+multi sub infix:«cmp»(Instant:D $a, Instant:D $b) {
     $a.x <=> $b.x
 }
 
-our multi sub infix:«<=>»(Instant $a, Instant $b) {
+multi sub infix:«<=>»(Instant:D $a, Instant:D $b) {
     $a.x <=> $b.x
 }
 
-our multi sub infix:«==»(Instant $a, Instant $b) {
+multi sub infix:«==»(Instant:D $a, Instant:D $b) {
     $a.x == $b.x
 }
 
-our multi sub infix:«!=»(Instant $a, Instant $b) {
+multi sub infix:«!=»(Instant:D $a, Instant:D $b) {
     $a.x != $b.x
 }
 
-our multi sub infix:«<»(Instant $a, Instant $b) {
+multi sub infix:«<»(Instant:D $a, Instant:D $b) {
     $a.x < $b.x
 }
 
-our multi sub infix:«>»(Instant $a, Instant $b) {
+multi sub infix:«>»(Instant:D $a, Instant:D $b) {
     $a.x > $b.x
 }
 
-our multi sub infix:«<=»(Instant $a, Instant $b) {
+multi sub infix:«<=»(Instant:D $a, Instant:D $b) {
     $a.x <= $b.x
 }
 
-our multi sub infix:«>=»(Instant $a, Instant $b) {
+multi sub infix:«>=»(Instant:D $a, Instant:D $b) {
     $a.x >= $b.x
 }
 
-our multi sub infix:<+>(Instant $a, Real $b) {
+multi sub infix:<+>(Instant:D $a, Real:D $b) {
     Instant.new: $a.x + $b;
 }
-our multi sub infix:<+>(Real $a, Instant $b) {
+multi sub infix:<+>(Real:D $a, Instant:D $b) {
     Instant.new: $a + $b.x;
 }
-our multi sub infix:<+>(Instant $a, Duration $b) {
+multi sub infix:<+>(Instant:D $a, Duration:D $b) {
     Instant.new: $a.x + $b.x;
 }
-our multi sub infix:<+>(Duration $a, Instant $b) {
+multi sub infix:<+>(Duration:D $a, Instant:D $b) {
     Instant.new: $a.x + $b.x;
 }
 
-our multi sub infix:<->(Instant $a, Instant $b) {
+multi sub infix:<->(Instant:D $a, Instant:D $b) {
     Duration.new: $a.x - $b.x;
 }
-our multi sub infix:<->(Instant $a, Real $b) {
+multi sub infix:<->(Instant:D $a, Real:D $b) {
     Instant.new: $a.x - $b;
 }
 
-our sub term:<now>() {
+sub term:<now>() {
     # FIXME: During a leap second, the returned value is one
     # second greater than it should be.
     Instant.from-posix: pir::time__n

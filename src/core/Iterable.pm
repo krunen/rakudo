@@ -1,16 +1,19 @@
-augment class Iterable {
-    multi method Numeric() { $.elems.Int }
+my class Iterable {
+    # Has parent Cool declared in BOOTSTRAP
 
-    multi method Int() { $.elems.Int }
+    method elems()    { self.list.elems }
+    method infinite() { Mu }
+    method item($self:) { $self }
+    
+    method fmt($format = '%s', $separator = ' ') {
+        self.list.fmt($format, $separator)
+    }
 
-    multi method Num() { $.elems.Num }
-
-    multi method Str() { $.list.Str }
-
-    multi method elems() { $.list.elems }
-
-    multi method fmt($format = '%s', $separator = ' ') { $.list.fmt($format, $separator); }
-
-    multi method list() { $.iterator.list }
-
+    method Int()      { self.elems }
+    method Num()      { self.elems.Num }
+    multi method Numeric(Iterable:D:)  { self.elems }
+    multi method Str(Iterable:D:)      { self.list.Str }
+    method chrs(Iterable:D:) {
+        self>>.chr.join;
+    }
 }

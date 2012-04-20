@@ -1,536 +1,242 @@
-our multi infix:<~~>(Mu $topic, Mu $matcher) {
-    ? $matcher.ACCEPTS($topic)
+## miscellaneous operators can go here.
+##   generic numeric operators are in Numeric.pm
+##   generic string operators are in Stringy.pm
+##   Int/Rat/Num operators are in {Int|Rat|Num}.pm
+
+sub infix:<=>(Mu \$a, Mu \$b) is rw {
+    pir::perl6_container_store__0PP($a, $b)
 }
 
-our multi infix:<~~>(Mu $topic, Regex $matcher) {
-    Q:PIR {
-        $P0 = find_lex '$matcher'
-        $P1 = find_lex '$topic'
-        %r = $P0.'ACCEPTS'($P1)
-        store_dynamic_lex '$/', %r
-    };
+proto infix:<does>(|$) { * }
+multi infix:<does>(Mu:D \$obj, Mu:U \$role) is rw {
+    # XXX Mutability check.
+    $obj.HOW.mixin($obj, $role).BUILD_LEAST_DERIVED({});
+}
+multi infix:<does>(Mu:D \$obj, Mu:U \$role, :$value! is parcel) is rw {
+    # XXX Mutability check.
+    my @attrs = $role.^attributes().grep: { .has_accessor };
+    die(X::Role::Initialization.new())
+        unless @attrs == 1;
+    $obj.HOW.mixin($obj, $role).BUILD_LEAST_DERIVED({ @attrs[0].Str.substr(2) => $value });
+}
+multi infix:<does>(Mu:U \$obj, Mu:U \$role) is rw {
+    die(X::Does::TypeObject.new())
+}
+multi infix:<does>(Mu:D \$obj, @roles) is rw {
+    # XXX Mutability check.
+    $obj.HOW.mixin($obj, |@roles).BUILD_LEAST_DERIVED({});
+}
+multi infix:<does>(Mu:U \$obj, @roles) is rw {
+    die(X::Does::TypeObject.new())
 }
 
-our multi prefix:<?>(Mu $a) {
-    pir::can($a, 'Bool')
-    ?? $a.Bool
-    !!  ( pir::istrue($a) ?? True !! False );
+proto infix:<but>(|$) { * }
+multi infix:<but>(Mu:D \$obj, Mu:U \$role) {
+    $obj.HOW.mixin($obj.clone(), $role).BUILD_LEAST_DERIVED({});
+}
+multi infix:<but>(Mu:D \$obj, Mu:U \$role, :$value! is parcel) {
+    my @attrs = $role.^attributes().grep: { .has_accessor };
+    die(X::Role::Initialization.new())
+        unless @attrs == 1;
+    $obj.HOW.mixin($obj.clone(), $role).BUILD_LEAST_DERIVED({ @attrs[0].Str.substr(2) => $value });
+}
+multi infix:<but>(Mu:U \$obj, Mu:U \$role) {
+    $obj.HOW.mixin($obj, $role);
+}
+multi infix:<but>(Mu \$obj, Mu:D $val) is rw {
+    my $role := Metamodel::ParametricRoleHOW.new_type();
+    my $meth := method () { $val };
+    $meth.set_name($val.^name);
+    $role.HOW.add_method($role, $meth.name, $meth);
+    $role.HOW.set_body_block($role,
+        -> |$c { nqp::list($role, nqp::hash('$?CLASS', $c<$?CLASS>)) });
+    $role.HOW.compose($role);
+    $obj.HOW.mixin($obj.clone(), $role);
+}
+multi infix:<but>(Mu:D \$obj, @roles) {
+    $obj.HOW.mixin($obj.clone(), |@roles).BUILD_LEAST_DERIVED({});
+}
+multi infix:<but>(Mu:U \$obj, @roles) {
+    $obj.HOW.mixin($obj, |@roles)
 }
 
-our multi prefix:<!>(Mu $a) {
-    $a.Bool ?? False !! True;
+sub SEQUENCE($left, $right, :$exclude_end) {
+    my @right := $right.flat;
+    my $endpoint = @right.shift;
+    my $infinite = $endpoint ~~ Whatever;
+    $endpoint = Bool::False if $infinite;
+    my $tail := ().list;
+
+    my sub succpred($cmp) {
+        ($cmp < 0) ?? { $^x.succ } !! ( $cmp > 0 ?? { $^x.pred } !! { $^x } )
+    }
+
+    (GATHER({
+        my @left := $left.flat;
+        my $value;
+        my $code;
+        my $stop;
+        while @left {
+            $value = @left.shift;
+            if $value ~~ Code { $code = $value; last }
+            if $value ~~ $endpoint { $stop = 1; last }
+            $tail.push($value);
+            take $value;
+        }
+        unless $stop {
+            $tail.munch($tail.elems - 3) if $tail.elems > 3;
+            my $a = $tail[0];
+            my $b = $tail[1];
+            my $c = $tail[2];
+            if $code.defined { }
+            elsif $tail.elems == 3 {
+                my $ab = $b - $a;
+                if $ab == $c - $b {
+                    if $ab != 0 || $a ~~ Numeric && $b ~~ Numeric && $c ~~ Numeric {
+                        $code = { $^x + $ab } 
+                    }
+                    else {
+                        $code = succpred($b cmp $c)
+                    }
+                }
+                elsif $a != 0 && $b != 0 && $c != 0 {
+                    $ab = $b / $a;
+                    if $ab == $c / $b {
+                        $ab = $ab.Int if $ab ~~ Rat && $ab.denominator == 1;
+                        $code = { $^x * $ab }
+                    }
+                }
+            }
+            elsif $tail.elems == 2 {
+                my $ab = $b - $a;
+                if $ab != 0 || $a ~~ Numeric && $b ~~ Numeric { 
+                    $code = { $^x + $ab } 
+                }
+                else {
+                    $code = succpred($a cmp $b)
+                }
+            }
+            elsif $tail.elems == 1 {
+                $code = $a cmp $endpoint > 0 ?? { $^x.pred } !! { $^x.succ }
+            }
+            elsif $tail.elems == 0 {
+                $code = {()}
+            }
+
+            if $code.defined {
+                my $count = $code.count;
+                while 1 {
+                    $tail.munch($tail.elems - $count);
+                    $value := $code(|$tail);
+                    last if $value ~~ $endpoint;
+                    $tail.push($value);
+                    take $value;
+                }
+            }
+            else {
+                $value = (sub { fail X::Sequence::Deduction.new })();
+            }
+        }
+        take $value unless $exclude_end;
+    }, :$infinite), @right).list;
 }
 
-our multi sub prefix:<->($a) {
-    pir::neg__NN($a)
+# XXX Wants to be a macro when we have them.
+sub WHAT(\$x) {
+    $x.WHAT
 }
 
-our multi sub infix:<+>($a, $b) {
-    +$a + +$b;
-}
+proto sub infix:<...>(|$) { * }
+multi sub infix:<...>($a, $b) { SEQUENCE($a, $b) }
 
-our multi sub infix:<->($a, $b) {
-    +$a - +$b;
-}
+proto sub infix:<...^>(|$) { * }
+multi sub infix:<...^>($a, $b) { SEQUENCE($a, $b, :exclude_end(1)) }
 
-our multi sub infix:<*>($a, $b) {
-    +$a * +$b;
-}
-
-our multi sub infix:</>($a, $b) {
-    +$a / +$b;
-}
-
-our multi sub infix:<%>($a, $b) {
-    +$a % +$b;
-}
-
-our multi sub infix:<%%>($a, $b) {
-    +$a % +$b == 0;
-}
-
-our multi sub infix:<**>($a, $b) {
-    (+$a) ** +$b; # parenthesis needed because of precendence.
-}
-
-our multi sub infix:<&>(*@items) {
-    Junction.new(@items, :all)
-}
-
-our multi sub infix:<|>(*@items) {
-    Junction.new(@items, :any)
-}
-
-our multi sub infix:<^>(*@items) {
-    Junction.new(@items, :one)
-}
-
-our multi sub infix:<+&>($a, $b) {
-    pir::band__III($a, $b);
-}
-
-our multi sub infix:<+|>($a, $b) {
-    pir::bor__III($a, $b);
-}
-
-our multi sub infix:<+^>($a, $b) {
-    pir::bxor__III($a, $b);
-}
-
-our multi sub infix:«+<»($a, $b) {
-    pir::shl__III($a, $b);
-}
-
-our multi sub infix:«+>»($a, $b) {
-    pir::shr__III($a, $b);
-}
-
-our multi sub infix:<~|>($a, $b) {
-    pir::bors__SSS($a, $b);
-}
-
-our multi sub infix:<~&>($a, $b) {
-    pir::bands__SSS($a, $b);
-}
-
-our multi sub infix:<~^>($a, $b) {
-    pir::bxors__SSS($a, $b);
-}
-
-our sub all(*@items) {
-    Junction.new(@items, :all);
-}
-
-our sub any(*@items) {
-    Junction.new(@items, :any);
-}
-
-our sub one(*@items) {
-    Junction.new(@items, :one);
-}
-
-our sub none(*@items) {
-    Junction.new(@items, :none);
-}
-
-our multi prefix:<not>(Mu $x) { !$x }
-
-our multi prefix:<so>(Mu $x) { ?$x }
-
-our multi prefix:sym<+^>($x) {
-    pir::bnot__PP($x)
-}
-
-our sub undefine(Mu \$x) {
+sub undefine(Mu \$x) {
     my $undefined;
     $x = $undefined;
 }
 
-our multi infix:<does>(Mu \$doee, Role $r) {
-    &infix:<does>($doee, $r!select)
-}
-
-our multi infix:<does>(Mu \$doee, ConcreteRole $r) {
-    my $applicator = $r.^applier_for($doee);
-    $applicator.apply($doee, [$r]);
-    $doee
-}
-
-our multi infix:<does>(Mu \$doee, Parcel $roles) {
-    my $*SCOPE = 'my';
-    my $mr = RoleHOW.new();
-    for @($roles) -> $r {
-        $mr.^add_composable($r);
+sub infix:<ff>($a as Bool, $b as Bool) {
+    my $pos := nqp::p6box_s(nqp::callerid());
+    state %ffv;
+    if %ffv{$pos} {
+        %ffv{$pos} = False if $b;
+        True;
     }
-    my $r = $mr.^compose();
-    $doee does $r;
-}
-
-our multi infix:<does>(Mu \$doee, \$value) {
-    # Need to manufacture a role here.
-    my $r = RoleHOW.new();
-    $r.^add_method($value.WHAT.perl, method () { $value });
-    $doee does $r.^compose()
-}
-
-our multi infix:<but>(Mu \$doee, \$r) {
-    $doee.clone() does $r
-}
-
-our multi infix:<before>($a, $b) {
-    ($a cmp $b) == -1;
-}
-
-our multi infix:<after>($a, $b) {
-    ($a cmp $b) == +1;
-}
-
-our multi infix:<?|>($a, $b) {
-    ?(?$a +| ?$b)
-}
-
-our multi infix:<?&>($a, $b) {
-    ?(?$a +& ?$b)
-}
-
-our multi infix:<?^>($a, $b) {
-    ?(?$a +^ ?$b)
-}
-
-our multi infix:<min>(*@args) {
-    @args.min;
-}
-
-our multi infix:<max>(*@args) {
-    @args.max;
-}
-
-our multi infix:<minmax>(*@args) {
-    @args.minmax;
-}
-
-our multi infix:«=>»($key, Mu $value) {
-    Pair.new(key => $key, value => $value);
-}
-
-our multi infix:<~>($a, $b) {
-    my $result = pir::new__Ps('Str');
-    pir::assign__vPS($result, pir::concat__SSS(~$a, ~$b));
-    $result
-}
-
-our sub circumfix:<{ }>(*@elements) {
-    my %h = @elements;
-    %h.item
-}
-
-our sub hash(*@list, *%hash) {
-    my %h = (@list, %hash);
-    %h
-}
-
-our multi infix:sym<//>(Mu $a, Mu $b) {
-    $a.defined ?? $a !! $b
-}
-
-our multi infix:<==>($a, $b) {
-    +$a == +$b;
-}
-
-our multi infix:<!=>(Mu $a, Mu $b) {
-    $a !== $b
-}
-
-our multi infix:«<»($a, $b) {
-    +$a < +$b;
-}
-
-our multi infix:«<=»($a, $b) {
-    +$a <= +$b;
-}
-
-our multi infix:«>»($a, $b) {
-    +$a > +$b;
-}
-
-our multi infix:«>=»($a, $b) {
-    +$a >= +$b;
-}
-
-our multi infix:<eq>($a, $b) {
-    pir::iseq__ISS(~$a, ~$b) ?? True !! False
-}
-
-our multi infix:<ne>(Mu $a, Mu $b) {
-    $a !eq $b
-}
-
-our multi infix:<lt>($a, $b) {
-    pir::islt__ISS(~$a, ~$b) ?? True !! False
-}
-
-our multi infix:<le>($a, $b) {
-    pir::isle__ISS(~$a, ~$b) ?? True !! False
-}
-
-our multi infix:<gt>($a, $b) {
-    pir::isgt__ISS(~$a, ~$b) ?? True !! False
-}
-
-our multi infix:<ge>($a, $b) {
-    pir::isge__ISS(~$a, ~$b) ?? True !! False
-}
-
-# XXX Lazy version would be nice in the future too.
-class Whatever { ... }
-
-our multi infix:<xx>(Mu \$item, Whatever) {
-    (1..*).map( { $item } )
-}
-
-our multi infix:<xx>(Mu \$item, $n) {
-    (1..+$n).map( { $item } )
-}
-
-
-our multi prefix:<|>(@a) { @a.Capture }
-our multi prefix:<|>(%h) { %h.Capture }
-our multi prefix:<|>(Capture $c) { $c }
-our multi prefix:<|>(Mu $anything) { Capture.new($anything) }
-
-our multi infix:<:=>(Mu \$target, Mu \$source) {
-    #Type Checking. The !'s avoid putting actual binding in a big nest.
-    if !pir::isnull(pir::getprop__PsP('type', $target)) {
-        if !pir::getprop__PsP('type', $target).ACCEPTS($source) {
-            die("You cannot bind a variable of type {$source.WHAT} to a variable of type {$target.WHAT}.");
-        }
+    elsif $a {
+        %ffv{$pos} = $a
     }
-
-    if !pir::isnull(pir::getprop__PsP('WHENCE', pir::descalarref__PP($target)))
-        { pir::getprop__PsP('WHENCE', pir::descalarref__PP($target)).() }
-
-    #and now, for the actual process
-    pir::setprop__0PsP(
-        pir::copy__0PP($target, pir::new__PsP('ObjectRef', $source)),
-        'rw',
-        pir::getprop__PsP('rw', $source)
-    );
-}
-
-our multi infix:<:=>(Signature $s, Parcel \$p) {
-    $s!BIND($p.Capture());
-}
-
-our multi infix:<:=>(Signature $s, Mu \$val) {
-    $s!BIND(Capture.new($val));
-}
-
-our multi infix:<::=>(Mu \$target, Mu \$source) {
-    #since it's only := with setting readonly, let's avoid recoding.
-    $target := $source;
-    #XX pay attention to this little guy, we don't quite understand or are
-    #able to implement the full details of ::=
-    pir::delprop__0Ps($target, 'rw');
-}
-
-# XXX Wants to be a macro when we have them.
-our sub WHAT(\$x) {
-    $x.WHAT
-}
-
-our multi sub item(*@values) {
-    @values.Seq
-}
-our multi sub item(@values) {
-    @values.Seq
-}
-our multi sub item($item) {
-    $item
-}
-
-
-our sub _HELPER_generate-series(@lhs, $rhs , :$exclude-limit) {
-    my sub get-next-closure (@lhs, $limit? ) {
-        fail "Need something on the LHS" unless @lhs.elems;
-        fail "Need more items on the LHS" if @lhs[*-1] ~~ Code && @lhs[*-1] !~~ Multi && @lhs[*-1].count != Inf && @lhs.elems < @lhs[*-1].count;
-
-        #BEWARE: Here be ugliness
-        if @lhs[* - 1] ~~ Code { # case: (a,b,c,{code}) ... *
-            return @lhs[*-1] if @lhs[*-1] !~~ Multi;
-            return @lhs[*-1].candidates[0] if @lhs[*-1].candidates.elems == 1;
-            if (@lhs[*-1].candidates>>.count).grep( * == 2) {
-                return { @lhs[*-1]($^a,$^b) } ; # case: (a,b,c,&[+] ... *
-            } else {
-                fail "Don't know how to handle Multi on the lhs yet";
-            }
-        }
-        return { .succ }  if @lhs.elems == 1 && $limit ~~ Code;
-        return { $_ } if @lhs.elems > 1 && @lhs[*-1] cmp @lhs[*-2] == 0 ;  # case: (a , a) ... *
-
-        if  @lhs[*-1] ~~ Str ||  $limit ~~ Str {
-            if @lhs[*-1].chars == 1 && $limit.defined && $limit.chars == 1 {
-                return { .ord.succ.chr } if @lhs[*-1] lt  $limit;# case (... , non-number) ... limit
-                return { .ord.pred.chr } if @lhs[*-1] gt  $limit;# case (... , non-number) ... limit
-            }
-            return { .succ } if $limit.defined && @lhs[*-1] lt  $limit;# case (... , non-number) ... limit
-            return { .pred } if $limit.defined && @lhs[*-1] gt  $limit;# case (... , non-number) ... limit
-            return { .pred } if @lhs.elems > 1 && @lhs[*-2] gt  @lhs[*-1];# case (non-number , another-smaller-non-number) ... *
-            return { .succ } ;# case (non-number , another-non-number) ... *
-        }
-        return { .pred } if @lhs.elems == 1 && $limit.defined && $limit before @lhs[* - 1];  # case: (a) ... b where b before a
-        return { .succ } if @lhs.elems == 1 ;  # case: (a) ... *
-
-        my $diff = @lhs[*-1] - @lhs[*-2];
-        return { $_ + $diff } if @lhs.elems == 2 || @lhs[*-2] - @lhs[*-3] == $diff ; #Case Arithmetic series
-
-        if @lhs[*-2] / @lhs[*-3] == @lhs[*-1] / @lhs[*-2] { #Case geometric series
-            my $factor = @lhs[*-2] / @lhs[*-3];
-            if $factor ~~ ::Rat && $factor.denominator == 1 {
-                $factor = $factor.Int;
-            }
-            return { $_ * $factor } ;
-        }
-        fail "Unable to figure out pattern of series";
-    }
-
-    my sub infinite-series (@lhs, $limit ) {
-        gather {
-            my $i = 0;
-            while @lhs[$i+1].defined { take @lhs[$i]; $i++; } #We blindly take all elems of the LHS except last one.
-            if @lhs[$i] !~~ Code { take @lhs[$i]; $i++; }     #We take the last element only when it is not code
-
-            my $next = get-next-closure(@lhs , $limit );
-            my $arity = $next.count;
-            my @args=@lhs[$i-($arity ~~ Inf ?? $i !! $arity) .. $i-1]; #We make sure there are $arity elems in args
-
-            loop {                         #Then we extrapolate using $next and the $args
-                my $current = $next.(|@args) // last;
-                take $current ;
-                if $arity {
-                    @args.push($current) ;
-                    @args.munch(1) if @args.elems > $arity
-                }
-            }
-        }
-    }
-
-    my $limit = ($rhs ~~ Whatever ?? Any !! $rhs);
-    return infinite-series(@lhs , $limit) if $rhs ~~ Whatever; #shortcut infinite series so we avoid the comparisions
-
-    fail ('Limit arity cannot be larger than 1') if 	$limit ~~ Code && $limit.count > 1;
-    my $series = infinite-series(@lhs , $limit);
-    gather {
-        while $series {
-            my $val = $series.shift();
-            if $val ~~  $limit {
-                take $val unless $exclude-limit ;
-                last ;
-            };
-            take $val;
-        }
+    else {
+        False
     }
 }
 
-our multi sub infix:<...>(@lhs, $limit) {
-    _HELPER_generate-series(@lhs, $limit )
-}
-our multi sub infix:<...^>(@lhs, $limit) {
-    _HELPER_generate-series(@lhs, $limit , :exclude-limit)
-}
-our multi sub infix:<...^>($lhs , $limit) {
-    $lhs.list ...^ $limit;
-}
-our multi sub infix:<...^>(@lhs, @rhs) {
-    fail "Need something on RHS" if !@rhs;
-    (@lhs ...^ @rhs.shift), @rhs
-}
-
-our multi sub infix:<...>($lhs, $rhs) {
-    $lhs.list ... $rhs;
-}
-
-our multi sub infix:<...>($lhs, @rhs is copy) {
-    fail "Need something on RHS" if !@rhs;
-    ($lhs ... @rhs.shift), @rhs
-}
-
-our multi sub infix:<...>(@lhs, @rhs is copy) {
-    fail "Need something on RHS" if !@rhs;
-    (@lhs ... @rhs.shift), @rhs
-}
-
-our multi sub infix:<eqv>(Mu $a, Mu $b) {
-    $a.WHAT === $b.WHAT && $a === $b;
-}
-
-our multi sub infix:<eqv>(@a, @b) {
-    unless @a.WHAT === @b.WHAT && @a.elems == @b.elems {
-        return Bool::False
+sub infix:<ff^>($a as Bool, $b as Bool) {
+    my $pos := nqp::p6box_s(nqp::callerid());
+    state %ffv;
+    if %ffv{$pos} {
+        $b ?? (%ffv{$pos} = False) !! True
     }
-    for @a.keys -> $i {
-        unless @a[$i] eqv @b[$i] {
-            return Bool::False;
+    elsif $a {
+        %ffv{$pos} = $a
+    }
+    else {
+        False
+    }
+}
+
+sub infix:<^ff>($a as Bool, $b as Bool) {
+    my $pos := nqp::p6box_s(nqp::callerid());
+    state %ffv;
+    if %ffv{$pos} {
+        %ffv{$pos} = False if $b;
+        True
+    }
+    else {
+        %ffv{$pos} = True if $a;
+        False
+    }
+}
+
+sub infix:<^ff^>($a as Bool, $b as Bool) {
+    my $pos := nqp::p6box_s(nqp::callerid());
+    state %ffv;
+    if %ffv{$pos} {
+        $b ?? (%ffv{$pos} = False) !! True
+    }
+    else {
+        %ffv{$pos} = True if $a;
+        False
+    }
+}
+
+# not sure where this should go
+# this implements the ::() indirect lookup
+sub INDIRECT_NAME_LOOKUP($root, *@chunks) is rw {
+    # note that each part of @chunks itself can
+    # contain double colons. That's why joining and
+    # re-splitting is necessary
+    my Str $name = @chunks.join('::');
+    my @parts    = $name.split('::');
+    my $first    = @parts.shift;
+    if @parts && '$@%&'.index($first.substr(0, 1)).defined {
+        # move sigil from first to last chunk, because
+        # $Foo::Bar::baz is actually stored as Foo::Bar::$baz
+        my $last_idx      = @parts.end;
+        @parts[$last_idx] = $first.substr(0, 1) ~ @parts[$last_idx]; 
+        $first            = $first.substr(1);
+        if $first eq '' {
+            $first = @parts.shift;
+            $name = @chunks.join('::');
         }
     }
-    Bool::True
-}
-
-our multi sub infix:<eqv>(Pair $a, Pair $b) {
-    $a.key eqv $b.key && $a.value eqv $b.value;
-}
-
-our multi sub infix:<eqv>(Capture $a, Capture $b) {
-    @($a) eqv @($b) && %($a) eqv %($b)
-}
-
-class EnumMap { ... }
-our multi sub infix:<eqv>(EnumMap $a, EnumMap $b) {
-    if +$a != +$b { return Bool::False }
-    for $a.kv -> $k, $v {
-        unless $b.exists($k) && $b{$k} eqv $v {
-            return Bool::False;
-        }
+    my Mu $thing := $root.exists($first) ?? $root{$first} !!
+                    GLOBAL::.exists($first) ?? GLOBAL::{$first} !!
+                    fail("Symbol '$name' not found");
+    for @parts {
+        fail("Symbol '$name not found") unless $thing.WHO.exists($_);
+        $thing := $thing.WHO{$_};
     }
-    Bool::True;
-}
-
-our multi sub infix:<eqv>(Numeric $a, Numeric $b) {
-    $a.WHAT === $b.WHAT && ($a cmp $b) == 0;
-}
-
-our multi sub infix:<Z>($lhs, $rhs) {
-    my $lhs-list = flat($lhs.list);
-    my $rhs-list = flat($rhs.list);
-    my ($a, $b);
-    gather while ?$lhs-list && ?$rhs-list {
-        $a = $lhs-list.shift unless $lhs-list[0] ~~ ::Whatever;
-        take -> $q is copy { $q }($a);
-          # Workaround for RT #77302.
-        $b = $rhs-list.shift unless $rhs-list[0] ~~ ::Whatever;
-        take -> $q is copy { $q }($b);
-   }
-}
-
-our multi sub infix:<X>($lhs, $rhs) {
-    my $lhs-list = flat($lhs.list);
-    my $rhs-list = flat($rhs.list);
-    gather while ?$lhs-list {
-        my $a = $lhs-list.shift;
-        for @($rhs-list) -> $b {
-            my $b-copy = $b;
-            take ($a, $b-copy);
-        }
-    }
-}
-
-# if we want &infix:<||> accessible (for example for meta operators), we need
-# to define it, because the normal || is short-circuit and special cased by
-# the grammar. Same goes for 'or', '&&' and 'and'
-
-our multi sub infix:<||>(Mu $a, Mu $b) { $a || $b }
-our multi sub infix:<or>(Mu $a, Mu $b) { $a or $b }
-our multi sub infix:<&&>(Mu $a, Mu $b) { $a && $b }
-our multi sub infix:<and>(Mu $a, Mu $b) { $a and $b }
-
-# Eliminate use of this one, but keep the pir around for
-# the moment, as it may come in handy elsewhere.
-#
-# multi sub infix_prefix_meta_operator:<!>($a, $b, $c) {
-#     !(pir::get_hll_global__CS($a)($b, $c));
-# }
-
-our multi sub infix:«<==»($a, $b) {
-    die "Sorry, feed operators not yet implemented";
-}
-
-our multi sub infix:«==>»($a, $b) {
-    die "Sorry, feed operators not yet implemented";
-}
-
-our multi sub infix:«<<==»($a, $b) {
-    die "Sorry, feed operators not yet implemented";
-}
-
-our multi sub infix:«==>>»($a, $b) {
-    die "Sorry, feed operators not yet implemented";
+    $thing;
 }

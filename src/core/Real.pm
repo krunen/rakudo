@@ -1,282 +1,132 @@
-class Complex { ... }
+my class Complex { ... }
 
-role Real does Numeric {
-    method ACCEPTS($other) {
-        if self.isNaN {
-            $other.isNaN;
-        } else {
-            $other == self;
+# XxX role Real does Numeric { ... }
+my class Real does Numeric {
+    method Rat(Real:D: Real $epsilon = 1.0e-6) { self.Bridge.Rat($epsilon) }
+    method abs()  { self < 0 ?? -self !! self }
+    proto method sign(|$) {*}
+    multi method sign(Real:U:) { Mu }
+    multi method sign(Real:D:) { self < 0 ?? -1 !! self == 0 ?? 0 !! 1 }
+    method conj(Real:D:) { self }
+    method sqrt() { self.Bridge.sqrt }
+    method sin()  { self.Bridge.sin }
+    method asin() { self.Bridge.asin }
+    method cos()  { self.Bridge.cos }
+    method acos() { self.Bridge.acos }
+    method tan()  { self.Bridge.tan }
+    method atan() { self.Bridge.atan }
+    proto method atan2(|$) {*}
+    multi method atan2(Real $x = 1e0) { self.Bridge.atan2($x.Bridge) }
+    multi method atan2(Cool $x = 1e0) { self.Bridge.atan2($x.Numeric.Bridge) }
+    method sec() { self.Bridge.sec }
+    method asec() { self.Bridge.asec }
+    method cosec() { self.Bridge.cosec }
+    method acosec() { self.Bridge.acosec }
+    method cotan()  { self.Bridge.cotan }
+    method acotan() { self.Bridge.acotan }
+    method sinh() { self.Bridge.sinh }
+    method asinh() { self.Bridge.asinh }
+    method cosh() { self.Bridge.cosh }
+    method acosh() { self.Bridge.acosh }
+    method tanh() { self.Bridge.tanh }
+    method atanh() { self.Bridge.atanh }
+    method sech() { self.Bridge.sech }
+    method asech() { self.Bridge.asech }
+    method cosech() { self.Bridge.cosech }
+    method acosech() { self.Bridge.acosech }
+    method cotanh() { self.Bridge.cotanh }
+    method acotanh() { self.Bridge.acotanh }
+    method floor() { self.Bridge.floor }
+    method ceiling() { self.Bridge.ceiling }
+    # cannot use '0.5' here, because Rat isn't initialized yet
+    method round($scale = 1) { (self / $scale + 1/2).floor * $scale }
+    method unpolar(Real $angle) {
+        Complex.new(self * $angle.cos, self * $angle.sin);
+    }
+    method cis() {
+        Complex.new(self.cos, self.sin);
+    }
+    method Complex() { Complex.new(self.Num, 0e0) }
+    multi method log()           { self.Bridge.log               }
+    multi method log(Real $base) { self.Bridge.log($base.Bridge) }
+    multi method exp()           { self.Bridge.exp               }
+    method truncate(Real:D:) {
+        self == 0 ?? 0 !! self < 0  ?? self.ceiling !! self.floor
+    }
+    method isNaN { Bool::False }
+
+    method base(Int:D $base) {
+        my Int $int_part = self.Int;
+        my $frac = abs(self - $int_part);
+        my @frac_digits;
+        my @conversion = qw/0 1 2 3 4 5 6 7 8 9
+                            A B C D E F G H I J
+                            K L M N O P Q R S T/;
+        # pretty arbitrary precision limit for now
+        # but better than endless loops
+        my $limit = 1e8.log($base.Num).Int;
+        for ^$limit {
+            last if $frac == 0;
+            $frac = $frac * $base;
+            push @frac_digits, @conversion[$frac.Int];
+            $frac = $frac - $frac.Int;
         }
+        my Str $r = $int_part.base($base) ~ '.' ~ @frac_digits.join('');
+        # if $int_part is 0, $int_part.base doesn't see the sign of self
+        $int_part == 0 && self < 0 ?? '-' ~ $r !! $r;
     }
 
-    method Bridge() {
-        fail "Bridge must be defined for the Real type " ~ self.WHAT;
-    }
-
-    method Real() {
-        self;
-    }
-
-    method Bool() {
-        self != 0 ?? Bool::True !! Bool::False;
-    }
-
-    method Int() {
-        self.truncate;
-    }
-
-    method Rat(Real $epsilon = 1.0e-6) {
-        self.Bridge.Rat($epsilon);
-    }
-
-    method Num() {
-        self.Bridge.Num;
-    }
-
-    method Complex() {
-        Complex.new(self, 0);
-    }
-
-    method Str() {
-        self.Num.Str;
-    }
-
-    method reals() {
-        (self);
-    }
-
-    method isNaN() {
-        False;
-    }
-
-    method abs(Real $x:) {
-        $x < 0 ?? -$x !! $x;
-    }
-
-    # Hmmm... should the second argument be Numeric for the next two?
-    method exp(Real $exponent: Numeric $base = e) {
-        $base ** $exponent;
-    }
-
-    method ln(Real $x:) {
-        $x.Bridge.ln;
-    }
-
-    method sqrt(Real $x:) {
-        $x.Bridge.sqrt;
-    }
-
-    method roots(Real $x: Int $n) {
-        $x.Complex.roots($n);
-    }
-
-    method sign(Real $x:) {
-        $x.notdef ?? Mu
-                    !! ($x ~~ NaN ?? NaN !! $x <=> 0);
-    }
-
-    method floor(Real $x:) {
-        $x.Bridge.floor;
-    }
-
-    method ceiling(Real $x:) {
-        $x.Bridge.ceiling;
-    }
-
-    method truncate(Real $x:) {
-        $x == 0 ?? 0 !! $x < 0  ?? $x.ceiling !! $x.floor
-    }
-
-    method round(Real $x: $scale = 1) {
-        floor($x / $scale + 0.5) * $scale;
-    }
-
-    method cis(Real $angle:) {
-        1.unpolar($angle);
-    }
-
-    method unpolar(Real $mag: Real $angle) {
-        Complex.new($mag * $angle.cos(Radians),
-                    $mag * $angle.sin(Radians));
-    }
-
-    method rand(Real $x:) {
-        $x.Bridge.rand;
-    }
-
-    method sin(Real $x: $base = Radians) {
-        $x.Bridge.sin($base);
-    }
-
-    method asin(Real $x: $base = Radians) {
-        $x.Bridge.asin($base);
-    }
-
-    method cos(Real $x: $base = Radians) {
-        $x.Bridge.cos($base);
-    }
-
-    method acos(Real $x: $base = Radians) {
-        $x.Bridge.acos($base);
-    }
-
-    method tan(Real $x: $base = Radians) {
-        $x.Bridge.tan($base);
-    }
-
-    method atan(Real $x: $base = Radians) {
-        $x.Bridge.atan($base);
-    }
-
-    method sec(Real $x: $base = Radians) {
-        $x.Bridge.sec($base);
-    }
-
-    method asec(Real $x: $base = Radians) {
-        $x.Bridge.asec($base);
-    }
-
-    method cosec(Real $x: $base = Radians) {
-        $x.Bridge.cosec($base);
-    }
-
-    method acosec(Real $x: $base = Radians) {
-        $x.Bridge.acosec($base);
-    }
-
-    method cotan(Real $x: $base = Radians) {
-        $x.Bridge.cotan($base);
-    }
-
-    method acotan(Real $x: $base = Radians) {
-        $x.Bridge.acotan($base);
-    }
-
-    method sinh(Real $x: $base = Radians) {
-        $x.Bridge.sinh($base);
-    }
-
-    method asinh(Real $x: $base = Radians) {
-        $x.Bridge.asinh($base);
-    }
-
-    method cosh(Real $x: $base = Radians) {
-        $x.Bridge.cosh($base);
-    }
-
-    method acosh(Real $x: $base = Radians) {
-        $x.Bridge.acosh($base);
-    }
-
-    method tanh(Real $x: $base = Radians) {
-        $x.Bridge.tanh($base);
-    }
-
-    method atanh(Real $x: $base = Radians) {
-        $x.Bridge.atanh($base);
-    }
-
-    method sech(Real $x: $base = Radians) {
-        $x.Bridge.sech($base);
-    }
-
-    method asech(Real $x: $base = Radians) {
-        $x.Bridge.asech($base);
-    }
-
-    method cosech(Real $x: $base = Radians) {
-        $x.Bridge.cosech($base);
-    }
-
-    method acosech(Real $x: $base = Radians) {
-        $x.Bridge.acosech($base);
-    }
-
-    method cotanh(Real $x: $base = Radians) {
-        $x.Bridge.cotanh($base);
-    }
-
-    method acotanh(Real $x: $base = Radians) {
-        $x.Bridge.acotanh($base);
-    }
-
-    method atan2(Real $y: $x = 1, $base = Radians) {
-        $y.Bridge.atan2($x, $base);
-    }
+    method Real(Real:D:) { self }
+    method Bridge(Real:D:) { self.Num }
 }
 
-# Comparison operators
+proto sub cis(|$) {*}
+multi sub cis(Real $a) { $a.cis }
 
-multi sub infix:<cmp>(Real $a, Real $b) {
-    $a.Bridge cmp $b.Bridge;
-}
+multi infix:<+>(Real \$a, Real \$b)   { $a.Bridge + $b.Bridge }
 
-multi sub infix:«<=>»(Real $a, Real $b) {
-    $a.Bridge cmp $b.Bridge;
-}
+multi infix:<->(Real \$a, Real \$b)   { $a.Bridge - $b.Bridge }
 
-multi sub infix:«==»(Real $a, Real $b) {
-    $a.Bridge == $b.Bridge;
-}
+multi infix:<*>(Real \$a, Real \$b)   { $a.Bridge * $b.Bridge }
 
-multi sub infix:«!=»(Real $a, Real $b) {
-    $a.Bridge != $b.Bridge;
-}
+multi infix:</>(Real \$a, Real \$b)   { $a.Bridge / $b.Bridge }
 
-multi sub infix:«<»(Real $a, Real $b) {
-    $a.Bridge < $b.Bridge;
-}
+multi infix:<%>(Real \$a, Real \$b)   { $a.Bridge % $b.Bridge }
 
-multi sub infix:«>»(Real $a, Real $b) {
-    $a.Bridge > $b.Bridge;
-}
+multi infix:<**>(Real \$a, Real \$b)  { $a.Bridge ** $b.Bridge }
 
-multi sub infix:«<=»(Real $a, Real $b) {
-    $a.Bridge <= $b.Bridge;
-}
+multi infix:«<=>»(Real \$a, Real \$b) { $a.Bridge <=> $b.Bridge }
 
-multi sub infix:«>=»(Real $a, Real $b) {
-    $a.Bridge >= $b.Bridge;
-}
+multi infix:<==>(Real \$a, Real \$b)  { $a.Bridge == $b.Bridge }
 
-# Arithmetic operators
+multi infix:«<»(Real \$a, Real \$b)   { $a.Bridge < $b.Bridge }
 
-multi sub prefix:<->(Real $a) {
-    -($a.Bridge);
-}
+multi infix:«<=»(Real \$a, Real \$b)  { $a.Bridge <= $b.Bridge }
 
-multi sub infix:<+>(Real $a, Real $b) {
-    $a.Bridge + $b.Bridge;
-}
+multi infix:«>»(Real \$a, Real \$b)   { $a.Bridge > $b.Bridge }
 
-multi sub infix:<->(Real $a, Real $b) {
-    $a.Bridge - $b.Bridge;
-}
+multi infix:«>=»(Real \$a, Real \$b)  { $a.Bridge >= $b.Bridge }
 
-multi sub infix:<*>(Real $a, Real $b) {
-    $a.Bridge * $b.Bridge;
-}
+multi infix:<cmp>(Real \$a, Real \$b) { $a.Bridge cmp $b.Bridge }
 
-multi sub infix:</>(Real $a, Real $b) {
-    $a.Bridge / $b.Bridge;
-}
-
-multi sub infix:<%>(Real $a, Real $b) {
-    # older version is pir::mod__NNN($a.Bridge, $b.Bridge)
-    $a - ($a / $b).floor * $b;
-}
-
-multi sub infix:<**>(Real $a, Real $b) {
-    $a.Bridge ** $b.Bridge;
-}
-
-# NOTE: mod is only actually defined for integer types!
-# But if you have an integer type that does Real, this
-# should automatically define an appropriate mod for you.
-our multi sub infix:<mod>(Real $a, Real $b) {
+proto sub infix:<mod>(|$) {*}
+multi sub infix:<mod>(Real $a, Real $b) {
     $a - ($a div $b) * $b;
 }
 
-multi sub srand(Real $seed = time) {
-    pir::srand__0I($seed.Int);
+multi prefix:<abs>(Real \$a) {
+    $a < 0 ?? -$a !! $a;
 }
+
+proto sub truncate(|$) {*}
+multi sub truncate(Real:D $x) { $x.truncate }
+multi sub truncate(Cool:D $x) { $x.Numeric.truncate }
+
+
+proto sub atan2(|$)    { * }
+multi sub atan2(Real \$a, Real \$b = 1e0) { $a.Bridge.atan2($b.Bridge) }
+# should really be (Cool, Cool), and then (Cool, Real) and (Real, Cool)
+# candidates, but since Int both conforms to Cool and Real, we'd get lots
+# of ambiguous dispatches. So just go with (Any, Any) for now.
+multi sub atan2(     \$a,      \$b = 1e0) { $a.Numeric.atan2($b.Numeric) }
+

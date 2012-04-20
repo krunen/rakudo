@@ -1,127 +1,110 @@
-class EnumMap is Iterable does Associative {
-    has $!storage;
+my class EnumMap does Associative {
+    # declared in BOOTSTRAP.pm:
+    #   has $!storage;         # Parrot Hash PMC of key->value mappings
 
-    method new(*%values) {
-        self.bless(*, storage => pir::getattribute__PPs(%values, '$!storage'));
+    multi method Bool(EnumMap:D:) {
+        nqp::p6bool(pir::defined($!storage) ?? nqp::elems($!storage) !! 0)
+    }
+    method elems(EnumMap:D:) {
+        pir::defined($!storage) ?? nqp::p6box_i(nqp::elems($!storage)) !! 0
     }
 
-    method at_key($key) {
-        Q:PIR {
-            .local pmc self
-            self = find_lex 'self'
-            $P0 = getattribute self, '$!storage'
-            $P1 = find_lex '$key'
-            %r = $P0[$P1]
-            unless null %r goto done
-            %r = get_hll_global 'Any'
-          done:
-        }
+    multi method ACCEPTS(EnumMap:D: Any $topic) {
+        so self.exists($topic.any);
     }
 
-    multi method ACCEPTS(Regex $topic) {
-        for @.keys -> $k {
-            if $topic.ACCEPTS($k) {
-                return True;
-            }
-        }
-        False
+    multi method ACCEPTS(EnumMap:D: Cool:D $topic) {
+        so self.exists($topic);
+    }
+    
+    proto method exists(|$) {*}
+    multi method exists(EnumMap:D: Str:D \$key) {
+        nqp::p6bool(
+            pir::defined($!storage)
+            && nqp::existskey($!storage, nqp::unbox_s($key))
+        )
+    }
+    multi method exists(EnumMap:D: \$key) {
+        nqp::p6bool(
+            pir::defined($!storage)
+            && nqp::existskey($!storage, nqp::unbox_s($key.Stringy))
+        )
     }
 
-    multi method ACCEPTS(%topic) {
-        @.keys.sort eqv %topic.keys.sort;
-    }
-
-    multi method ACCEPTS(@topic) {
-        self.contains(any(@topic))
-    }
-
-    multi method ACCEPTS($topic) {
-        self.contains($topic)
-    }
-
-    method contains($key) {
-        self.exists($key)
-    }
-
-    method elems() {
-        pir::elements__IP($!storage)
-    }
-
-    method exists($key) {
-        ?pir::exists($!storage, $key);
-    }
-
-    method fmt($format = "%s\t%s", $sep = "\n") {
-        self.pairs.map({ .fmt($format) }).join($sep)
-    }
-
-    multi method invert () is export {
-        # shorter:  @.pairs.map( { ; .value X=> .key } ).flat;
-        gather {
-            for @.pairs {
-                for @( .value ) -> $i {
-                    take ($i => .key)
-                }
-            }
-        }
+    multi method perl(EnumMap:D:) {
+        'EnumMap.new('
+            ~ self.keys.map({ .perl ~ ', ' ~ self.at_key($_).perl ~ ', '}).join
+            ~ ')';
     }
 
     method iterator() { self.pairs.iterator }
-
-    method keys() {
-        self.pairs.map({ ~$^pair.key })
-    }
-
-    method kv() { 
-        self.pairs.map({ ~$^pair.key, $^pair.value }).flat 
-    }
-
     method list() { self.pairs }
 
+    method keys()   { self.pairs.map( { $_.key } ) }
+    method kv()     { self.pairs.map( { $_.kv } ) }
+    method values() { self.pairs.map( { $_.value } ) }
     method pairs() {
+        return unless pir::defined($!storage);
         gather {
-            my $iter = pir::iter__PP($!storage);
-            while pir::istrue__IP($iter) {
-                my $iter_item = pir::shift__PP($iter);
-                take Pair.new(key => $iter_item.key, value => $iter_item.value);
+            my Mu $iter := nqp::iterator($!storage);
+            my Mu $pair;
+            while $iter {
+                $pair := nqp::shift($iter);
+                take Pair.new(:key($pair.key), :value($pair.value));
             }
+            Nil
+        }
+    }
+    method invert() {
+        gather {
+            my Mu $iter := nqp::iterator($!storage);
+            my Mu $pair;
+            while $iter {
+                $pair := nqp::shift($iter);
+                take Pair.new(:key($pair.value), :value($pair.key));
+            }
+            Nil
         }
     }
 
-    method perl() {
-        '{' ~ self.pairs.map({ .perl }).join(", ") ~ '}';
+    method at_key($key is copy) is rw {
+        $key = $key.Str;
+        self.exists($key)
+            ?? nqp::atkey($!storage, nqp::unbox_s($key))
+            !! Any
     }
 
-    method reverse() {
-        my %result;
-        for self.pairs() -> $p {
-            %result{$p.value} = $p.key;
-        }
-        %result
+    method STORE_AT_KEY(\$key, Mu \$value) is rw {
+        pir::defined($!storage) ||
+            nqp::bindattr(self, EnumMap, '$!storage', pir::new__Ps('Hash'));
+        nqp::bindkey($!storage, nqp::unbox_s($key.Str), $value)
     }
-
-    method values() {
-        self.pairs.map({ $^pair.value })
-    }
-
-    method Num() {
-        pir::set__Ni(pir::elements($!storage));
-    }
-
-    method Int() {
-        pir::elements($!storage)
-    }
-
+    
     method Capture() {
-        Q:PIR {
-            $P0 = get_hll_global 'Capture'
-            $P1 = find_lex 'self'
-            $P1 = getattribute $P1, '$!storage'
-            %r = $P0.'new'($P1 :flat :named)
-        }
+        my $cap := nqp::create(Capture);
+        nqp::bindattr($cap, Capture, '$!hash', $!storage);
+        $cap
+    }
+    
+    method FLATTENABLE_LIST() { nqp::list() }
+    method FLATTENABLE_HASH() {
+        pir::defined($!storage) ||
+            nqp::bindattr(self, EnumMap, '$!storage', nqp::hash());
+        $!storage
     }
 
-    method Str() {
-        self.pairs.map({ .Str ~ "\n" }).join();
+    method fmt($format = "%s\t\%s", $sep = "\n") {
+        self.pairs.fmt($format, $sep);
     }
 }
+
+multi sub infix:<eqv>(EnumMap $a, EnumMap $b) {
+    if +$a != +$b { return Bool::False }
+    for $a.kv -> $k, $v {
+        unless $b.exists($k) && $b{$k} eqv $v {
+            return Bool::False;
+        }
+    }
+    Bool::True;
+}
+

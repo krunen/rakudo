@@ -1,39 +1,250 @@
 /*
- * Copyright (C) 2008-2010, The Perl Foundation.
+ * Copyright (C) 2008-2012, The Perl Foundation.
  */
 
 BEGIN_OPS_PREAMBLE
 
 #include "parrot/parrot.h"
+#include "parrot/events.h"
 #include "parrot/extend.h"
 #include "parrot/dynext.h"
 #include "pmc_object.h"
 #include "pmc_class.h"
 #include "pmc_callcontext.h"
 #include "pmc_sub.h"
-#include "../pmc/pmc_p6lowlevelsig.h"
+#include "pmc_continuation.h"
+#include "pmc_exception.h"
 #include "../binder/bind.h"
+#include "../binder/multidispatch.h"
+#include "../binder/container.h"
+#include "../binder/types.h"
+#include "../binder/sixmodelobject.h"
 
 #if PARROT_HAS_ICU
 #  include <unicode/uchar.h>
 #endif
 
-/* We cache a couple of type IDs for an op that we hit on every method call. */
-static INTVAL p6s_id = 0;
-static INTVAL or_id  = 0;
-static INTVAL lls_id = 0;
-static INTVAL obj_id = 0;
-static INTVAL p6o_id = 0;
+/* Cache some stuff for fast access. */
+static INTVAL smo_id = 0;
 
-static STRING *LLSIG_ATTR_str;
-static STRING *BANG_LLSIG_str;
-static STRING *DISPATCH_JUNCTION_str;
+/* The current dispatcher, for the next thing that wants one to take. */
+static PMC *current_dispatcher = NULL;
 
-/* Plus a function pointer to the binder. */
-typedef INTVAL (*bind_llsig_func_type) (PARROT_INTERP, PMC *lexpad,
-    PMC *llsig, PMC *capture, INTVAL no_nom_type_check, STRING **error);
+static PMC *build_sig_object(PARROT_INTERP, ARGIN_NULLOK(PMC *signature), ARGIN(const char *sig), ...)
+{
+    PMC *sig_obj;
+    va_list args;
 
-static bind_llsig_func_type bind_llsig_func = NULL;
+    va_start(args, sig);
+    /* sigh, Parrot_pcc_build_sig_object_from_varargs does not have a signature arg */
+    sig_obj = Parrot_pcc_build_sig_object_from_varargs(interp, PMCNULL, sig, args);
+    va_end(args);
+    return sig_obj;
+}
+
+static INTVAL should_run_phaser(PARROT_INTERP, PMC *phaser, PMC *all_phasers, PMC *result) {
+    PMC *keep_list, *undo_list;
+    INTVAL i, elems;
+    
+    /* Check if the phaser is in the keep or undo list. */
+    INTVAL in_keep_list = 0;
+    INTVAL in_undo_list = 0;
+    phaser = Rakudo_cont_decontainerize(interp, phaser);
+    keep_list = VTABLE_get_pmc_keyed_str(interp, all_phasers, Parrot_str_new_constant(interp, "KEEP"));
+    if (!PMC_IS_NULL(keep_list)) {
+        elems = VTABLE_elements(interp, keep_list);
+        for (i = 0; i < elems; i++)
+            if (Rakudo_cont_decontainerize(interp, VTABLE_get_pmc_keyed_int(interp, keep_list, i)) == phaser)
+            {
+                in_keep_list = 1;
+                break;
+            }
+    }
+    if (!in_keep_list) {
+        undo_list = VTABLE_get_pmc_keyed_str(interp, all_phasers, Parrot_str_new_constant(interp, "UNDO"));
+        if (!PMC_IS_NULL(undo_list)) {
+            elems = VTABLE_elements(interp, undo_list);
+            for (i = 0; i < elems; i++)
+                if (Rakudo_cont_decontainerize(interp, VTABLE_get_pmc_keyed_int(interp, undo_list, i)) == phaser)
+                {
+                    in_undo_list = 1;
+                    break;
+                }
+        }
+    }
+    
+    /* If it's in neither list, it's just a plain old LEAVE. */
+    if (!in_keep_list && !in_undo_list)
+        return 1;
+
+    /* If it's NULL, we're unwinding, which means we only UNDO. */
+    if (PMC_IS_NULL(result))
+        return in_undo_list;
+
+    /* Otherwise, need to consider the definedness of the return value. */
+    if (IS_CONCRETE(result))
+        return in_keep_list;
+    else
+        return in_undo_list;
+}
+
+static PMC *run_leave_phasers(PARROT_INTERP, PMC *ctx, PMC *perl6_code, PMC *result, PMC *exceptions)
+{
+    Rakudo_Code *code;
+    PMC *phasers, *leave_phasers, *post_phasers;
+    PMC *oldctx;
+    int i, n;
+    Parrot_runloop jump_point;
+    
+    /* Don't run any phasers if we failed while checking pre-conditions. */
+    if (PObj_flag_TEST(P6_CHECKING_PRE, ctx))
+        return PMCNULL;
+    
+    if (PMC_IS_NULL(perl6_code))
+        return PMCNULL;
+    code = (Rakudo_Code *)PMC_data(perl6_code);
+    phasers = code->phasers;
+    if (PMC_IS_NULL(phasers))
+        return PMCNULL;
+    leave_phasers = VTABLE_get_pmc_keyed_str(interp, phasers, Parrot_str_new_constant(interp, "!LEAVE-ORDER"));
+    post_phasers = VTABLE_get_pmc_keyed_str(interp, phasers, Parrot_str_new_constant(interp, "POST"));
+    if (PMC_IS_NULL(leave_phasers) && PMC_IS_NULL(post_phasers))
+        return PMCNULL;
+    
+    oldctx = CURRENT_CONTEXT(interp);
+    Parrot_pcc_set_context(interp, ctx);
+    
+    if (!PMC_IS_NULL(leave_phasers)) {
+        n = VTABLE_elements(interp, leave_phasers);
+        for (i = 0; i < n; i++) {
+            int runloop_id = interp->current_runloop_id;
+            if (setjmp(jump_point.resume)) {
+                if (PMC_IS_NULL(exceptions)) {
+                    exceptions = Parrot_pmc_new(interp, enum_class_ResizablePMCArray);
+                }
+                VTABLE_push_pmc(interp, exceptions, jump_point.exception);
+                /* grrr */
+                while (interp->current_runloop && interp->current_runloop_id != runloop_id)
+                    free_runloop_jump_point(interp);
+            } else {
+                PMC *phaser = VTABLE_get_pmc_keyed_int(interp, leave_phasers, i);
+                Parrot_ex_add_c_handler(interp, &jump_point);
+                if (should_run_phaser(interp, phaser, phasers, result))
+                    Parrot_pcc_invoke_sub_from_c_args(interp, phaser, "->");
+            }
+            Parrot_cx_delete_handler_local(interp);
+        }
+    }
+    
+    if (!PMC_IS_NULL(post_phasers)) {
+        INTVAL failed_a_post = 0;
+        n = VTABLE_elements(interp, post_phasers);
+        for (i = 0; i < n; i++) {
+            int runloop_id = interp->current_runloop_id;
+            if (setjmp(jump_point.resume)) {
+                if (PMC_IS_NULL(exceptions)) {
+                    exceptions = Parrot_pmc_new(interp, enum_class_ResizablePMCArray);
+                }
+                VTABLE_push_pmc(interp, exceptions, jump_point.exception);
+                /* grrrrrrr */
+                while (interp->current_runloop && interp->current_runloop_id != runloop_id)
+                    free_runloop_jump_point(interp);
+                failed_a_post = 1;
+            } else {
+                PMC *phaser = VTABLE_get_pmc_keyed_int(interp, post_phasers, i);
+                Parrot_ex_add_c_handler(interp, &jump_point);
+                Parrot_pcc_invoke_sub_from_c_args(interp, phaser, "P->", result);
+            }
+            Parrot_cx_delete_handler_local(interp);
+            if (failed_a_post)
+                break;
+        }
+    }
+    
+    Parrot_pcc_set_context(interp, oldctx);
+    return exceptions;
+}
+
+static void rethrow_phaser_exceptions(PARROT_INTERP, PMC *exceptions)
+{
+    int i, n;
+    if (PMC_IS_NULL(exceptions))
+        return;
+    n = VTABLE_elements(interp, exceptions);
+    if (!n)
+        return;
+    for (i = 0; i < n; i++) {
+        Parrot_ex_rethrow_from_c(interp, VTABLE_get_pmc_keyed_int(interp, exceptions, i));
+    }
+}
+
+static void rewind_to_ctx(PARROT_INTERP, ARGIN_NULLOK(PMC *ctx), ARGIN_NULLOK(PMC *basectx), ARGIN_NULLOK(PMC *result))
+{
+    PMC *parrot_sub;
+    PMC *perl6_code;
+    PMC *exceptions = PMCNULL;
+    while (!PMC_IS_NULL(ctx) && ctx != basectx) {
+        parrot_sub = Parrot_pcc_get_sub(interp, ctx);
+        if (!PMC_IS_NULL(parrot_sub)) {
+            GETATTR_Sub_multi_signature(interp, parrot_sub, perl6_code);
+            if (!PMC_IS_NULL(perl6_code) && perl6_code->vtable->base_type == smo_id &&
+                    STABLE(perl6_code)->WHAT != Rakudo_types_code_get()) {
+                exceptions = run_leave_phasers(interp, ctx, perl6_code, result, exceptions);
+            }
+        }
+        ctx = Parrot_pcc_get_caller_ctx(interp, ctx);
+    }
+    if (!PMC_IS_NULL(exceptions)) {
+        Parrot_pcc_set_context(interp, basectx);
+        rethrow_phaser_exceptions(interp, exceptions);
+    }
+}
+
+static PMC *find_common_ctx(PARROT_INTERP, ARGIN_NULLOK(PMC *ctx1), ARGIN_NULLOK(PMC *ctx2))
+{
+    int depth1 = 0;
+    int depth2 = 0;
+    PMC *ctx;
+
+    for (ctx = ctx1; !PMC_IS_NULL(ctx); ctx = Parrot_pcc_get_caller_ctx(interp, ctx), depth1++)
+        if (ctx == ctx2)
+            return ctx;
+    for (ctx = ctx2; !PMC_IS_NULL(ctx); ctx = Parrot_pcc_get_caller_ctx(interp, ctx), depth2++)
+        if (ctx == ctx1)
+            return ctx;
+    for (; depth1 > depth2; depth2++)
+        ctx1 = Parrot_pcc_get_caller_ctx(interp, ctx1);
+    for (; depth2 > depth1; depth1++)
+        ctx2 = Parrot_pcc_get_caller_ctx(interp, ctx2);
+    while (ctx1 != ctx2) {
+        ctx1 = Parrot_pcc_get_caller_ctx(interp, ctx1);
+        ctx2 = Parrot_pcc_get_caller_ctx(interp, ctx2);
+    }
+    return ctx1;
+}
+
+
+PARROT_CAN_RETURN_NULL
+PARROT_WARN_UNUSED_RESULT
+static PMC* sub_find_pad(PARROT_INTERP, ARGIN(STRING *lex_name), ARGIN(PMC *ctx))
+{
+    ASSERT_ARGS(Parrot_sub_find_pad)
+    while (1) {
+        PMC * const lex_pad = Parrot_pcc_get_lex_pad(interp, ctx);
+        PMC * outer = Parrot_pcc_get_outer_ctx(interp, ctx);
+
+        if (PMC_IS_NULL(outer))
+            return lex_pad;
+
+        PARROT_ASSERT(outer->vtable->base_type == enum_class_CallContext);
+
+        if (!PMC_IS_NULL(lex_pad))
+            if (VTABLE_exists_keyed_str(interp, lex_pad, lex_name))
+                return lex_pad;
+
+        ctx = outer;
+    }
+}
 
 END_OPS_PREAMBLE
 
@@ -47,138 +258,10 @@ Does various setup tasks on behalf of all of the other dynops.
 
 */
 inline op rakudo_dynop_setup() :base_core {
-    /* Look up some type IDs. */
-    p6s_id = pmc_type(interp, Parrot_str_new(interp, "Perl6Scalar", 0));
-    or_id  = pmc_type(interp, Parrot_str_new(interp, "ObjectRef", 0));
-    lls_id = pmc_type(interp, Parrot_str_new(interp, "P6LowLevelSig", 0));
-    p6o_id = pmc_type(interp, Parrot_str_new(interp, "P6opaque", 0));
-    obj_id = enum_class_Object;
-
-    BANG_LLSIG_str        = Parrot_str_new_constant(interp, "!llsig");
-    LLSIG_ATTR_str        = Parrot_str_new_constant(interp, "$!llsig");
-    DISPATCH_JUNCTION_str = Parrot_str_new_constant(interp,
-                                "!DISPATCH_JUNCTION_SINGLE");
-
-    /* Create dummy low level sig op and use its get_pointer to get a pointer
-     * to the signature binder. */
-    bind_llsig_func = (bind_llsig_func_type)VTABLE_get_pointer(interp, pmc_new(interp, lls_id));
-
-    goto NEXT();
+    /* Get 6model object type ID. */
+    smo_id = Parrot_pmc_get_type_str(interp, Parrot_str_new(interp, "SixModelObject", 0));
 }
 
-
-/*
-
-=item rebless_subclass(in PMC, in PMC)
-
-Takes PMC $1 and reblesses it in-place, without any change of address, to be
-an instance of class $2, where $2 is a subclass of the class of $1.
-
-=cut
-
-*/
-inline op rebless_subclass(in PMC, in PMC) :base_core {
-    PMC *value;
-    PMC * const current_class = VTABLE_get_class(interp, $1);
-    PMC * parent_list;
-    int num_parents;
-    int in_parents = 0;
-    int new_attribs = 0;
-    int i;
-
-    /* Check what we're trying to bless into is a standard Parrot class. */
-    if ($2->vtable->base_type != enum_class_Class)
-        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
-            "Can only rebless into a standard Parrot class.");
-
-    /* Get parents list. */
-    parent_list = PARROT_CLASS($2)->all_parents;
-    num_parents = VTABLE_elements(interp, parent_list);
-
-    /* First verify that the object's class is a superclass of the one we're
-     * to re-bless it into. While we're at it, count the number of attributes
-     * the current class has that the parent class does not. */
-    for (i = 0; i < num_parents; i++) {
-        PMC * const test_class = VTABLE_get_pmc_keyed_int(interp, parent_list, i);
-        if (test_class == current_class) {
-            in_parents = 1;
-            break;
-        }
-        else {
-            new_attribs += VTABLE_elements(interp, PARROT_CLASS($2)->attrib_metadata);
-        }
-    }
-    if (!in_parents)
-        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
-            "Attempt to use rebless_subclass where the new class was not a subclass");
-
-    /* Make sure we're operating on the real value, not a ObjectRef. */
-    value = $1;
-    while (value->vtable->base_type == or_id || value->vtable->base_type == p6s_id)
-        value = VTABLE_get_pmc(interp, value);
-
-    /* Check if the value is a parrot Object and the original class is a standard
-     * Parrot Class. */
-    if (value->vtable->base_type != enum_class_Object
-            && current_class->vtable->base_type != enum_class_Class) {
-        /* In this case, we have something from a foreign class system,
-         * probably a PMC. We'll start by instantiating a new instance
-         * of the derived class. */
-        PMC * const new_ins = VTABLE_instantiate(interp, $2, PMCNULL);
-
-        /* Now we do some nasty swapping around of memory. The end result is:
-         *  - The proxy object from new_ins becomes the current value
-         *  - The current value becomes the new instance
-         *  - The new instance becomes the (now-replaced) proxy, and gets
-         *    swept on the next GC run.
-         * We do this by shuffling PMC headers around. It should be safe as
-         * in the end we will end up with just as many PMCs existing. */
-        PMC * const temp  = mem_allocate_typed(PMC);
-        PMC * const proxy = VTABLE_get_attr_keyed(interp, new_ins, current_class,
-                Parrot_str_new(interp, "proxy", 0));
-        Parrot_block_GC_mark(interp);
-
-        /* Using memcpy here may trigger gcc optimizations, which at this point
-         * can wreak havoc on register-starved x86:
-         * error: unable to find a register to spill in class 'SIREG'
-         * Use memmove instead, which is slower, but isn't inlined by gcc. */
-        memmove(temp, proxy, sizeof (PMC));
-        memmove(proxy, value, sizeof (PMC));
-        memmove(value, new_ins, sizeof (PMC));
-        memmove(new_ins, temp, sizeof (PMC));
-
-        Parrot_unblock_GC_mark(interp);
-        mem_sys_free(temp);
-
-        /* Now set any new attributes to be undef. */
-        for (i = 0; i < new_attribs; i++)
-            VTABLE_set_pmc_keyed_int(interp, PARROT_OBJECT(value)->attrib_store,
-                i, pmc_new(interp, enum_class_Undef));
-    }
-    else if ((value->vtable->base_type != enum_class_Object && value->vtable->base_type != p6o_id)
-            || current_class->vtable->base_type != enum_class_Class) {
-        /* If we're here, we found a really odd state - the class claims to be
-         * a standard Parrot one but the object it supposedly created is not.
-         * In this case, something is probably wrong. */
-        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
-            "Object to be reblessed does not appear to be of the expected class.");
-    }
-    else {
-        /* We have a standard Parrot class and object and can tweak it's guts.
-         * Shuffle up attributes to the point of the difference between the number
-         * of attributes in the parent and the derived class. Yes, this is evil -
-         * we're diddling the object's internals. */
-        for (i = 0; i < new_attribs; i++)
-            VTABLE_unshift_pmc(interp, PARROT_OBJECT(value)->attrib_store,
-                pmc_new(interp, enum_class_Undef));
-
-        /* Now switch object's class pointer to point at the new class. This is
-         * also evil. */
-        PARROT_OBJECT(value)->_class = $2;
-    }
-
-    goto NEXT();
-}
 
 /*
 
@@ -205,8 +288,6 @@ inline op find_lex_skip_current(out PMC, in STR) :base_core {
 
         ctx = outer;
     }
-
-    goto NEXT();
 }
 
 
@@ -291,414 +372,569 @@ inline op x_is_uprop(out INT, in STR, in STR, in INT) :base_core {
             "Unicode property '%Ss' not found", $2);
     goto ADDRESS(handler);
 #else
-    opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
+    opcode_t * const handler = Parrot_ex_throw_from_op_args(interp, NULL,
             EXCEPTION_ICU_ERROR,
             "ICU not loaded", $2);
     goto ADDRESS(handler);
 #endif
 }
 
-
 /*
 
-=item get_next_candidate_info(out PMC, out PMC, out PMC)
+=item bind_signature()
 
-Looks through the outers of our caller, until we find a Routine, for a lexical
-named __CANDIDATE_LIST__. Hands this lexical back in $1, the PMC for the Routine
-it was found in as $2 and the lexpad of that routine as $3. This is a fairly
-special-purpose op that does just what callwith, callsame, nextwith and
-nextsame need.
+This is emitted into a sub to cause it's Perl 6 signature to be bound.
 
 =cut
 
 */
-inline op get_next_candidate_info(out PMC, out PMC, out PMC) :base_core {
-    PMC     *ctx         = Parrot_pcc_get_caller_ctx(interp, CURRENT_CONTEXT(interp));
-    STRING  *name        = Parrot_str_new(interp, "__CANDIDATE_LIST__", 0);
-    PMC     *last_lexpad = PMCNULL;
-    PMC     *last_sub    = PMCNULL;
+inline op bind_signature() :base_core {
+    /* Need to make sure some stuff doesn't get destroyed. */
+    PMC      * const ctx         = CURRENT_CONTEXT(interp);
+    PMC      * const saved_ccont = interp->current_cont;
+    PMC      * const saved_sig   = Parrot_pcc_get_signature(interp, ctx);
+    opcode_t * const current_pc  = Parrot_pcc_get_pc(interp, ctx);
+    
+    /* Obtain lexpad and other settings. */
+    PMC * const lexpad        = Parrot_pcc_get_lex_pad(interp, ctx);
+    const INTVAL noms_checked = PObj_flag_TEST(P6BINDER_ALREADY_CHECKED, ctx);
+    STRING * error            = STRINGNULL;
+    INTVAL bind_error;
+    
+    /* Look up signature to bind. */
+    PMC * const parrot_sub  = Parrot_pcc_get_sub(interp, ctx);
+    PMC *perl6_code, *signature;
+    GETATTR_Sub_multi_signature(interp, parrot_sub, perl6_code);
+    if (PMC_IS_NULL(perl6_code))
+        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+                "Could not locate Perl 6 code object");
+    signature = ((Rakudo_Code *)PMC_data(perl6_code))->signature;
 
-    while (!PMC_IS_NULL(ctx)) {
-        /* See if we've found a candidate list. */
-        PMC *lexpad = Parrot_pcc_get_lex_pad(interp, ctx);
-        PMC *clist  = VTABLE_get_pmc_keyed_str(interp, lexpad, name);
-        if (!PMC_IS_NULL(clist)) {
-            /* Found. Set results and we're done. */
-            $1 = clist;
-            $2 = Parrot_pcc_get_sub(interp, ctx);
-            $3 = lexpad;
-            break;
+    /* Call signature binder. */
+    bind_error = Rakudo_binding_bind(interp, lexpad, signature, ctx,
+        noms_checked, &error);
+
+    /* Bind ok? */
+    if (!bind_error) {
+        /* Re-instate anything we may have damaged. */
+        CURRENT_CONTEXT(interp) = ctx;
+        interp->current_cont    = saved_ccont;
+        Parrot_pcc_set_signature(interp, ctx, saved_sig);
+        Parrot_pcc_set_pc(interp, ctx, current_pc);
+        goto NEXT();
+    }
+    else {
+        /* Maybe we need to auto-thread... */
+        if (bind_error == BIND_RESULT_JUNCTION) {
+            /* Find dispatcher and call it. */
+            PMC * const dispatcher = Rakudo_types_junction_threader_get();
+            PMC * const sub        = Parrot_pcc_get_sub(interp, ctx);
+            PMC * call_ctx         = VTABLE_clone(interp, ctx);
+            PMC * ret_cont         = Parrot_pcc_get_continuation(interp, ctx);
+            PMC * p6sub;
+            opcode_t *next;
+
+            GETATTR_Sub_multi_signature(interp, sub, p6sub);
+            VTABLE_unshift_pmc(interp, call_ctx, p6sub);
+            Parrot_pcc_invoke_from_sig_object(interp, dispatcher, call_ctx);
+
+            /* Invoke the original return continuation, to return junction result. */
+            next = VTABLE_invoke(interp, ret_cont, expr NEXT());
+            goto ADDRESS(next);
         }
         else {
-            /* Not found; keep looking. */
-            last_sub = Parrot_pcc_get_sub(interp, ctx);
-            last_lexpad = lexpad;
-            ctx = Parrot_pcc_get_outer_ctx(interp, ctx);
+            /* Nope, just normal fail... */
+            opcode_t * const handler = Parrot_ex_throw_from_op_args(interp, NULL,
+                    EXCEPTION_INVALID_OPERATION, "%Ss", error);
+            goto ADDRESS(handler);
         }
     }
-    if (!ctx)
-        $1 = $2 = $3 = PMCNULL;
-
-    goto NEXT();
 }
 
 
 /*
 
-=item transform_to_p6opaque(inout PMC)
+=item perl6_trial_bind_ct()
 
-Takes PMC $1 and swaps out its Object vtable for a P6opaque vtable. (Expect
-this op to be temporary, but for now it lets us get things in the right
-kinda direction.)
+Sees if we could potentially bind a signature.
 
-=cut
-
-*/
-inline op transform_to_p6opaque(inout PMC) :base_core {
-    /* Sanity check. */
-    if ($1->vtable->base_type == enum_class_Object) {
-        $1->vtable = interp->vtables[p6o_id];
-        goto NEXT();
-    }
-    else {
-        opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
-            EXCEPTION_INVALID_OPERATION, "Can only transform an Object to p6opaque");
-        goto ADDRESS(handler);
-    }
-}
-
-
-/*
-
-=item deobjectref(out PMC, in PMC)
-
-If $2 is an ObjectRef, then follow the chain of ObjectRef
-references until we get to a value of some sort (which could be
-a Perl6Scalar).
+    $0 is a flag indicating the outcome. 0 means could not decide, 1 means
+    decided that we will be able to bind, -1 means that it'd never work
+    
+    $1 is the signature object
+    
+    $2 is the argument array
+    
+    $3 is a set of flags for native types. 0 = object, 1 = native int,
+    2 = native num, 3 = native str.
 
 =cut
 
 */
-inline op deobjectref(out PMC, in PMC) :base_core {
-    PMC * ref;
-    ref = $2;
-    while (ref->vtable->base_type == or_id)
-        ref = VTABLE_get_pmc(interp, ref);
-    $1 = ref;
-    goto NEXT();
-}
-
-/*
-
-=item descalarref(out PMC, in PMC)
-
-If $2 is an ObjectRef or Perl6Scalar, then follow the chain of
-ObjectRef/Perl6Scalar references until we get to the real
-underlying value.
-
-=cut
-
-*/
-inline op descalarref(out PMC, in PMC) :base_core {
-    PMC * ref;
-    ref = $2;
-    while (ref->vtable->base_type == or_id || ref->vtable->base_type == p6s_id)
-        ref = VTABLE_get_pmc(interp, ref);
-    $1 = ref;
-    goto NEXT();
-}
-
-
-/*
-
-=item deref_unless_object(out PMC, in PMC)
-
-If the value underlying $2 is anything but an Object or P6opaque,
-return that value; otherwise return $2.
-
-=cut
-
-*/
-inline op deref_unless_object(out PMC, in PMC) :base_core {
-    PMC * val;
-    val = $2;
-    while (val->vtable->base_type == or_id || val->vtable->base_type == p6s_id)
-        val = VTABLE_get_pmc(interp, val);
-    $1 = (val->vtable->base_type == obj_id || val->vtable->base_type == p6o_id)
-         ? $2 : val;
-    goto NEXT();
-}
-
-
-/*
-
-=item allocate_llsig(out PMC, in INT)
-
-Sets $1 to be a P6LowLevelSig with $2 signature elements allocated.
-
-=cut
-
-*/
-inline op allocate_llsig(out PMC, in INT) :base_core {
-    struct llsig_element **elements;
+inline op perl6_trial_bind_ct(out INT, in PMC, in PMC, in PMC) :base_core {
+    /* Build up a capture with sample arguments. */
+    PMC *capture    = Parrot_pmc_new(interp, enum_class_CallContext);
+    INTVAL num_args = VTABLE_elements(interp, $3);
+    INTVAL args_ok  = 1;
     INTVAL i;
-
-    /* Create new low level signature PMC. */
-    $1 = Parrot_pmc_new_init_int(interp, lls_id, $2);
-    goto NEXT();
-}
-
-
-/*
-
-=item get_llsig_size(out INT, in PMC)
-
-Sets $1 to be the number of elements the P6LowLevelSig $2 has.
-
-=cut
-
-*/
-inline op get_llsig_size(out INT, in PMC) :base_core {
-    if ($2->vtable->base_type == lls_id) {
-        INTVAL num_elements;
-        GETATTR_P6LowLevelSig_num_elements(interp, $2, num_elements);
-        $1 = num_elements;
-        goto NEXT();
-    }
-    else {
-        opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
-                EXCEPTION_INVALID_OPERATION, "get_llsig_size only works on P6LowLevelSig PMCs");
-        goto ADDRESS(handler);
-    }
-}
-
-
-/*
-
-=item set_llsig_elem(in PMC, in INT, in STR, in INT, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC, in STR)
-
-Takes $1 (a P6LowLevelSig) and sets the contents of the signature element with
-index $2 as follows:
-
-  $3  = lexical name to bind to
-  $4  = flags
-  $5  = main (nominal) type
-  $6  = constraint type or junction of constraint types; null if none
-  $7  = array of names for a named parameter
-  $8  = array of type captures
-  $9  = default value closure
-  $10 = nested signature
-  $11 = name of coercion method to call, if any
-
-=cut
-
-*/
-inline op set_llsig_elem(in PMC, in INT, in STR, in INT, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC, inout PMC, in STR) :base_core {
-    if ($1->vtable->base_type == lls_id) {
-        struct llsig_element **elements;
-        INTVAL num_elements;
-
-        /* Check we're not out of range. */
-        GETATTR_P6LowLevelSig_elements(interp, $1, elements);
-        GETATTR_P6LowLevelSig_num_elements(interp, $1, num_elements);
-        if ($2 < num_elements) {
-            /* Set up sig. */
-            struct llsig_element *element = elements[$2];
-            element->variable_name    = $3;
-            element->flags            = $4;
-            element->post_constraints = $6;
-            element->named_names      = $7;
-            element->type_captures    = $8;
-            element->default_closure  = $9;
-            element->sub_llsig        = $10;
-            element->coerce_to        = $11;
-
-            /* Also need to do fixups on the nominal type. */
-            if (!PMC_IS_NULL($5)) {
-                PMC *refined = VTABLE_getprop(interp, $5, Parrot_str_new(interp, "subtype_realtype", 0));
-                if (PMC_IS_NULL(refined)) {
-                    /* It's not some subtype, we're fine. */
-                    element->nominal_type = $5;
+    for (i = 0; i < num_args; i++) {
+        INTVAL native = VTABLE_get_integer_keyed_int(interp, $4, i);
+        PMC *obj;
+        switch (native) {
+            case BIND_VAL_INT:
+                VTABLE_push_integer(interp, capture, 0);
+                break;
+            case BIND_VAL_NUM:
+                VTABLE_push_float(interp, capture, 0.0);
+                break;
+            case BIND_VAL_STR:
+                VTABLE_push_string(interp, capture, STRINGNULL);
+                break;
+            default:
+                obj = VTABLE_get_pmc_keyed_int(interp, $3, i);
+                if (obj->vtable->base_type == smo_id) {
+                    VTABLE_push_pmc(interp, capture, obj);
                 }
                 else {
-                    /* Need to break up into type and constraint. */
-                    element->nominal_type = refined;
-                    if (PMC_IS_NULL(element->post_constraints))
-                        element->post_constraints = pmc_new(interp, enum_class_ResizablePMCArray);
-                    VTABLE_push_pmc(interp, element->post_constraints, $5);
+                    args_ok = 0;
+                    break;
                 }
-            }
-            else {
-                element->nominal_type = Parrot_ns_find_namespace_global(interp, Parrot_get_ctx_HLL_namespace(interp),
-                        Parrot_str_new(interp, "Mu", 0));
-            }
-
-            goto NEXT();
         }
-        else {
-            opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
-                    EXCEPTION_INVALID_OPERATION, "signature element out of range in set_llsig_elem");
-            goto ADDRESS(handler);
+    }
+    
+    /* Do trial bind. */
+    $1 = Rakudo_binding_trial_bind(interp, $2, capture);
+}
+
+
+/*
+
+=item perl6_set_types_mu_any(in PMC, in PMC)
+
+Sets the top type.
+
+=cut
+
+*/
+inline op perl6_set_types_mu_any(in PMC, in PMC) :base_core {
+    Rakudo_types_mu_set($1);
+    Rakudo_types_any_set($2);
+}
+
+
+/*
+
+=item perl6_setup_junction_autothreading(in PMC)
+
+Sets the junction type and auto-threader.
+
+=cut
+
+*/
+inline op perl6_setup_junction_autothreading(in PMC, in PMC) :base_core {
+    Rakudo_types_junction_set($1);
+    Rakudo_types_junction_threader_set($2);
+}
+
+
+/*
+
+=item perl6_set_types_ins(in PMC, in PMC, in PMC)
+
+Sets the Int/Num/Str types.
+
+=cut
+
+*/
+inline op perl6_set_types_ins(in PMC, in PMC, in PMC) :base_core {
+    Rakudo_types_int_set($1);
+    Rakudo_types_num_set($2);
+    Rakudo_types_str_set($3);
+}
+
+
+/*
+
+=item perl6_set_types_list_array_lol(in PMC, in PMC, in PMC, in PMC, in PMC)
+
+Sets the List, ListIter, Array and LoL types.
+
+=cut
+
+*/
+inline op perl6_set_types_list_array_lol(in PMC, in PMC, in PMC, in PMC, in PMC) :base_core {
+    Rakudo_types_list_set($1);
+    Rakudo_types_listiter_set($2);
+    Rakudo_types_array_set($3);
+    Rakudo_types_lol_set($4);
+    Rakudo_types_parcel_set($5);
+}
+
+
+/*
+
+=item perl6_set_types_enummap_hash(in PMC, in PMC)
+
+Sets the EnumMap and Hash types.
+
+=cut
+
+*/
+inline op perl6_set_types_enummap_hash(in PMC, in PMC) :base_core {
+    Rakudo_types_enummap_set($1);
+    Rakudo_types_hash_set($2);
+}
+
+
+/*
+
+=item perl6_set_type_capture(in PMC)
+
+Sets the Capture type.
+
+=cut
+
+*/
+inline op perl6_set_type_capture(in PMC) :base_core {
+    Rakudo_types_capture_set($1);
+}
+
+
+/*
+
+=item perl6_set_type_code(in PMC)
+
+Sets the Code type.
+
+=cut
+
+*/
+inline op perl6_set_type_code(in PMC) :base_core {
+    Rakudo_types_code_set($1);
+}
+
+
+/*
+
+=item perl6_set_type_packagehow(in PMC)
+
+Sets the package type.
+
+=cut
+
+*/
+inline op perl6_set_type_packagehow(in PMC) :base_core {
+    Rakudo_types_packagehow_set($1);
+}
+
+
+/*
+
+=item perl6_booleanize(out PMC, in INT)
+
+If $2 is non-zero, puts Bool::True in $1. Otherwise puts Bool::False
+in.
+
+=cut
+
+*/
+inline op perl6_booleanize(out PMC, in INT) :base_core {
+    $1 = $2 == 0 ? Rakudo_types_bool_false_get() : Rakudo_types_bool_true_get();
+}
+
+
+/*
+
+=item perl6_set_bools(in PMC, in PMC)
+
+Sets and caches the False ($1) and True ($2) values to booleanize to.
+
+=cut
+
+*/
+inline op perl6_set_bools(in PMC, in PMC) :base_core {
+    Rakudo_types_bool_false_set($1);
+    Rakudo_types_bool_true_set($2);
+}
+
+
+/*
+
+=item perl6_box_str()
+
+Box a native string to a Perl 6 Str.
+
+=cut
+
+*/
+inline op perl6_box_str(out PMC, in STR) :base_core {
+    PMC *type = Rakudo_types_str_get();
+    $1 = REPR(type)->allocate(interp, STABLE(type));
+    REPR($1)->box_funcs->set_str(interp, STABLE($1), OBJECT_BODY($1), $2);
+    PARROT_GC_WRITE_BARRIER(interp, $1);
+}
+
+
+/*
+
+=item perl6_box_int()
+
+Box a native int to a Perl 6 Int.
+
+=cut
+
+*/
+inline op perl6_box_int(out PMC, in INT) :base_core {
+    PMC *type = Rakudo_types_int_get();
+    $1 = REPR(type)->allocate(interp, STABLE(type));
+    REPR($1)->box_funcs->set_int(interp, STABLE($1), OBJECT_BODY($1), $2);    
+}
+
+
+/*
+
+=item perl6_box_num()
+
+Box a native floating point number to a Perl 6 Num.
+
+=cut
+
+*/
+inline op perl6_box_num(out PMC, in NUM) :base_core {
+    PMC *type = Rakudo_types_num_get();
+    $1 = REPR(type)->allocate(interp, STABLE(type));
+    REPR($1)->box_funcs->set_num(interp, STABLE($1), OBJECT_BODY($1), $2);
+}
+
+
+/*
+
+=item perl6_box_bigint(out PMC, in NUM)
+
+Return a Perl 6 Int if $2 will fit, otherwise return a Perl 6 Num.
+
+=cut
+
+*/
+inline op perl6_box_bigint(out PMC, in NUM) :base_core {
+    if ((INTVAL)$2 == $2) {
+        PMC *type = Rakudo_types_int_get();
+        $1 = REPR(type)->allocate(interp, STABLE(type));
+        REPR($1)->box_funcs->set_int(interp, STABLE($1), OBJECT_BODY($1), $2);    
+    }
+    else {
+        PMC *type = Rakudo_types_num_get();
+        $1 = REPR(type)->allocate(interp, STABLE(type));
+        REPR($1)->box_funcs->set_num(interp, STABLE($1), OBJECT_BODY($1), $2);
+    }
+}
+
+/*
+
+=item perl6ize_type(out PMC, in PMC)
+
+Looks for Parrot-y types sneaking into Perl 6 land and maps them
+into Perl 6 types.
+
+=cut
+
+*/
+inline op perl6ize_type(out PMC, in PMC) :base_core {
+    if ($2->vtable->base_type == smo_id)
+        $1 = $2;
+    else
+        $1 = Rakudo_types_parrot_map(interp, $2);
+}
+
+/*
+
+=item set_scalar_container_type(in PMC)
+
+Sets the scalar container type.
+
+=cut
+
+*/
+inline op set_scalar_container_type(in PMC) :base_core {
+    Rakudo_cont_set_scalar_type($1);
+}
+
+
+/*
+
+=item perl6_decontainerize(out PMC, in PMC)
+
+Strips away any outer container, if one exists. Otherwise, no-op.
+
+=cut
+
+*/
+inline op perl6_decontainerize(out PMC, in PMC) :base_core {
+    $1 = $2->vtable->base_type == smo_id ?
+        Rakudo_cont_decontainerize(interp, $2) :
+        $2;
+}
+
+
+/*
+
+=item perl6_recontainerize_to_ro()
+
+If the passed value is an rw scalar, re-wrap it. Otherwise, just
+hand it on back.
+
+=cut
+
+*/
+inline op perl6_recontainerize_to_ro(out PMC, in PMC) :base_core {
+    if ($2->vtable->base_type == smo_id && Rakudo_cont_is_rw_scalar(interp, $2))
+        $1 = Rakudo_cont_scalar_with_value_no_descriptor(interp, 
+            Rakudo_cont_decontainerize(interp, $2));
+    else
+        $1 = $2;
+}
+
+
+/*
+
+=item perl6_container_store(in PMC, in PMC)
+
+Stores a value in a container. If it's Scalar, there's a fast path;
+otherwise, calls the .STORE method.
+
+=cut
+
+*/
+inline op perl6_container_store(in PMC, in PMC) :base_core {
+    Rakudo_cont_store(interp, $1, $2, 1, 1);
+}
+
+
+/*
+
+=item perl6_container_store_unchecked(in PMC, in PMC)
+
+Stores a value in a container. If it's Scalar, there's a fast path;
+otherwise, calls the .STORE method. In the fast path case, with this
+op no rw or type checking is done (assumes that the compiler has
+already decided that it's safe).
+
+=cut
+
+*/
+inline op perl6_container_store_unchecked(in PMC, in PMC) :base_core {
+    Rakudo_cont_store(interp, $1, $2, 0, 0);
+}
+
+
+/*
+
+=item perl6_create_container_descriptor
+
+Creates a container descriptor and puts in in $1. $2 is the type of the
+descriptor to create. $3 is the 'of' type, $4 is the rw flag and $5 is
+the name.
+
+=cut
+
+*/
+inline op perl6_create_container_descriptor(out PMC, in PMC, in PMC, in INT, in STR) :base_core {
+    $1 = Rakudo_create_container_descriptor(interp, $2, $3, $4, $5);
+}
+
+
+/*
+
+=item perl6_assert_bind_ok(in PMC, in PMC)
+
+Takes a potential value to bind in $1 and a container descriptor in $2
+and asserts that the bind is allowed to take place.
+
+=cut
+
+*/
+inline op perl6_assert_bind_ok(in PMC, in PMC) :base_core {
+    if ($2->vtable->base_type == smo_id) {
+        PMC *type = $2;
+        if (type != Rakudo_types_mu_get()) {
+            INTVAL ok = 0;
+            if ($1->vtable->base_type == smo_id) {
+                PMC *value = Rakudo_cont_decontainerize(interp, $1);
+                ok = STABLE(value)->type_check(interp, value, type);
+            }
+            if (!ok)
+                Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+                    "Type check failed in binding");
         }
     }
     else {
-        opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
-                EXCEPTION_INVALID_OPERATION, "set_llsig_elem only works on P6LowLevelSig PMCs");
-        goto ADDRESS(handler);
+        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+            "Can only use perl6_assert_bind_ok on a SixModelObject");
     }
 }
 
 
 /*
 
-=item get_llsig_elem(in PMC, in INT, out STR, out INT, out PMC, out PMC, out PMC, out PMC, out PMC, out PMC, out PMC, out STR)
+=item perl6_var(in PMC, in PMC)
 
-Takes $1 (a P6LowLevelSig) and sets the registers with the contents of the
-signature element with index $2 as follows:
-
-  $3  = lexical name to bind to
-  $4  = flags
-  $5  = main (nominal) type
-  $6  = constraint type or junction of constraint types; null if none
-  $7  = array of names for a named parameter
-  $8  = array of type captures
-  $9  = default value closure
-  $10 = nested signature
-  $11 = name of coercion method to call, if any
+The .VAR operation. Wraps in an outer Scalar container so we can actually
+operate on the underlying Scalar, if we have a container. Otherwise, $1
+is just $2.
 
 =cut
 
 */
-inline op get_llsig_elem(in PMC, in INT, out STR, out INT, out PMC, out PMC, out PMC, out PMC, out PMC, out PMC, out STR) :base_core {
-    if ($1->vtable->base_type == lls_id) {
-        struct llsig_element **elements;
-        INTVAL num_elements;
-
-        /* Check we're not out of range. */
-        GETATTR_P6LowLevelSig_elements(interp, $1, elements);
-        GETATTR_P6LowLevelSig_num_elements(interp, $1, num_elements);
-        if ($2 < num_elements) {
-            struct llsig_element *element = elements[$2];
-            $3  = element->variable_name;
-            $4  = element->flags;
-            $5  = element->nominal_type;
-            $6  = element->post_constraints;
-            $7  = element->named_names;
-            $8  = element->type_captures;
-            $9  = element->default_closure;
-            $10 = element->sub_llsig;
-            $11 = element->coerce_to;
-            goto NEXT();
-        }
-        else {
-            opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
-                    EXCEPTION_INVALID_OPERATION, "signature element out of range in set_llsig_elem");
-            goto ADDRESS(handler);
-        }
+inline op perl6_var(out PMC, in PMC) :base_core {
+    if ($2->vtable->base_type == smo_id && STABLE($2)->container_spec != NULL) {
+        $1 = Rakudo_cont_scalar_with_value_no_descriptor(interp, $2);
     }
     else {
-        opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
-                EXCEPTION_INVALID_OPERATION, "get_llsig_elem only works on P6LowLevelSig PMCs");
-        goto ADDRESS(handler);
+        $1 = $2;
     }
 }
 
 
 /*
 
-=item bind_llsig(in PMC, in PMC)
+=item perl6_repr_name
 
-This is emitted into a sub to cause it's Perl 6 signature to be bound. $1 is
-an array of positional arguments (obtained by using :flat) and $2 is a hash of
-named arguments (obtained using :flat :slurpy). Eventually, after Parrot
-refactors are complete, it will take one argument - the CallContext.
+Takes an object and returns a string containing the name of its representation.
 
 =cut
 
 */
-inline op bind_llsig(in PMC) :base_core {
-    PMC *ctx = CURRENT_CONTEXT(interp);
-
-    /* If we aren't already bound, enter the appropriate binder. */
-    if (!PObj_flag_TEST(P6S_ALREADY_BOUND, ctx)) {
-        PMC *lexpad         = Parrot_pcc_get_lex_pad(interp, ctx);
-        PMC *sub            = Parrot_pcc_get_sub(interp, ctx);
-        PMC *llsig          = VTABLE_getprop(interp, sub, LLSIG_ATTR_str);
-        INTVAL noms_checked = PObj_flag_TEST(P6S_ALREADY_CHECKED, ctx);
-        STRING *error       = NULL;
-        INTVAL bind_error;
-
-        /* Need to make sure some stuff doesn't get destroyed. */
-        PMC      * ctx               = CURRENT_CONTEXT(interp);
-        PMC      * const saved_ccont = interp->current_cont;
-        PMC      * const saved_sig   = Parrot_pcc_get_signature(interp, ctx);
-        opcode_t * const current_pc  = Parrot_pcc_get_pc(interp, ctx);
-
-        /* Ensure we actually have a signature; if not, try to lazily generate
-         * it. */
-        if (PMC_IS_NULL(llsig)) {
-            PMC *sig_meth    = VTABLE_find_method(interp, sub, BANG_LLSIG_str);
-            Parrot_ext_call(interp, sig_meth, "P->P", sub, &llsig);
-        }
-
-        /* Call signature binder. */
-        bind_error = bind_llsig_func(interp, lexpad, llsig, $1, noms_checked, &error);
-
-        /* Bind ok? */
-        if (!bind_error) {
-            /* Re-instate anything we may have damaged. */
-            CURRENT_CONTEXT(interp) = ctx;
-            interp->current_cont    = saved_ccont;
-            Parrot_pcc_set_signature(interp, ctx, saved_sig);
-            Parrot_pcc_set_pc(interp, ctx, current_pc);
-            goto NEXT();
-        }
-        else {
-            /* Maybe we need to auto-thread... */
-            if (bind_error == BIND_RESULT_JUNCTION) {
-                /* Find dispatcher and call it. */
-                PMC *returns = Parrot_pmc_new(interp, enum_class_CallContext);
-                PMC *dispatcher = Parrot_ns_find_namespace_global(interp, Parrot_get_ctx_HLL_namespace(interp), DISPATCH_JUNCTION_str);
-
-                opcode_t *next;
-                PMC *junc_result, *caller_sig;
-                Parrot_ext_call(interp, dispatcher, "PP->P", sub, $1, &junc_result);
-
-                /* Build call signautre of returns and set it. */
-                VTABLE_push_pmc(interp, returns, junc_result);
-                Parrot_pcc_set_signature(interp, CURRENT_CONTEXT(interp), returns);
-
-                /* Invoke the current return continuation, to return said value. */
-                next = VTABLE_invoke(interp, Parrot_pcc_get_continuation(interp,
-                        CURRENT_CONTEXT(interp)), expr NEXT());
-                goto ADDRESS(next);
-            }
-            else {
-                /* Nope, just normal fail... */
-                opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
-                        EXCEPTION_INVALID_OPERATION, "%Ss", error);
-                goto ADDRESS(handler);
-            }
-        }
+inline op perl6_repr_name(out PMC, in PMC) :base_core {
+    PMC *val = Rakudo_cont_decontainerize(interp, $2);
+    if (val->vtable->base_type == smo_id) {
+        PMC    *type = Rakudo_types_str_get();
+        STRING *name = REPR(val)->name;
+        PMC    *res  = REPR(type)->allocate(interp, STABLE(type));
+        REPR(res)->box_funcs->set_str(interp, STABLE(res), OBJECT_BODY(res), name);
+        PARROT_GC_WRITE_BARRIER(interp, res);
+        $1 = res;
     }
     else {
-        goto NEXT();
+        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+            "Can only use perl6_repr_name with a SixModelObject");
     }
 }
 
 
 /*
 
-=item x_setprophash(in PMC, in PMC)
+=item perl6_definite
 
-Sets the properties hash of $1 to be $2.
+Takes an object and returns a boolean determining whether it is concrete.
 
 =cut
 
 */
-inline op x_setprophash(in PMC, in PMC) :base_core {
-    PMC_metadata($1) = $2;
-    goto NEXT();
+inline op perl6_definite(out PMC, in PMC) :base_core {
+    PMC *val = Rakudo_cont_decontainerize(interp, $2);
+    $1 = IS_CONCRETE(val) ?
+        Rakudo_types_bool_true_get() :
+        Rakudo_types_bool_false_get();
 }
 
 
@@ -714,27 +950,710 @@ method named $3 instead of throwing an exception.
 */
 inline op find_method_null_ok(out PMC, in PMC, in STR) :base_core {
     $1 = VTABLE_find_method(interp, $2, $3);
-    goto NEXT();
 }
 
 
 /*
 
-=item fixup_outer_ctx(inout PMC)
+=item perl6_associate_sub_code_object()
+
+Takes a Parrot Sub in $1 and a code object in $2 and associates the two.
+Actually, it uses a field in the Parrot Sub PMC that Rakudo never makes
+use of. Evil, but saves a prophash for every single code object.
 
 =cut
 
 */
-inline op fixup_outer_ctx(inout PMC) :base_core {
-    PMC *cur_ctx = CURRENT_CONTEXT(interp);
-    if ($1->vtable->base_type == enum_class_CallContext) {
-        Parrot_pcc_set_outer_ctx(interp, $1, cur_ctx);
-        goto NEXT();
+inline op perl6_associate_sub_code_object(in PMC, in PMC) :base_core {
+    if ($1->vtable->base_type == enum_class_Sub
+           || $1->vtable->base_type == enum_class_Coroutine) {
+        SETATTR_Sub_multi_signature(interp, $1, $2);
+        PARROT_GC_WRITE_BARRIER(interp, $1);
     }
     else {
-        opcode_t *handler =  Parrot_ex_throw_from_op_args(interp, NULL,
-                EXCEPTION_INVALID_OPERATION, "fixup_outer_ctx only valid on a context");
-        goto ADDRESS(handler);
+        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+            "Can only use perl6_associate_sub_code_object if first operand is a Sub.");
+    }
+}
+
+
+/*
+
+=item perl6_code_object_from_parrot_sub()
+
+Takes a Parrot Sub PMC and gets the Perl 6 code object associated with it.
+
+=cut
+
+*/
+inline op perl6_code_object_from_parrot_sub(out PMC, in PMC) :base_core {
+    if ($2->vtable->base_type == enum_class_Sub
+           || $2->vtable->base_type == enum_class_Coroutine) {
+        PMC *p6sub;
+        GETATTR_Sub_multi_signature(interp, $2, p6sub);
+        $1 = PMC_IS_NULL(p6sub) ? Rakudo_types_mu_get() : p6sub;
+    }
+    else {
+        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+            "Can only use perl6_code_object_from_parrot_sub if second operand is a Parrot Sub.");
+    }
+}
+
+/*
+
+=item perl6_decontainerize_return_value()
+
+If the sub is not rw, decontainerizes the return value.
+
+=cut
+
+*/
+inline op perl6_decontainerize_return_value(out PMC, in PMC) :base_core {
+    if ($2->vtable->base_type == smo_id && Rakudo_cont_is_rw_scalar(interp, $2)) {
+        PMC *cur_ctx     = CURRENT_CONTEXT(interp);
+        PMC *parrot_sub  = Parrot_pcc_get_sub(interp, cur_ctx);
+        PMC *p6sub;
+        Rakudo_Code *code;
+        GETATTR_Sub_multi_signature(interp, parrot_sub, p6sub);
+        code = (Rakudo_Code *)PMC_data(p6sub);
+        $1 = code->rw ? $2 : Rakudo_cont_scalar_with_value_no_descriptor(interp, 
+            Rakudo_cont_decontainerize(interp, $2));
+    }
+    else {
+        $1 = $2;
+    }
+}
+
+/*
+
+=item perl6_type_check_return_value()
+
+Gets the return type for a sub and type checks it.
+
+=cut
+
+*/
+inline op perl6_type_check_return_value(in PMC) :base_core {
+    PMC *cur_ctx     = CURRENT_CONTEXT(interp);
+    PMC *parrot_sub  = Parrot_pcc_get_sub(interp, cur_ctx);
+    PMC *p6sub;
+    PMC *sig_pmc;
+    PMC *rtype;
+    GETATTR_Sub_multi_signature(interp, parrot_sub, p6sub);
+    sig_pmc = ((Rakudo_Code *)PMC_data(p6sub))->signature;
+    rtype = ((Rakudo_Signature *)PMC_data(sig_pmc))->rtype;
+    if (!PMC_IS_NULL(rtype)) {
+        PMC *decont_value = Rakudo_cont_decontainerize(interp, $1);
+        if (!STABLE(decont_value)->type_check(interp, decont_value, rtype)) {
+            /* XXX Awesomize. */
+            Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+                "Type check failed for return value");
+        }
+    }
+}
+
+/*
+
+=item perl6_enter_multi_dispatch_from_onlystar_block()
+
+Entry point to multi-dispatch over the dispatchee list in the specified
+candidate.
+
+=cut
+
+*/
+inline op perl6_enter_multi_dispatch_from_onlystar_block(out PMC) :base_core {
+    PMC *cur_ctx     = CURRENT_CONTEXT(interp);
+    PMC *orig_caller = Parrot_pcc_get_caller_ctx(interp, cur_ctx);
+    PMC *parrot_sub  = Parrot_pcc_get_sub(interp, cur_ctx);
+    PMC *perl6_code, *chosen;
+    GETATTR_Sub_multi_signature(interp, parrot_sub, perl6_code);
+    if (PMC_IS_NULL(perl6_code))
+        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+                "Could not locate Perl 6 code object");
+    chosen = Rakudo_md_dispatch(interp, perl6_code, cur_ctx, NULL);
+    if (!PMC_IS_NULL(chosen)) {
+        /* Invoke the chosen candidate; we use the existing call frame
+         * and don't make a nested runloop. */
+        opcode_t *addr;
+        Parrot_pcc_set_signature(interp, cur_ctx, cur_ctx);
+        interp->current_cont = Parrot_pcc_get_continuation(interp, cur_ctx);
+        addr = VTABLE_invoke(interp, chosen, expr NEXT());
+        Parrot_pcc_set_caller_ctx(interp, cur_ctx, orig_caller);
+        PObj_flag_SET(P6BINDER_ALREADY_CHECKED, cur_ctx);
+        goto ADDRESS(addr);
+    }
+    else {
+        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+                "Internal error: multiple dispatcher returned a null candidate");
+    }
+}
+
+
+/*
+
+=item perl6_multi_dispatch_thunk()
+
+Creates a multi-dispatch thunk for the specified onlystar dispatcher.
+
+=cut
+
+*/
+inline op perl6_multi_dispatch_thunk(out PMC, in PMC) :base_core {
+    Rakudo_Code *code_obj = (Rakudo_Code *)PMC_data($2);
+    if (PMC_IS_NULL(code_obj->md_thunk)) {
+        code_obj->md_thunk = Parrot_pmc_new(interp, Parrot_pmc_get_type_str(interp, Parrot_str_new(interp, "MDThunk", 0)));
+        PARROT_GC_WRITE_BARRIER(interp, $2);
+        VTABLE_set_pointer(interp, code_obj->md_thunk, &Rakudo_md_dispatch);
+        VTABLE_set_pmc(interp, code_obj->md_thunk, $2);
+    }
+    $1 = code_obj->md_thunk;
+}
+
+
+/*
+
+=item perl6_multi_dispatch_cand_thunk()
+
+Creates a multi-dispatch thunk for calling the candidate at the specified
+index in the dispatchee list (for when we decided the candidate at compile
+time). Also implies that we won't re-do the type check in the binder.
+
+=cut
+
+*/
+inline op perl6_multi_dispatch_cand_thunk(out PMC, in PMC, in INT) :base_core {
+    Rakudo_Code *disp_obj = (Rakudo_Code *)PMC_data($2);
+    PMC         *chosen   = VTABLE_get_pmc_keyed_int(interp, disp_obj->dispatchees, $3);
+    Rakudo_Code *code_obj = (Rakudo_Code *)PMC_data(chosen);
+    if (PMC_IS_NULL(code_obj->md_thunk)) {
+        code_obj->md_thunk = Parrot_pmc_new(interp, Parrot_pmc_get_type_str(interp, Parrot_str_new(interp, "CTMThunk", 0)));
+        PARROT_GC_WRITE_BARRIER(interp, chosen);
+        VTABLE_set_pmc(interp, code_obj->md_thunk, chosen);
+    }
+    $1 = code_obj->md_thunk;
+}
+
+
+/*
+
+=item perl6_get_matching_multis()
+
+Gets the multi dispatcher to find all candidates under the control of
+the dispatcher in $2 that are applicable for capture $3. Puts an RPA
+of them in $1.
+
+=cut
+
+*/
+inline op perl6_get_matching_multis(out PMC, in PMC, in PMC) :base_core {
+    $1 = Rakudo_md_get_all_matches(interp, $2, $3);
+}
+
+
+/*
+
+=item perl6_multi_dispatch_ct(out PMC, in PMC, in PMC, in PMC)
+
+Does a "compile time" multi-dispatch. Used by the optimizer to try to
+decide some multiple dispatches at compile time.
+
+    $0 is an array of two elements. The first is a flag indicating the
+    outcome. 0 means could not decide, 1 means decided on a candidate,
+    -1 means that the dispatch is doomed to fail.
+    
+    $1 is the dispatcher
+    
+    $2 is the argument array
+    
+    $3 is a set of flags for native types. 0 = object, 1 = native int,
+    2 = native num, 3 = native str.
+
+=cut
+
+*/
+inline op perl6_multi_dispatch_ct(out PMC, in PMC, in PMC, in PMC) :base_core {
+    /* Build up a capture with sample arguments. */
+    PMC *result     = PMCNULL;
+    PMC *capture    = Parrot_pmc_new(interp, enum_class_CallContext);
+    INTVAL num_args = VTABLE_elements(interp, $3);
+    INTVAL args_ok  = 1;
+    INTVAL i;
+    for (i = 0; i < num_args; i++) {
+        INTVAL native = VTABLE_get_integer_keyed_int(interp, $4, i);
+        PMC *obj;
+        switch (native) {
+            case BIND_VAL_INT:
+                VTABLE_push_integer(interp, capture, 0);
+                break;
+            case BIND_VAL_NUM:
+                VTABLE_push_float(interp, capture, 0.0);
+                break;
+            case BIND_VAL_STR:
+                VTABLE_push_string(interp, capture, STRINGNULL);
+                break;
+            default:
+                obj = VTABLE_get_pmc_keyed_int(interp, $3, i);
+                if (obj->vtable->base_type == smo_id) {
+                    VTABLE_push_pmc(interp, capture, obj);
+                }
+                else {
+                    args_ok = 0;
+                    break;
+                }
+        }
+    }
+    
+    /* Use the capture to do a compile time trial dispatch. */
+    $1 = Parrot_pmc_new(interp, enum_class_ResizablePMCArray);
+    if (args_ok) {
+        VTABLE_set_integer_keyed_int(interp, $1, 0,
+            Rakudo_md_ct_dispatch(interp, $2, capture, &result));
+        VTABLE_set_pmc_keyed_int(interp, $1, 1, result);
+    }
+    else {
+        VTABLE_set_integer_keyed_int(interp, $1, 0, MD_CT_NOT_SURE);
+    }
+}
+
+
+/*
+
+=item perl6_get_package_through_who
+
+Takes a type object and uses its associated symbol table (in .WHO)
+to look for a package within it. It will auto-vivify the package if
+non exists.
+
+=cut
+
+*/
+inline op perl6_get_package_through_who(out PMC, in PMC, in STR) :base_core {
+    if ($2->vtable->base_type == smo_id) {
+        PMC *who = STABLE($2)->WHO;
+        PMC *pkg = VTABLE_get_pmc_keyed_str(interp, who, $3);
+        if (PMC_IS_NULL(pkg)) {
+            /* Create the package object. This is just like a call:
+             * pkg = PackageHOW.new_type(:name($3))
+             */
+            PMC *pkg_how = Rakudo_types_packagehow_get();
+            PMC *old_ctx = Parrot_pcc_get_signature(interp, CURRENT_CONTEXT(interp));
+            PMC *meth    = VTABLE_find_method(interp, pkg_how, Parrot_str_new(interp, "new_type", 0));
+            PMC *cappy   = Parrot_pmc_new(interp, enum_class_CallContext);
+            VTABLE_push_pmc(interp, cappy, pkg_how);
+            VTABLE_set_string_keyed_str(interp, cappy, Parrot_str_new(interp, "name", 0), $3);
+            Parrot_pcc_invoke_from_sig_object(interp, meth, cappy);
+            cappy = Parrot_pcc_get_signature(interp, CURRENT_CONTEXT(interp));
+            Parrot_pcc_set_signature(interp, CURRENT_CONTEXT(interp), old_ctx);
+            pkg = VTABLE_get_pmc_keyed_int(interp, cappy, 0);
+            
+            /* Install it in the outer package's .WHO. */
+            VTABLE_set_pmc_keyed_str(interp, who, $3, pkg);
+        }
+        $1 = pkg;
+    }
+    else {
+        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+            "Can only use perl6_get_package_through_who with a SixModelObject");
+    }
+}
+
+/*
+
+=item perl6_set_dispatcher_for_callee(in PMC)
+
+Sets the dispatcher that the next thing we call that is interested
+in one will take.
+
+=cut
+
+*/
+inline op perl6_set_dispatcher_for_callee(in PMC) :base_core {
+    current_dispatcher = $1;
+}
+
+/*
+
+=item perl6_take_dispatcher()
+
+Takes the dispatcher that was set, if any, and store it in the current
+lexpad's $*DISPATCHER. Also clears the current set dispatcher so that
+nothing else can take it by accident. If there's no current set dispatcher
+then this is a no-op.
+
+=cut
+
+*/
+inline op perl6_take_dispatcher() :base_core {
+    if (current_dispatcher) {
+        PMC *lexpad = Parrot_pcc_get_lex_pad(interp, CURRENT_CONTEXT(interp));
+        VTABLE_set_pmc_keyed_str(interp, lexpad, Parrot_str_new_constant(interp, "$*DISPATCHER"),
+            current_dispatcher);
+        current_dispatcher = NULL;
+    }
+}
+
+/*
+
+=item perl6_find_dispatcher(out PMC)
+
+Locates the nearest dispatcher $*DISPATCHER, vivifying it if required,
+and returns it.
+
+=cut
+
+*/
+inline op perl6_find_dispatcher(out PMC, in STR) :base_core {
+    PMC     *ctx            = CURRENT_CONTEXT(interp);
+    STRING  *dispatcher_str = Parrot_str_new_constant(interp, "$*DISPATCHER");
+    PMC     *dispatcher     = NULL;
+    
+    while (!PMC_IS_NULL(ctx)) {
+        /* Do we have a dispatcher here? */
+        PMC *lexpad = Parrot_pcc_get_lex_pad(interp, ctx);
+        if (!PMC_IS_NULL(lexpad) && VTABLE_exists_keyed_str(interp, lexpad, dispatcher_str)) {
+            PMC *maybe_dispatcher = VTABLE_get_pmc_keyed_str(interp, lexpad, dispatcher_str);
+            if (!PMC_IS_NULL(maybe_dispatcher)) {
+                dispatcher = maybe_dispatcher;
+                if (!PMC_IS_NULL(dispatcher) && !IS_CONCRETE(dispatcher)) {
+                    /* Need to vivify it. */
+                    PMC *old_ctx = Parrot_pcc_get_signature(interp, CURRENT_CONTEXT(interp));
+                    PMC *meth    = VTABLE_find_method(interp, dispatcher, Parrot_str_new_constant(interp, "vivify_for"));
+                    PMC *cappy   = Parrot_pmc_new(interp, enum_class_CallContext);
+                    PMC *sub     = Parrot_pcc_get_sub(interp, ctx);
+                    PMC *p6sub;
+                    VTABLE_push_pmc(interp, cappy, dispatcher);
+                    GETATTR_Sub_multi_signature(interp, sub, p6sub);
+                    VTABLE_push_pmc(interp, cappy, p6sub);
+                    VTABLE_push_pmc(interp, cappy, lexpad);
+                    Parrot_pcc_invoke_from_sig_object(interp, meth, cappy);
+                    cappy = Parrot_pcc_get_signature(interp, CURRENT_CONTEXT(interp));
+                    Parrot_pcc_set_signature(interp, CURRENT_CONTEXT(interp), old_ctx);
+                    dispatcher = VTABLE_get_pmc_keyed_int(interp, cappy, 0);
+                    VTABLE_set_pmc_keyed_str(interp, lexpad, dispatcher_str, dispatcher);
+                }
+                break;
+            }
+        }
+
+        /* Follow dynamic chain. */
+        ctx = Parrot_pcc_get_caller_ctx(interp, ctx);
+    }
+    
+    if (!dispatcher)
+        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+            "%Ss is not in the dynamic scope of a dispatcher", $2);
+    $1 = dispatcher;
+}
+
+/*
+
+=item perl6_args_for_dispatcher(out PMC, in PMC)
+
+Locates the callframe with the $*DISPATCHER passed and returns it.
+
+=cut
+
+*/
+inline op perl6_args_for_dispatcher(out PMC, in PMC) :base_core {
+    PMC     *ctx            = CURRENT_CONTEXT(interp);
+    STRING  *dispatcher_str = Parrot_str_new_constant(interp, "$*DISPATCHER");
+    PMC     *result         = NULL;
+    
+    while (!PMC_IS_NULL(ctx)) {
+        /* Do we have a dispatcher here? */
+        PMC *lexpad = Parrot_pcc_get_lex_pad(interp, ctx);
+        if (!PMC_IS_NULL(lexpad) && VTABLE_exists_keyed_str(interp, lexpad, dispatcher_str)) {
+            PMC *dispatcher = VTABLE_get_pmc_keyed_str(interp, lexpad, dispatcher_str);
+            if (dispatcher == $2) {
+                result = ctx;
+                break;
+            }
+        }
+        ctx = Parrot_pcc_get_caller_ctx(interp, ctx);
+    }
+    
+    if (!result)
+        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+            "Could not find arguments for dispatcher");
+    $1 = result;
+}
+
+/*
+
+=item perl6_current_args_rpa(out PMC)
+
+Gets a ResizablePMCArray containing the positional arguments passed to the
+current block.
+
+=cut
+
+*/
+inline op perl6_current_args_rpa(out PMC) :base_core {
+    PMC   *cur_ctx = CURRENT_CONTEXT(interp);
+    PMC   *result  = Parrot_pmc_new(interp, enum_class_ResizablePMCArray);
+    INTVAL args    = VTABLE_elements(interp, cur_ctx);
+    INTVAL i;
+    for (i = 0; i < args; i++)
+        VTABLE_set_pmc_keyed_int(interp, result, i,
+            VTABLE_get_pmc_keyed_int(interp, cur_ctx, i));
+    $1 = result;
+}
+
+
+/*
+
+=item perl6_state_needs_init(out INT)
+
+Returns a non-zero value if state variables need their initialization
+and START blocks should run.
+
+=cut
+
+*/
+inline op perl6_state_needs_init(out INT) :base_core {
+    PMC *cur_ctx = CURRENT_CONTEXT(interp);
+    $1 = PObj_flag_TEST(P6LEXPAD_STATE_INIT, cur_ctx)
+}
+
+
+/*
+
+=item perl6_set_block_first_flag(in PMC)
+
+Flags that the next execution of a block should run the FIRST block.
+
+=cut
+
+*/
+inline op perl6_set_block_first_flag(in PMC) :base_core {
+    Rakudo_Code * code = (Rakudo_Code *)PMC_data($1);
+    PObj_flag_SET(SUB_FIRST, code->_do);
+}
+
+
+/*
+
+=item perl6_take_block_first_flag(out INT)
+
+Checks the flag for if FIRST blocks should be run for this invocation, and
+clears it.
+
+=cut
+
+*/
+inline op perl6_take_block_first_flag(out INT) :base_core {
+    PMC * const ctx     = CURRENT_CONTEXT(interp);
+    PMC * const cur_sub = Parrot_pcc_get_sub(interp, ctx);
+    $1 = PObj_flag_TEST(SUB_FIRST, cur_sub);
+    PObj_flag_CLEAR(SUB_FIRST, cur_sub);
+}
+
+
+/*
+
+=item perl6_set_checking_pre()
+
+Sets the checking PRE blocks flag on a context.
+
+=cut
+
+*/
+inline op perl6_set_checking_pre() :base_core {
+    PMC * const ctx = CURRENT_CONTEXT(interp);
+    PObj_flag_SET(P6_CHECKING_PRE, ctx);
+}
+
+
+/*
+
+=item perl6_clear_checking_pre()
+
+Clears the checking PRE blocks flag on a context.
+
+=cut
+
+*/
+inline op perl6_clear_checking_pre() :base_core {
+    PMC * const ctx = CURRENT_CONTEXT(interp);
+    PObj_flag_CLEAR(P6_CHECKING_PRE, ctx);
+}
+
+
+/*
+
+=item perl6_is_list(out INT, in PMC)
+
+Checks if the passed object is a RPA.
+
+=cut
+
+*/
+inline op perl6_is_list(out INT, in PMC) :base_core {
+    $1 = $2->vtable->base_type == enum_class_ResizablePMCArray;
+}
+
+
+/*
+
+=item perl6_is_hash(out INT, in PMC)
+
+Checks if the passed object is a (VM) hash.
+
+=cut
+
+*/
+inline op perl6_is_hash(out INT, in PMC) :base_core {
+    $1 = $2->vtable->base_type == enum_class_Hash;
+}
+
+
+/*
+
+=item perl6_parcel_from_rpa(out PMC, in PMC, in PMC)
+
+Creates a Perl 6 Parcel object from the RPA in $2, replacing
+any PMCNULL elements with $3.
+
+=cut
+
+*/
+inline op perl6_parcel_from_rpa(out PMC, in PMC, in PMC) :base_core {
+    $1 = Rakudo_binding_parcel_from_rpa(interp, $2, $3);
+}
+
+
+/*
+
+=item perl6_iter_from_rpa(out PMC, in PMC, in PMC)
+
+Creates a lazy Perl 6 ListIter object from the RPA in $2
+and iterates into the List at $3.
+
+=cut
+
+*/
+inline op perl6_iter_from_rpa(out PMC, in PMC, in PMC) :base_core {
+    $1 = Rakudo_binding_iter_from_rpa(interp, $2, $3);
+}
+
+
+/*
+
+=item perl6_list_from_rpa(out PMC, in PMC, in PMC, in PMC)
+
+Creates a lazy Perl 6 List object of type $3 from the RPA
+in $2 and with flattening $4.
+
+=cut
+
+*/
+inline op perl6_list_from_rpa(out PMC, in PMC, in PMC, in PMC) :base_core {
+    $1 = Rakudo_binding_list_from_rpa(interp, $2, $3, $4);
+}
+
+
+/*
+
+=item perl6_rpa_find_type(out INT, in PMC, in PMC, int INT, in INT)
+
+Find the first element of RPA $2 that has type $3, starting at
+index $4 and up through (but not including) index $5.  Sets $1
+to be the index of the first element matching type, otherwise
+$1 is set to the highest index searched.
+
+Containerized elements are automatically skipped.
+
+=cut
+
+*/
+inline op perl6_rpa_find_type(out INT, in PMC, in PMC, in INT, in INT)
+{
+    PMC *rpa     = $2;
+    PMC *type    = Rakudo_cont_decontainerize(interp, $3);
+    INTVAL elems = VTABLE_elements(interp, rpa);
+    INTVAL last  = $5;
+    INTVAL index;
+
+    if (elems < last)  last = elems;
+
+    for (index = $4; index < last; index++) {
+        PMC *val = VTABLE_get_pmc_keyed_int(interp, rpa, index);
+        if (val->vtable->base_type == smo_id
+            && !STABLE(val)->container_spec
+            && STABLE(val)->type_check(interp, val, type)) break;
+    }
+
+    $1 = index;
+}
+
+
+/*
+
+=item perl6_shiftpush(inout PMC, in PMC, in INT)
+
+Shifts up to $3 elements from $2, pushing each shifted onto $1.
+$1 can be PMCNULL, in which case the shifted elements are
+simply discarded.
+
+*/
+inline op perl6_shiftpush(inout PMC, in PMC, in INT) :base_core {
+    INTVAL count = $3;
+    INTVAL elems = VTABLE_elements(interp, $2);
+    if (count > elems) count = elems;
+
+    if (!PMC_IS_NULL($1) && $3 > 0) {
+        INTVAL get_pos = 0;
+        INTVAL set_pos = VTABLE_elements(interp, $1);
+        VTABLE_set_integer_native(interp, $1, set_pos + count);
+        while (count > 0) {
+            VTABLE_set_pmc_keyed_int(interp, $1, set_pos,
+                VTABLE_get_pmc_keyed_int(interp, $2, get_pos));
+            count--;
+            get_pos++;
+            set_pos++;
+        }
+    }
+    if ($3 > 0)
+        VTABLE_splice(interp, $2, Parrot_pmc_new(interp, enum_class_ResizablePMCArray), 0, $3);
+}
+
+
+/*
+
+=item perl6_caller_location(out INT)
+
+Gets a unique ID representing the place the current routine was
+called from. Used for implementing flip-flops.
+
+=cut
+
+*/
+inline op perl6_callerid(out INT) :base_core {
+    PMC *cur_ctx    = CURRENT_CONTEXT(interp);
+    PMC *caller_ctx = Parrot_pcc_get_caller_ctx(interp, cur_ctx);
+    $1              = (INTVAL) Parrot_pcc_get_pc(interp, caller_ctx);
+}
+
+/*
+
+=item capture_all_outers(in PMC)
+
+Takes a list of Code objects that map to closures, finds those closures outers
+can captures those contexts.
+
+=cut
+
+*/
+inline op capture_all_outers(in PMC) :base_core {
+    PMC    *cur_ctx = CURRENT_CONTEXT(interp);
+    INTVAL  elems   = VTABLE_elements(interp, $1);
+    INTVAL  i;
+    for (i = 0; i < elems; i++) {
+        PMC *code_obj = VTABLE_get_pmc_keyed_int(interp, $1, i);
+        PMC *closure = ((Rakudo_Code *)PMC_data(code_obj))->_do;
+        PMC *ctx_to_diddle = PARROT_SUB(closure)->outer_ctx;
+        Parrot_pcc_set_outer_ctx_func(interp, ctx_to_diddle, cur_ctx);
     }
 }
 
@@ -762,7 +1681,246 @@ inline op encodelocaltime(out INT, in PMC) :base_core {
     tm.tm_isdst = VTABLE_get_integer_keyed_int(interp, $2, 8);
 
     $1 = mktime(&tm);
-    goto NEXT();
+}
+
+
+/*
+
+=item perl6_based_rethrow(in PMC, in PMC)
+
+Rethrow an exception, but instead of starting the search for a
+matching ExceptionHandler in the current context, use another
+exception as base for the rethrow.
+
+=cut
+
+*/
+inline op perl6_based_rethrow(in PMC, in PMC) :base_core {
+    PMC      *except = $1;
+    PMC      *base = $2;
+    opcode_t *dest;
+    STRING   *handlers_left_str = Parrot_str_new_constant(interp, "handlers_left");
+    PMC      *base_ctx = (PMC *)VTABLE_get_pointer(interp, base);
+    INTVAL    base_handlers_left = VTABLE_get_integer_keyed_str(interp, base, handlers_left_str);
+
+    VTABLE_set_pointer(interp, except, base_ctx);
+    VTABLE_set_integer_keyed_str(interp, except, handlers_left_str, base_handlers_left);
+    dest = Parrot_ex_rethrow_from_op(interp, except);
+    goto ADDRESS(dest);
+}
+
+
+/*
+
+=item perl6_skip_handlers_in_rethrow(in PMC, in INT)
+
+=cut
+
+*/
+inline op perl6_skip_handlers_in_rethrow(in PMC, in INT) :base_core {
+    PMC      *except = $1;
+    STRING   *handlers_left_str = Parrot_str_new_constant(interp, "handlers_left");
+    INTVAL    handlers_left = VTABLE_get_integer_keyed_str(interp, except, handlers_left_str);
+
+    handlers_left -= $2
+    if (handlers_left < 0)
+        handlers_left = 0;
+    VTABLE_set_integer_keyed_str(interp, except, handlers_left_str, handlers_left);
+}
+
+
+/*
+
+=item perl6_invoke_catchhandler(invar PMC, in PMC)
+
+Works like invoke, but takes a parrot exception as second argument.
+The perl6 spec says that the catchhandler's call chain must include
+the callframes from the exception, so we do some context fiddling
+here. When the catchhandler returns, it uses the continuation that
+points to the original callchain.
+Note that exceptions in the catchhandler must be caught and
+possibly rethrown with perl6_based_rethrow, otherwise the handlers
+from the exception will pick them up.
+
+=cut
+
+*/
+inline op perl6_invoke_catchhandler(invar PMC, in PMC) :flow {
+    PMC      * p        = $1;
+    PMC      * ctx      = CURRENT_CONTEXT(interp);
+    opcode_t * dest     = expr NEXT();
+    PMC      * call_obj = Parrot_pcc_build_call_from_c_args(interp, PMCNULL, "P", $2);
+    PMC      * cont     = Parrot_pmc_new(interp, enum_class_Continuation);
+    PMC      * ectx     = PMCNULL;
+
+    VTABLE_set_pointer(interp, cont, dest);
+    Parrot_pcc_set_pc(interp, ctx, dest);
+    /* now the tricky part, restore exception context */
+    GETATTR_Exception_thrower(interp, $2, ectx);
+    if (PMC_IS_NULL(ectx))
+        ectx = ctx;
+    if (ectx != ctx)
+        Parrot_pcc_set_context(interp, ectx);
+    if (PMC_IS_NULL(p)) {
+        /* no function provided, return immediately */
+        PMC *basectx = find_common_ctx(interp, ctx, ectx);
+        rewind_to_ctx(interp, ectx, basectx, PMCNULL);
+        Parrot_pcc_set_context(interp, ctx);
+        goto NEXT();
+    } else {
+        interp->current_cont = cont;
+        Parrot_pcc_set_signature(interp, ectx, call_obj);
+        dest = VTABLE_invoke(interp, p, dest);
+        goto ADDRESS(dest);
+    }
+}
+
+
+inline op perl6_return_from_routine(in PMC) :flow {
+    PMC * ctx = CURRENT_CONTEXT(interp);
+    PMC * cont = PMCNULL;
+    opcode_t * dest = expr NEXT();
+    PMC * cctx;
+    PMC * basectx;
+    PMC * call_sig = build_sig_object(interp, PMCNULL, "P", $1);
+    STRING * lex_name = Parrot_str_new_constant(interp, "RETURN");
+
+    for (ctx = Parrot_pcc_get_caller_ctx(interp, ctx); !PMC_IS_NULL(ctx); ctx = Parrot_pcc_get_caller_ctx(interp, ctx)) {
+        PMC * const lex_pad = sub_find_pad(interp, lex_name, ctx);
+        if (!PMC_IS_NULL(lex_pad)) {
+            cont = VTABLE_get_pmc_keyed_str(interp, lex_pad, lex_name);
+            if (!PMC_IS_NULL(cont))
+                break;
+        }
+    }
+    if (PMC_IS_NULL(cont)) {
+        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+                "Attempt to return outside of any Routine");
+    }
+    ctx = CURRENT_CONTEXT(interp);
+    GETATTR_Continuation_to_ctx(interp, cont, cctx);
+    basectx = find_common_ctx(interp, ctx, cctx);
+    rewind_to_ctx(interp, ctx, basectx, $1);
+    Parrot_pcc_set_signature(interp, ctx, call_sig);
+    dest = VTABLE_invoke(interp, cont, dest);
+    goto ADDRESS(dest);
+}
+
+
+inline op perl6_returncc(in PMC) :flow {
+    PMC * ctx = CURRENT_CONTEXT(interp);
+    PMC * cont = Parrot_pcc_get_continuation(interp, ctx);
+    opcode_t * dest = expr NEXT();
+    PMC * cctx;
+    PMC * basectx;
+    PMC * call_sig = build_sig_object(interp, PMCNULL, "P", $1);
+
+    GETATTR_Continuation_to_ctx(interp, cont, cctx);
+    basectx = find_common_ctx(interp, ctx, cctx);
+    rewind_to_ctx(interp, ctx, basectx, $1);
+    Parrot_pcc_set_signature(interp, ctx, call_sig);
+    dest = VTABLE_invoke(interp, cont, dest);
+    goto ADDRESS(dest);
+}
+
+
+/*
+
+=item perl6_capture_lex
+
+Does a lexical capture, but based on a Perl 6 code object.
+
+=cut
+
+*/
+inline op perl6_capture_lex(in PMC) {
+    if ($1->vtable->base_type == smo_id) {
+        Rakudo_Code *code_obj = (Rakudo_Code *)PMC_data($1);
+        Parrot_sub_capture_lex(interp, code_obj->_do);
+    }
+    else {
+        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+            "Can only use perl6_capture_lex with a SixModelObject");
+    }
+}
+
+/*
+
+=item perl6_get_outer_ctx
+
+Returns the OUTER context of a Perl 6 code object. Needed for the fixups
+that macros do.
+
+=cut
+
+*/
+inline op perl6_get_outer_ctx(out PMC, in PMC) {
+    if ($2->vtable->base_type == smo_id) {
+        Rakudo_Code *code_obj = (Rakudo_Code *)PMC_data(Rakudo_cont_decontainerize(interp, $2));
+        if (code_obj->_do->vtable->base_type != enum_class_Sub)
+            Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+                "perl6_get_outer_ctx did not get a Parrot Sub as expected, got %Ss",
+                VTABLE_name(interp, VTABLE_get_class(interp, $2)));
+        $1 = PARROT_SUB(code_obj->_do)->outer_ctx;
+    }
+    else {
+        Parrot_ex_throw_from_c_args(interp, NULL, EXCEPTION_INVALID_OPERATION,
+            "Can only use perl6_get_outer_ctx with a SixModelObject");
+    }
+}
+
+/*
+
+=item find_lex_relative(out PMC, in PMC, in STR)
+
+Finds the lexical named $3 relative to scope $2, following the outer
+chain. Places it in $1. Places a NULL PMC in $1 if it is not found.
+
+=cut
+
+*/
+inline op find_lex_relative(out PMC, in PMC, in STR) :base_core {
+    PMC *ctx = $2;
+    $1 = PMCNULL;
+
+    while (!PMC_IS_NULL(ctx)) {
+        PMC   * const lex_pad = Parrot_pcc_get_lex_pad(interp, ctx);
+        PMC   * const outer   = Parrot_pcc_get_outer_ctx(interp, ctx);
+
+        if (!PMC_IS_NULL(lex_pad) && VTABLE_exists_keyed_str(interp, lex_pad, $3)) {
+            $1 = VTABLE_get_pmc_keyed_str(interp, lex_pad, $3);
+            break;
+        }
+
+        ctx = outer;
+    }
+}
+
+/*
+
+=item find_dynamic_lex_relative(out PMC, in PMC, in STR)
+
+Finds the lexical named $3 relative to scope $2, following the caller
+chain. Places it in $1. Places a NULL PMC in $1 if it is not found.
+
+=cut
+
+*/
+inline op find_dynamic_lex_relative(out PMC, in PMC, in STR) :base_core {
+    PMC *ctx = $2;
+    $1 = PMCNULL;
+
+    while (!PMC_IS_NULL(ctx)) {
+        PMC   * const lex_pad = Parrot_pcc_get_lex_pad(interp, ctx);
+        PMC   * const caller  = Parrot_pcc_get_caller_ctx(interp, ctx);
+
+        if (!PMC_IS_NULL(lex_pad) && VTABLE_exists_keyed_str(interp, lex_pad, $3)) {
+            $1 = VTABLE_get_pmc_keyed_str(interp, lex_pad, $3);
+            break;
+        }
+
+        ctx = caller;
+    }
 }
 
 /*

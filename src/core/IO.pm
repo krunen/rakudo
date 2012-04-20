@@ -1,295 +1,388 @@
-class IO is Cool {
-    has $!PIO;
-    has $!ins;
-    has $.autoflush is rw;
-
-    has $.path;
-    has $.stat = ::IO::Stat.new(path => $.path);
-
-    multi method close() is export {
-        try {
-            ?$!PIO.close()
-        }
-        $! ?? fail($!) !! Bool::True
-    }
-
-    multi method eof() is export {
-        ?$!PIO.eof();
-    }
-
-    multi method get() {
-        my $x = $!PIO.readline;
-        fail if $.eof && $x eq '';
-        $!ins++;
-        $x.chomp;
-    }
-
-    multi method ins() {
-        $!ins;
-    }
-
-    multi method lines($limit = *) {
-        my $l = $limit ~~ Whatever ?? Inf !! $limit;
-        gather while !$.eof && $l-- > 0 {
-           my $line = $.get;
-           if $line.defined {
-               take $line;
-           }
-        }
-    }
-
-    multi method open($filename, :$r, :$w, :$a, :$bin) {
-        if $!PIO { $!PIO.close; $!PIO = Nil; }
-        my $mode = $w ?? 'w' !! ($a ?? 'wa' !! 'r');
-        $!PIO = $filename eq '-'
-                ?? pir::getstdin__P()
-                !! pir::open__PSS($filename, $mode);
-        unless pir::istrue__IP($!PIO) {
-            fail("Unable to open file '$filename'");
-        }
-        $!PIO.encoding($bin ?? 'binary' !! 'utf8');
-        self;
-    }
-
-    multi method print(*@items) {
-        try {
-            for @items -> $item {
-                (pir::descalarref__PP($!PIO)).print($item);
-            }
-            pir::descalarref__PP($!PIO).flush() if $.autoflush;
-        }
-        $! ?? fail($!) !! Bool::True;
-    }
-
-    multi method printf($format, *@args) {
-        self.print(sprintf($format, |@args));
-    }
-
-    multi method say(*@items) {
-        self.print(@items, "\n");
-    }
-
-    multi method read(Int $bytes) {
-        my $pio = $!PIO;
-        my @bytes = Q:PIR {
-            .local int nbytes, byte
-            .local pmc bytebuffer, it, result
-            .local pmc pio
-            pio = find_lex '$pio'
-            pio = deref_unless_object pio
-            $P0 = find_lex '$bytes'
-            nbytes = $P0
-            $S0 = pio.'read'(nbytes)
-            bytebuffer = new ['ByteBuffer']
-            bytebuffer = $S0
-
-            result = new ['Parcel']
-            it = iter bytebuffer
-          bytes_loop:
-            unless it goto done
-            byte = shift it
-            push result, byte
-            goto bytes_loop
-          done:
-            %r = result
-        };
-        return Buf.new(@bytes);
-    }
-
-    multi method write(Buf $buf) {
-        my @contents = $buf.contents;
-        my $pio = $!PIO;
-        Q:PIR {
-            $P0 = find_lex '@contents'
-
-            .local pmc bb
-            .local string s
-            bb = new ['ByteBuffer']
-            .local pmc it
-            .local int i
-            it = iter $P0
-            i = 0
-          loop:
-            unless it goto done
-            $P1 = shift it
-            $I1 = $P1
-            bb[i] = $I1
-            inc i
-            goto loop
-          done:
-            s = bb.'get_string_as'(binary:"")
-            .local pmc pio
-            pio = find_lex '$pio'
-            pio = deref_unless_object pio
-            pio.'print'(s)
-        };
-    }
-
-    multi method getc() {
-        my $c = $!PIO.read(1);
-        fail if $c eq '';
-        $c;
-    }
-
-    multi method slurp() {
-        $!PIO.readall();
-    }
-
-    multi method t() {
-        $!PIO.isatty;
-    }
-
-    # file test operations
-    multi method d() {
-        self.e ?? $.stat.isdir !! Bool;
-    }
-    multi method e() {
-        $.stat.exists;
-    }
-    multi method f() {
-        self.e ?? !$.stat.isdir !! Bool;
-    }
-
-    multi method s() {
-        self.e ?? $.stat.size !! Any;
-    }
-
-    multi method l() {
-        my $fn = $.path;
-        ? Q:PIR{
-            .local pmc filename, file
-            filename = find_lex '$fn'
-            $S0 = filename
-
-            file = root_new ['parrot';'File']
-            $I0 = file.'is_link'($S0)
-            %r = box $I0
-        }
-    }
-
-    multi method z() {
-        $.e && $.s == 0;
-    }
-
-    multi method created() { ::Instant.from-posix($.stat.createtime) }
-    multi method modified() { ::Instant.from-posix($.stat.modifytime) }
-    multi method accessed() { ::Instant.from-posix($.stat.accesstime) }
-    multi method changed() { ::Instant.from-posix($.stat.changetime) }
+sub print(|$) {
+    my $args := pir::perl6_current_args_rpa__P();
+    $*OUT.print(nqp::shift($args)) while $args;
+    Bool::True
 }
 
-multi sub get(IO $filehandle = $*ARGFILES) { $filehandle.get };
-
-multi sub lines(IO $filehandle = $*ARGFILES,
-                :$bin = False,
-                :$enc = 'Unicode',
-                :$nl = "\n",
-                :$chomp = True) {
-
-    fail 'Binary mode not supported yet'    if $bin;
-    fail 'Encodings not supported yet'      if $enc ne 'Unicode';
-    fail 'Fancy newlines not supported yet' if $nl ne "\n";
-    fail 'Lack of chomp not supported yet'  if !$chomp;
-
-    $filehandle.lines();
+sub say(|$) {
+    my $args := pir::perl6_current_args_rpa__P();
+    $*OUT.print(nqp::shift($args).gist) while $args;
+    $*OUT.print("\n");
 }
 
-multi sub print(Mu *@items) { $*OUT.print(@items); }
+sub note(|$) {
+    my $args := pir::perl6_current_args_rpa__P();
+    $*ERR.print(nqp::shift($args).gist) while $args;
+    $*ERR.print("\n");
+}
 
-multi sub prompt($msg) {
+sub gist(|$) {
+    nqp::p6parcel(pir::perl6_current_args_rpa__P(), Mu).gist
+}
+
+sub prompt($msg) {
     print $msg;
     $*IN.get;
 }
 
-multi sub say(Mu *@items) { $*OUT.say(@items); }
+class IO {
+    has $!PIO;
+    has Int $.ins = 0;
+    has $.chomp = Bool::True;
+    has $.path;
 
-sub getc($handle) { $handle.getc(); }
-
-sub open($filename, :$r, :$w, :$a, :$bin) {
-    my $mode = $w ?? 'w' !! ($a ?? 'wa' !! 'r');
-    my $PIO = pir::open__PSS($filename, $mode);
-    unless pir::istrue__IP($PIO) {
-        fail("Unable to open file '$filename'");
+    proto method open(|$) { * }
+    multi method open($path, :$r, :$w, :$a, :$bin, :$chomp = Bool::True) {
+        my $mode = $w ?? 'w' !! ($a ?? 'wa' !! 'r');
+        # TODO: catch error, and fail()
+        nqp::bindattr(self, IO, '$!PIO',
+             $path eq '-'
+                ?? ( $w || $a ?? pir::getstdout__P() !! pir::getstdin__P() )
+                !! pir::open__PSS(nqp::unbox_s($path), nqp::unbox_s($mode))
+        );
+        $!path = $path;
+        $!chomp = $chomp;
+        $!PIO.encoding($bin ?? 'binary' !! 'utf8');
+        self;
     }
-    $PIO.encoding($bin ?? 'binary' !! 'utf8');
-    IO.new(:$PIO)
+
+    method close() {
+        # TODO:b catch errors
+        $!PIO.close;
+        Bool::True;
+    }
+
+    method eof() {
+        nqp::p6bool($!PIO.eof);
+    }
+
+    method get() {
+        unless pir::defined($!PIO) {
+            self.open($.path, :chomp($.chomp));
+        }
+        return Str if self.eof;
+        my Str $x = nqp::p6box_s($!PIO.readline);
+        # XXX don't fail() as long as it's fatal
+        # fail('end of file') if self.eof && $x eq '';
+        $x.=chomp if $.chomp;
+        return Str if self.eof && $x eq '';
+
+        $!ins++;
+        $x;
+    }
+    
+    method getc() {
+        unless $!PIO {
+            self.open($.path, :chomp($.chomp));
+        }
+        my $c = nqp::p6box_s($!PIO.read(1));
+        fail if $c eq '';
+        $c;
+    }
+
+    method lines($limit = $Inf) {
+        my $count = 0;
+        gather while (my $line = self.get).defined && ++$count <= $limit {
+            take $line;
+        }
+    }
+
+    method read(IO:D: Cool:D $bytes as Int) {
+        my Mu $parrot_buffer := $!PIO.read_bytes(nqp::unbox_i($bytes));
+        my $buf := nqp::create(Buf);
+        nqp::bindattr($buf, Buf, '$!buffer', $parrot_buffer);
+        $buf;
+    }
+    # first arguemnt should probably be an enum
+    # valid values for $whence:
+    #   0 -- seek from beginning of file
+    #   1 -- seek relative to current position
+    #   2 -- seek from the end of the file
+    method seek(IO:D: Int:D $whence, Int:D $offset) {
+        $!PIO.seek(nqp::unbox_i($whence), nqp::unbox_i($offset));
+        True;
+    }
+    method tell(IO:D:) returns Int {
+        nqp::p6box_i($!PIO.tell);
+    }
+
+    method write(IO:D: Buf:D $buf) {
+        my Mu $b := nqp::getattr(
+                        nqp::p6decont($buf),
+                        Buf,
+                        '$!buffer'
+                    );
+        my str $encoding = $!PIO.encoding;
+        $!PIO.encoding('binary');
+        $!PIO.print($b.get_string('binary'));
+        $!PIO.encoding($encoding) unless $encoding eq 'binary';
+        True;
+    }
+
+    method opened() {
+        nqp::p6bool(nqp::istrue($!PIO));
+    }
+
+    proto method print(|$) { * }
+    multi method print(IO:D: Str:D $value) {
+        $!PIO.print(nqp::unbox_s($value));
+        Bool::True
+    }
+    multi method print(IO:D: *@list) {
+        $!PIO.print(nqp::unbox_s(@list.shift.Str)) while @list.gimme(1);
+        Bool::True
+    }
+
+    multi method say(IO:D: |$) {
+        my Mu $args := pir::perl6_current_args_rpa__P();
+        nqp::shift($args);
+        self.print: nqp::shift($args).gist while $args;
+        self.print: "\n";
+    }
+    
+    method slurp() {
+        nqp::p6box_s($!PIO.readall());
+    }
+
+    method d() {
+        self.e && nqp::p6bool(pir::stat__Isi(nqp::unbox_s($!path), pir::const::STAT_ISDIR))
+    }
+
+    method e() {
+        nqp::p6bool(pir::stat__Isi(nqp::unbox_s($!path), pir::const::STAT_EXISTS))
+    }
+
+    method f() {
+        self.e && nqp::p6bool(pir::stat__Isi(nqp::unbox_s($!path), pir::const::STAT_ISREG))
+    }
+
+    method l() {
+        nqp::p6bool(pir::new__Ps('File').is_link(nqp::unbox_s($!path)))
+    }
+
+    method r() {
+        nqp::p6bool(pir::new__Ps('OS').can_read(nqp::unbox_s($!path)))
+    }
+
+    method s() {
+        self.e 
+          && nqp::p6bool(
+              nqp::isgt_i(
+                  pir::stat__Isi(nqp::unbox_s($!path), 
+                                 pir::const::STAT_FILESIZE),
+                  0))
+    }
+
+    method t() {
+        self.opened && nqp::p6bool($!PIO.isatty)
+    }
+
+    method w() {
+        nqp::p6bool(pir::new__Ps('OS').can_write(nqp::unbox_s($!path)))
+    }
+
+    method x() {
+        nqp::p6bool(pir::new__Ps('OS').can_execute(nqp::unbox_s($!path)))
+    }
+    
+    method z() {
+        self.e && self.s == 0;
+    }
+
+    # not spec'd
+    method copy($dest) {
+        if self.d() {
+            die "Cannot copy '$.path': Is a directory"
+        }
+        try {
+            pir::new__PS('File').copy(nqp::unbox_s(~$.path), nqp::unbox_s(~$dest));
+        }
+        $! ?? fail($!) !! True
+    }
+
+    my class X::IO::Chmod { ... }
+    method chmod($mode) {
+        pir::new__PS('OS').chmod(nqp::unbox_s(~$.path), nqp::unbox_i($mode.Int));
+        return True;
+        CATCH {
+            default {
+                X::IO::Chmod.new(
+                    :$.path,
+                    :$mode,
+                    os-error => .Str,
+                ).throw;
+            }
+        }
+    }
 }
 
-sub close($handle) {
-    $handle.close()
+my class X::IO::Unlink { ... }
+sub unlink($path) {
+    pir::new__PS('OS').unlink($path);
+    return True;
+    CATCH {
+        default {
+            X::IO::Unlink.new(
+                :$path,
+                os-error => .Str,
+            ).throw;
+        }
+    }
 }
 
-sub slurp($filename) {
+my class X::IO::Rmdir { ... }
+sub rmdir($path) {
+    pir::new__PS('OS').rmdir($path);
+    return True;
+    CATCH {
+        default {
+            X::IO::Rmdir.new(
+                :$path,
+                os-error => .Str,
+            ).throw;
+        }
+    }
+}
+
+proto sub open(|$) { * }
+multi sub open($path, :$r, :$w, :$a, :$bin, :$chomp = Bool::True) {
+    IO.new.open($path, :$r, :$w, :$a, :$bin, :$chomp);
+}
+
+proto sub lines(|$) { * }
+multi sub lines($fh = $*ARGFILES, $limit = $Inf) { 
+    $fh.lines($limit) 
+}
+
+proto sub get(|$) { * }
+multi sub get($fh = $*ARGFILES) {
+    $fh.get()
+}
+
+proto sub getc(|$) { * }
+multi sub getc($fh = $*ARGFILES) {
+    $fh.getc()
+}
+
+proto sub close(|$) { * }
+multi sub close($fh) {
+    $fh.close()
+}
+
+proto sub slurp(|$) { * }
+multi sub slurp($filename) {
     my $handle = open($filename, :r);
     my $contents = $handle.slurp();
     $handle.close();
     $contents
 }
-
-sub unlink($filename) {
-    Q:PIR {
-        .local string filename_str
-        .local pmc filename_pmc, os
-        .local int status
-        filename_pmc = find_lex '$filename'
-        filename_str = filename_pmc
-        os = root_new ['parrot';'OS']
-        push_eh unlink_catch
-        os.'rm'(filename_str)
-        status = 1
-        goto unlink_finally
-      unlink_catch:
-        status = 0
-      unlink_finally:
-        pop_eh
-        %r = box status
-    }
+multi sub slurp(IO $io = $*ARGFILES) {
+    $io.slurp;
 }
 
-# CHEAT: This function is missing a bunch of arguments,
-# and should be more robust.
-multi lines (Str $filename, Any  $limit = *) {
-    my $fh = open $filename or fail "Unable to open $filename";
-    $fh.lines($limit);
-}
-
-multi sub printf($format, *@args) {
-    $*OUT.printf($format, |@args);
-
-}
-
-multi sub note(*@args) {
-    $*ERR.say(@args);
-}
-
-multi sub dir($path as Str = '.', Mu :$test = none('.', '..')) {
-    Q:PIR {
-        $P0 = find_lex '$path'
-        $P1 = new ['OS']
-        $P1 = $P1.'readdir'($P0)
-        %r = '&infix:<,>'($P1 :flat)
-    }.map({~$_}).grep($test)
-}
-
-multi sub chdir($path as Str) {
-    try {
-        pir::new__PS('OS').chdir($path)
-    }
-    $! ?? fail($!) !! True
-}
-
-multi sub mkdir($path as Str, $mode = 0o777) {
-    try {
-        pir::new__PS('OS').mkdir($path, $mode)
-    }
-    $! ?? fail($!) !! True
-}
-
+my class X::IO::Cwd { ... }
+proto sub cwd(|$) { * }
 multi sub cwd() {
-    my $pwd;
-    try {
-        $pwd = pir::new__Ps('OS').cwd();
+    return pir::new__Ps('OS').cwd();
+
+    CATCH {
+        default {
+            X::IO::Cwd.new(
+                os-error => .Str,
+            ).throw;
+        }
     }
-    $! ?? fail($!) !! $pwd;
 }
 
-# vim: ft=perl6
+my class X::IO::Dir { ... }
+sub dir($path = '.', Mu :$test = none('.', '..')) {
+    my Mu $RSA := pir::new__PS('OS').readdir(nqp::unbox_s($path.Stringy));
+    my int $elems = pir::set__IP($RSA);
+    my @res;
+    loop (my int $i = 0; $i < $elems; $i = $i + 1) {
+        my Str $item := nqp::p6box_s(nqp::atpos($RSA, $i));
+        @res.push: $item if $test.ACCEPTS($item);
+    }
+    return @res;
+
+    CATCH {
+        default {
+            X::IO::Dir.new(
+                :$path,
+                os-error => .Str,
+            ).throw;
+        }
+    }
+}
+
+my class X::IO::Chdir { ... }
+proto sub chdir(|$) { * }
+multi sub chdir($path as Str) {
+    pir::new__PS('OS').chdir(nqp::unbox_s($path));
+    $*CWD = nqp::p6box_s(pir::new__PS('OS').cwd);
+    return True;
+    CATCH {
+        default {
+            X::IO::Chdir.new(
+                :$path,
+                os-error => .Str,
+            ).throw;
+        }
+    }
+}
+
+my class X::IO::Mkdir { ... }
+proto sub mkdir(|$) { * }
+multi sub mkdir($path as Str, $mode = 0o777) {
+    pir::new__PS('OS').mkdir($path, $mode);
+    return True;
+    CATCH {
+        default {
+            X::IO::Mkdir.new(
+                :$path,
+                :$mode,
+                os-error => .Str,
+            ).throw;
+        }
+    }
+}
+
+$PROCESS::IN  = open('-');
+$PROCESS::OUT = open('-', :w);
+$PROCESS::ERR = IO.new;
+nqp::bindattr(nqp::p6decont($PROCESS::ERR),
+        IO, '$!PIO', pir::getstderr__P());
+
+my class X::IO::Rename { ... }
+sub rename(Cool $from as Str, Cool $to as Str) {
+    pir::new__PS('OS').rename(nqp::unbox_s($from), nqp::unbox_s($to));
+    return True;
+    CATCH {
+        default {
+            if .Str ~~ /'rename failed: '(.*)/ {
+                X::IO::Rename.new(
+                    :$from,
+                    :$to,
+                    os-error => $0.Str,
+                ).throw;
+            } else {
+                die "Unexpected error: $_";
+            }
+        }
+    }
+}
+my class X::IO::Copy { ... }
+sub copy(Cool $from as Str, Cool $to as Str) {
+    pir::new__PS('File').copy(nqp::unbox_s($from), nqp::unbox_s($to));
+    return True;
+    CATCH {
+        default {
+            X::IO::Copy.new(
+                :$from,
+                :$to,
+                os-error => .Str,
+            ).throw;
+        }
+    }
+}
+

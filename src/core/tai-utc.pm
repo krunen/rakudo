@@ -1,5 +1,3 @@
-use v6;
-
 # This file keeps track of the differences between TAI and UTC
 # for internal use. The "BEGIN" and "END" comments are for
 # tools/update-tai-utc.pl.
@@ -8,7 +6,7 @@ use v6;
 # http://tf.nist.gov/pubs/bulletin/leapsecond.htm
 # http://hpiers.obspm.fr/eop-pc/earthor/utc/TAI-UTC_tab.html
 
-module tai-utc {
+my module tai-utc {
 
     #our $initial-offset = 10;
     our sub initial-offset() { 10 }
@@ -42,6 +40,7 @@ module tai-utc {
         1998-12-31
         2005-12-31
         2008-12-31
+        2012-06-30
         >
         #END leap-second-dates
     };
@@ -81,6 +80,7 @@ module tai-utc {
          915148800
         1136073600
         1230768000
+        1341100800
         >
         #END leap-second-posix
     };

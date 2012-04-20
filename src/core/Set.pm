@@ -1,158 +1,109 @@
-class Set is Iterable does Associative {
-    # We could use a hash here, but right now hash keys coerce to Str,
-    # so instead let's use an array and &uniq for the time being.
-    has @!elems;
+my class Set is Iterable does Associative {
+    has %!elems;
 
-    multi method new() {
-        self.bless: *;
-    }
-    multi method new(@elems) {
-        self.bless(self.CREATE, :elems( uniq @elems ));
-    }
-    multi method new(*@elems) {
-        self.bless(self.CREATE, :elems( uniq @elems ));
-    }
-    multi method new(%elems) {
-        self.bless(self.CREATE, :elems( %elems.keys ));
-    }
-    multi method new(Set $set) {
-        $set;
-    }
+    method keys { %!elems.keys }
+    method values { %!elems.values }
+    method elems returns Int { %!elems.elems }
+    method exists($a) returns Bool { %!elems.exists($a) }
+    method Bool { %!elems.Bool }
+    method Numeric { %!elems.Numeric }
+    method hash { %!elems.hash }
+    method at_key($k) { ?(%!elems{$k} // False) }
+    method exists_key($k) { self.exists($k) }
 
-    method !STORE(\$args) {
-        die 'Sets are immutable, but you tried to modify one'
-    }
-
-    sub contains(@array, $value) {
-        for @array {
-            if $value === $_ {
-                return True;
+    # Constructor
+    method new(*@args --> Set) {
+        my %e;
+        sub register-arg($arg) {
+            given $arg {
+                when Pair { %e{.key} = True; }
+                when Set | KeySet { for .keys -> $key { %e{$key} = True; } }
+                when Associative { for .pairs -> $p { register-arg($p); } }
+                when Positional { for .list -> $p { register-arg($p); } }
+                default { %e{$_} = True; }
             }
         }
-        return False;
+
+        for @args {
+            register-arg($_);
+        }
+        self.bless(*, :elems(%e));
     }
 
-    method keys() { { @^readonly-elems }(@!elems) }
-    method values() { True xx +@!elems }
-    method elems() { +@!elems }
-    method exists($elem) { contains(@!elems, $elem) }
+    submethod BUILD (:%!elems) { }
 
-    method at_key($key) {
-        contains(@!elems, $key);
-    }
+    # Coercions to and from
+    method postcircumfix:<( )> ($s --> Set) { to-set($s) }
+    multi to-set (Set $set --> Set) { $set }
+    multi to-set (KeySet $set --> Set) { Set.new: $set }
+    multi to-set (Bag $bag --> Set) { Set.new: $bag }
+    multi to-set (KeyBag $bag --> Set) { Set.new: $bag }
+    multi to-set (@elems --> Set) { Set.new: @elems }
+    multi to-set ([*@elems] --> Set) { Set.new: @elems }
+    multi to-set (%elems --> Set) { Set.new: %elems.keys }
+    multi to-set ($elem --> Set) { die "Cannot coerce $elem.perl() to a Set; use set($elem.perl()) to create a one-element set" }
 
-    method Bool() { ?self.elems }
-    method Numeric() { +self.elems }
-    method Str() { self.perl }
-    method hash() { hash self.flat }
-    method flat() { @!elems Z=> True xx * }
+    multi method Str(Any:D $ : --> Str) { ~%!elems.keys() }
+    multi method gist(Any:D $ : --> Str) { "set({ %!elems.keys».gist.join(', ') })"
+    }
+    multi method perl(Any:D $ : --> Str) { 'set(' ~ join(', ', map { .perl }, %!elems.keys) ~ ')' }
 
-    method pick(*@args) { @!elems.pick: |@args }
-    method roll(*@args) { @!elems.roll: |@args }
+    method iterator() { %!elems.keys.iterator }
+    method list() { %!elems.keys }
+    method pick($count = 1) { %!elems.keys.pick($count) }
+    method roll($count = 1) { %!elems.keys.roll($count) }
 
-    multi method union(@otherset) {
-        self.new((@!elems, @otherset));
-    }
-    multi method union(%otherset) {
-        self.union(%otherset.keys);
-    }
-
-    multi method intersection(@otherset) {
-        self.new(grep { contains(@otherset, $_) }, @!elems);
-    }
-    multi method intersection(%otherset) {
-        self.intersection(%otherset.keys);
-    }
-
-    multi method difference(%otherset) {
-        self.difference(%otherset.keys);
-    }
-    multi method difference(@otherset) {
-        self.new(grep { !contains(@otherset, $_) }, @!elems);
-    }
-
-    multi method symmetricdifference(%otherset) {
-        self.symmetricdifference(%otherset.keys);
-    }
-    multi method symmetricdifference(@otherset) {
-        self.difference(@otherset).union(Set.new(@otherset).difference(self));
-    }
-
-    multi method subsetorequal(@otherset) {
-        ?contains(@otherset, all(@!elems));
-    }
-    multi method subsetorequal(%otherset) {
-        self.subsetorequal(%otherset.keys);
-    }
-
-    multi method supersetorequal(@otherset) {
-        ?contains(@!elems, all(@otherset));
-    }
-    multi method supersetorequal(%otherset) {
-        self.supersetorequal(%otherset.keys);
-    }
-
-    method equal($otherset) {
-        +self == +$otherset && self.subsetorequal($otherset);
-    }
-
-    method subset($otherset) {
-        +self < +Set.new($otherset) && self.subsetorequal($otherset);
-    }
-
-    method superset($otherset) {
-        +self > +Set.new($otherset) && self.supersetorequal($otherset);
-    }
-
-    method perl() {
-        'set(' ~ join(', ', map { .perl }, @!elems) ~ ')';
-    }
-
-    method iterator() {
-        @!elems.iterator;
-    }
+    # TODO: WHICH will require the capability for >1 pointer in ObjAt
 }
 
-our multi sub  infix:<(|)>(Set $a, %b) { $a.union(%b) }
-our multi sub  infix:<(|)>(    %a, %b) { Set.new( %a).union(%b) }
-our multi sub  infix:<(|)>(    @a, %b) { Set.new(|@a).union(%b) }
-our multi sub  infix:<(|)>(    @a, @b) { Set.new(|@a).union(@b) }
+sub set(*@args) {
+    Set.new(@args);
+}
 
-our multi sub  infix:<(&)>(Set $a, %b) { $a.intersection(%b) }
-our multi sub  infix:<(&)>(    %a, %b) { Set.new( %a).intersection(%b) }
-our multi sub  infix:<(&)>(    @a, %b) { Set.new(|@a).intersection(%b) }
-our multi sub  infix:<(&)>(    @a, @b) { Set.new(|@a).intersection(@b) }
+my class KeySet is Iterable does Associative {
+    has %!elems;
 
-our multi sub  infix:<(-)>(Set $a, %b) { $a.difference(%b) }
-our multi sub  infix:<(-)>(    %a, %b) { Set.new( %a).difference(%b) }
-our multi sub  infix:<(-)>(    @a, %b) { Set.new(|@a).difference(%b) }
-our multi sub  infix:<(-)>(    @a, @b) { Set.new(|@a).difference(@b) }
+    method keys { %!elems.keys }
+    method values { %!elems.values }
+    method elems returns Int { %!elems.elems }
+    method exists($a) returns Bool { %!elems.exists($a) && %!elems{$a} }
+    method Bool { %!elems.Bool }
+    method Numeric { %!elems.Numeric }
+    method hash { %!elems.hash }
+    method at_key($k) {
+        Proxy.new(FETCH => { %!elems.exists($k) ?? True !! False },
+                  STORE => -> $, $value { if $value { %!elems{$k} = True } else { %!elems.delete($k) }});
+    }
+    method exists_key($k) { self.exists($k) }
+    method delete_key($k) { %!elems.delete($k) }
 
-our multi sub  infix:<(^)>(Set $a, %b) { $a.symmetricdifference(%b) }
-our multi sub  infix:<(^)>(    %a, %b) { Set.new( %a).symmetricdifference(%b) }
-our multi sub  infix:<(^)>(    @a, %b) { Set.new(|@a).symmetricdifference(%b) }
-our multi sub  infix:<(^)>(    @a, @b) { Set.new(|@a).symmetricdifference(@b) }
+    # Constructor
+    method new(*@args --> KeySet) {
+        my %e;
+        sub register-arg($arg) {
+            given $arg {
+                when Pair { %e{.key} = True; }
+                when Set | KeySet { for .keys -> $key { %e{$key} = True; } }
+                when Associative { for .pairs -> $p { register-arg($p); } }
+                when Positional { for .list -> $p { register-arg($p); } }
+                default { %e{$_} = True; }
+            }
+        }
 
-our multi sub infix:<(<=)>(Set $a, %b) { $a.subsetorequal(%b) }
-our multi sub infix:<(<=)>(    %a, %b) { Set.new( %a).subsetorequal(%b) }
-our multi sub infix:<(<=)>(    @a, %b) { Set.new(|@a).subsetorequal(%b) }
-our multi sub infix:<(<=)>(    @a, @b) { Set.new(|@a).subsetorequal(@b) }
+        for @args {
+            register-arg($_);
+        }
+        self.bless(*, :elems(%e));
+    }
 
-our multi sub infix:«(>=)»(Set $a, %b) { $a.supersetorequal(%b) }
-our multi sub infix:«(>=)»(    %a, %b) { Set.new( %a).supersetorequal(%b) }
-our multi sub infix:«(>=)»(    @a, %b) { Set.new(|@a).supersetorequal(%b) }
-our multi sub infix:«(>=)»(    @a, @b) { Set.new(|@a).supersetorequal(@b) }
+    submethod BUILD (:%!elems) { }
 
-our multi sub  infix:<(<)>(Set $a, %b) { $a.subset(%b) }
-our multi sub  infix:<(<)>(    %a, %b) { Set.new( %a).subset(%b) }
-our multi sub  infix:<(<)>(    @a, %b) { Set.new(|@a).subset(%b) }
-our multi sub  infix:<(<)>(    @a, @b) { Set.new(|@a).subset(@b) }
+    submethod Str(Any:D $ : --> Str) { ~%!elems.keys }
+    submethod gist(Any:D $ : --> Str) { "keyset({ %!elems.keys».gist.join(', ') })" }
+    submethod perl(Any:D $ : --> Str) { 'KeySet.new(' ~ join(', ', map { .perl }, %!elems.keys) ~ ')' }
 
-our multi sub  infix:«(>)»(Set $a, %b) { $a.superset(%b) }
-our multi sub  infix:«(>)»(    %a, %b) { Set.new( %a).superset(%b) }
-our multi sub  infix:«(>)»(    @a, %b) { Set.new(|@a).superset(%b) }
-our multi sub  infix:«(>)»(    @a, @b) { Set.new(|@a).superset(@b) }
-
-our sub set(*@args) { Set.new: |@args }
-
-# vim: ft=perl6
+    method iterator() { %!elems.keys.iterator }
+    method list() { %!elems.keys }
+    method pick($count = 1) { %!elems.keys.pick($count) }
+    method roll($count = 1) { %!elems.keys.roll($count) }
+}

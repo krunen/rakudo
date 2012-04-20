@@ -66,7 +66,7 @@ use Thread::Queue;
 my $impl = 'rakudo';
 our $debug = 0;
 our $out_filename = 'autounfudge.patch';
-my $exclude = '(?:(?:radix|modifiers/(?:while|until)|rx|assign)\.t)$';
+my $exclude = '(?!)';
 our $threads_num = 1;
 
 GetOptions  'impl=s'        => \$impl,
@@ -254,6 +254,9 @@ sub tests_ok {
     $agg->start();
     $harness->aggregate_tests($agg, $fn);
     $agg->stop();
+
+    print "Exit status " . $agg->exit  . "\n" if $debug;
+
     return !$agg->has_errors;
 }
 
